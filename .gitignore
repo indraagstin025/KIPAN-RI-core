@@ -1,0 +1,66 @@
+# ============================================================
+# Root .gitignore — SIM-KIPAN Core Monorepo
+# ============================================================
+
+# Project Lama (Referensi development - ignore dari commit)
+KIPAN_INDONESIA/
+KIPAN_INDONESIA/**
+
+# Environment files
+*.env
+*.env.local
+*.env.*.local
+.env
+.env.production
+.env.staging
+
+# Binaries & Build Outputs
+backend/bin/
+backend/dist/
+backend/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+frontend/dist/
+frontend/dist-ssr/
+frontend/.next/
+frontend/out/
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+.pnpm-store/
+
+# Cache & Temporary
+.cache/
+.eslintcache
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.turbo/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Docker data local
+.docker-data/
+postgres_data/
+redis_data/
+minio_data/
+
+# Coverage & Tests
+coverage/
+*.out
+*.test
