@@ -1,0 +1,32 @@
+# ============================================================
+# .gitignore — Backend Go
+# ============================================================
+
+# Binary builds
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Environment files (JANGAN COMMIT .env!)
+.env
+.env.local
+.env.production
+
+# Go
+vendor/
+
+# Test coverage
+*.out
+*.test
+coverage.html
+
+# Air (hot reload)
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
