@@ -1,0 +1,295 @@
+package config
+
+import (
+	"encoding/hex"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/spf13/viper"
+)
+
+type Config struct {
+	App      AppConfig
+	Database DatabaseConfig
+	Redis    RedisConfig
+	Auth     AuthConfig
+	Storage  StorageConfig
+	Crypto   CryptoConfig
+}
+
+type AppConfig struct {
+	Name        string
+	Env         string
+	Port        string
+	AllowOrigin string
+	Debug       bool
+}
+
+type DatabaseConfig struct {
+	DSN             string
+	Host            string
+	Port            string
+	User            string
+	Password        string
+	Name            string
+	SSLMode         string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+}
+
+type RedisConfig struct {
+	Addr     string
+	Password string
+	DB       int
+}
+
+type AuthConfig struct {
+	AccessTokenSecret string
+	AccessTokenTTL    time.Duration
+	RefreshTokenTTL   time.Duration
+}
+
+type StorageConfig struct {
+	Endpoint        string
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+	BucketPublic    string
+	BucketPrivate   string
+	BucketUploads   string
+	PresignedTTL    time.Duration
+}
+
+type CryptoConfig struct {
+	AESMasterKey  string
+	BlindIndexKey string
+	KTASigningKey string
+}
+
+// Load membaca konfigurasi dari environment + file .env (opsional),
+// lalu memvalidasi seluruh nilai kritis sebelum server diizinkan start.
+//
+// Prinsip: FAIL-FAST. Jika ada satu kunci kriptografi tidak valid,
+// server MENOLAK start — tidak boleh ada fallback default yang membahayakan.
+func Load() (*Config, error) {
+	v := viper.New()
+	v.SetConfigName(".env")
+	v.SetConfigType("env")
+	v.AddConfigPath(".")
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	_ = v.ReadInConfig() // .env bersifat opsional jika env sudah di-export
+
+	// ============================================================
+	// Defaults (NON-SECRET saja; kunci kriptografi WAJIB dari env)
+	// ============================================================
+	v.SetDefault("APP_NAME", "SIM-KIPAN Core API")
+	v.SetDefault("APP_ENV", "development")
+	v.SetDefault("APP_PORT", "8080")
+	v.SetDefault("APP_DEBUG", false)
+	v.SetDefault("APP_ALLOW_ORIGIN", "http://localhost:5173")
+
+	v.SetDefault("DB_HOST", "127.0.0.1")
+	v.SetDefault("DB_PORT", "5432")
+	v.SetDefault("DB_USER", "postgres")
+	v.SetDefault("DB_PASSWORD", "")
+	v.SetDefault("DB_NAME", "kipan_core")
+	v.SetDefault("DB_SSLMODE", "disable")
+	v.SetDefault("DB_MAX_OPEN_CONNS", 25)
+	v.SetDefault("DB_MAX_IDLE_CONNS", 5)
+	v.SetDefault("DB_CONN_MAX_LIFETIME", "5m")
+
+	v.SetDefault("REDIS_ADDR", "127.0.0.1:6379")
+	v.SetDefault("REDIS_DB", 0)
+
+	v.SetDefault("AUTH_ACCESS_TOKEN_TTL", "15m")
+	v.SetDefault("AUTH_REFRESH_TOKEN_TTL", "168h")
+
+	v.SetDefault("STORAGE_REGION", "auto")
+	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
+	v.SetDefault("STORAGE_BUCKET_PRIVATE", "kipan-private")
+	v.SetDefault("STORAGE_BUCKET_UPLOADS", "kipan-uploads")
+	v.SetDefault("STORAGE_PRESIGNED_TTL", "5m")
+
+	// ============================================================
+	// Parse durations
+	// ============================================================
+	connLifetime := mustParseDuration(v.GetString("DB_CONN_MAX_LIFETIME"), 5*time.Minute)
+	accessTTL := mustParseDuration(v.GetString("AUTH_ACCESS_TOKEN_TTL"), 15*time.Minute)
+	refreshTTL := mustParseDuration(v.GetString("AUTH_REFRESH_TOKEN_TTL"), 7*24*time.Hour)
+	presignedTTL := mustParseDuration(v.GetString("STORAGE_PRESIGNED_TTL"), 5*time.Minute)
+
+	// ============================================================
+	// Build DSN
+	//   Fix C-13: user & password di-URL-encode agar aman terhadap
+	//   karakter spesial (@, :, /, ?, #, spasi) yang bisa merusak parsing.
+	// ============================================================
+	dsn := v.GetString("DATABASE_URL")
+	dbHost := v.GetString("DB_HOST")
+	dbPort := v.GetString("DB_PORT")
+	dbUser := v.GetString("DB_USER")
+	dbPassword := v.GetString("DB_PASSWORD")
+	dbName := v.GetString("DB_NAME")
+	dbSSLMode := v.GetString("DB_SSLMODE")
+
+	if dsn == "" && dbHost != "" {
+		encodedUser := url.QueryEscape(dbUser)
+		encodedPass := url.QueryEscape(dbPassword)
+
+		if dbPassword != "" {
+			dsn = fmt.Sprintf(
+				"postgres://%s:%s@%s:%s/%s?sslmode=%s",
+				encodedUser, encodedPass, dbHost, dbPort, dbName, dbSSLMode,
+			)
+		} else {
+			dsn = fmt.Sprintf(
+				"postgres://%s@%s:%s/%s?sslmode=%s",
+				encodedUser, dbHost, dbPort, dbName, dbSSLMode,
+			)
+		}
+	}
+
+	cfg := &Config{
+		App: AppConfig{
+			Name:        v.GetString("APP_NAME"),
+			Env:         v.GetString("APP_ENV"),
+			Port:        v.GetString("APP_PORT"),
+			AllowOrigin: v.GetString("APP_ALLOW_ORIGIN"),
+			Debug:       v.GetBool("APP_DEBUG"),
+		},
+		Database: DatabaseConfig{
+			DSN:             dsn,
+			Host:            dbHost,
+			Port:            dbPort,
+			User:            dbUser,
+			Password:        dbPassword,
+			Name:            dbName,
+			SSLMode:         dbSSLMode,
+			MaxOpenConns:    v.GetInt("DB_MAX_OPEN_CONNS"),
+			MaxIdleConns:    v.GetInt("DB_MAX_IDLE_CONNS"),
+			ConnMaxLifetime: connLifetime,
+		},
+		Redis: RedisConfig{
+			Addr:     v.GetString("REDIS_ADDR"),
+			Password: v.GetString("REDIS_PASSWORD"),
+			DB:       v.GetInt("REDIS_DB"),
+		},
+		Auth: AuthConfig{
+			AccessTokenSecret: v.GetString("AUTH_ACCESS_TOKEN_SECRET"),
+			AccessTokenTTL:    accessTTL,
+			RefreshTokenTTL:   refreshTTL,
+		},
+		Storage: StorageConfig{
+			Endpoint:        v.GetString("STORAGE_ENDPOINT"),
+			Region:          v.GetString("STORAGE_REGION"),
+			AccessKeyID:     v.GetString("STORAGE_ACCESS_KEY_ID"),
+			SecretAccessKey: v.GetString("STORAGE_SECRET_ACCESS_KEY"),
+			BucketPublic:    v.GetString("STORAGE_BUCKET_PUBLIC"),
+			BucketPrivate:   v.GetString("STORAGE_BUCKET_PRIVATE"),
+			BucketUploads:   v.GetString("STORAGE_BUCKET_UPLOADS"),
+			PresignedTTL:    presignedTTL,
+		},
+		Crypto: CryptoConfig{
+			AESMasterKey:  v.GetString("AES_MASTER_KEY"),
+			BlindIndexKey: v.GetString("BLIND_INDEX_KEY"),
+			KTASigningKey: v.GetString("KTA_SIGNING_KEY"),
+		},
+	}
+
+	// ============================================================
+	// Validation (Fail-fast)
+	// ============================================================
+	if err := validateCryptoKeys(cfg.Crypto); err != nil {
+		return nil, err
+	}
+	if err := validateAuth(cfg.Auth); err != nil {
+		return nil, err
+	}
+	if cfg.App.Env != "development" && cfg.Database.DSN == "" {
+		return nil, fmt.Errorf(
+			"konfigurasi database wajib diset (DATABASE_URL atau DB_HOST/DB_NAME) di environment %s",
+			cfg.App.Env,
+		)
+	}
+
+	return cfg, nil
+}
+
+// mustParseDuration parse durasi; fallback ke default jika gagal.
+// Tidak mengembalikan error karena nilai default sudah aman.
+func mustParseDuration(raw string, fallback time.Duration) time.Duration {
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
+
+// validateCryptoKeys memastikan ketiga kunci kriptografi:
+//   - Ada (tidak kosong)
+//   - Tepat 64 karakter hex (= 32 byte)
+//   - Berformat hex valid (bisa di-decode)
+//   - Semua berbeda satu sama lain
+//
+// Fix C-10: sebelumnya hanya cek panjang; sekarang cek format hex juga,
+// sehingga server menolak start jika kunci bukan hex (mencegah panic runtime).
+func validateCryptoKeys(c CryptoConfig) error {
+	keys := map[string]string{
+		"AES_MASTER_KEY":  c.AESMasterKey,
+		"BLIND_INDEX_KEY": c.BlindIndexKey,
+		"KTA_SIGNING_KEY": c.KTASigningKey,
+	}
+
+	for name, val := range keys {
+		if val == "" {
+			return fmt.Errorf(
+				"kunci kriptografi %s wajib diset (32-byte hex = 64 karakter)", name)
+		}
+		if len(val) != 64 {
+			return fmt.Errorf(
+				"kunci kriptografi %s harus tepat 64 karakter hex (32 byte), saat ini %d karakter",
+				name, len(val))
+		}
+		// Fix C-10: verifikasi format hex yang sebenarnya
+		if _, err := hex.DecodeString(val); err != nil {
+			return fmt.Errorf(
+				"kunci kriptografi %s bukan hex valid: %w. "+
+					"Generate dengan: openssl rand -hex 32",
+				name, err)
+		}
+	}
+
+	if c.AESMasterKey == c.BlindIndexKey {
+		return fmt.Errorf("AES_MASTER_KEY dan BLIND_INDEX_KEY harus berbeda")
+	}
+	if c.AESMasterKey == c.KTASigningKey {
+		return fmt.Errorf("AES_MASTER_KEY dan KTA_SIGNING_KEY harus berbeda")
+	}
+	if c.BlindIndexKey == c.KTASigningKey {
+		return fmt.Errorf("BLIND_INDEX_KEY dan KTA_SIGNING_KEY harus berbeda")
+	}
+
+	return nil
+}
+
+// validateAuth memastikan konfigurasi auth memiliki secret yang cukup kuat.
+func validateAuth(a AuthConfig) error {
+	if a.AccessTokenSecret == "" {
+		return fmt.Errorf("AUTH_ACCESS_TOKEN_SECRET wajib diset")
+	}
+	if len(a.AccessTokenSecret) < 32 {
+		return fmt.Errorf(
+			"AUTH_ACCESS_TOKEN_SECRET terlalu pendek: %d karakter, minimum 32",
+			len(a.AccessTokenSecret))
+	}
+	if a.AccessTokenTTL <= 0 {
+		return fmt.Errorf("AUTH_ACCESS_TOKEN_TTL harus > 0")
+	}
+	if a.RefreshTokenTTL <= 0 {
+		return fmt.Errorf("AUTH_REFRESH_TOKEN_TTL harus > 0")
+	}
+	return nil
+}
