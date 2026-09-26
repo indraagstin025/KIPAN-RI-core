@@ -6,8 +6,9 @@
 // ⚠️  HANYA UNTUK DEV/STAGING — jangan dijalankan di production.
 //
 // Cara pakai:
-//   cd backend
-//   go run ./cmd/flushcache
+//
+//	cd backend
+//	go run ./cmd/flushcache
 package main
 
 import (
@@ -26,20 +27,30 @@ import (
 // Pattern key yang akan dibersihkan. Semua ini adalah state transient
 // untuk testing — TIDAK ADA data bisnis di sini.
 var flushPatterns = []string{
-	"auth_rate:*",       // Rate limiter per IP (AuthRateLimiter)
-	"login_attempt:*",   // Rate limiter per email (LoginAttemptLimiter)
-	"blacklist:jti:*",   // JWT blacklist (setelah logout)
+	"auth_rate:*",     // Rate limiter per IP (AuthRateLimiter)
+	"login_attempt:*", // Rate limiter per email (LoginAttemptLimiter)
+	"blacklist:jti:*", // JWT blacklist (setelah logout)
 }
 
 func main() {
 	setupLogger()
 
-	// Guard: cegah eksekusi di production
-	if os.Getenv("APP_ENV") == "production" {
-		log.Fatal().Msg("❌ flushcache tidak boleh dijalankan di production")
+	// Guard FAIL-CLOSED: hanya boleh dijalankan di environment lokal.
+	// APP_ENV dibaca lewat viper (.env) karena nilai yang hanya ada di .env
+	// tidak muncul di os.Getenv — sebelumnya guard bisa dilewati begitu saja
+	// jika APP_ENV tidak di-export ke shell (padahal .env berisi production).
+	v := loadEnv()
+	appEnv := strings.ToLower(strings.TrimSpace(v.GetString("APP_ENV")))
+	if appEnv == "" {
+		appEnv = "development"
+	}
+	if !allowedCacheEnvs[appEnv] {
+		log.Fatal().
+			Str("app_env", appEnv).
+			Msg("❌ flushcache ditolak: hanya boleh dijalankan di environment development/test/local")
 	}
 
-	cfg := loadRedisConfig()
+	cfg := loadRedisConfig(v)
 	if cfg.Addr == "" {
 		log.Warn().Msg("REDIS_ADDR kosong — tidak ada yang dibersihkan")
 		os.Exit(0)
@@ -98,7 +109,18 @@ type redisConfig struct {
 	DB       int
 }
 
-func loadRedisConfig() redisConfig {
+// allowedCacheEnvs — environment yang boleh menjalankan flushcache.
+// Fail-closed: environment yang tidak terdaftar (termasuk production) ditolak,
+// karena utilitas ini menghapus JWT blacklist dan state rate limiter.
+var allowedCacheEnvs = map[string]bool{
+	"development": true,
+	"dev":         true,
+	"test":        true,
+	"local":       true,
+}
+
+// loadEnv membaca konfigurasi dari file .env (opsional) lalu environment.
+func loadEnv() *viper.Viper {
 	v := viper.New()
 	v.SetConfigName(".env")
 	v.SetConfigType("env")
@@ -106,7 +128,10 @@ func loadRedisConfig() redisConfig {
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	_ = v.ReadInConfig()
+	return v
+}
 
+func loadRedisConfig(v *viper.Viper) redisConfig {
 	return redisConfig{
 		Addr:     getDefault(v, "REDIS_ADDR", "127.0.0.1:6379"),
 		Password: v.GetString("REDIS_PASSWORD"),

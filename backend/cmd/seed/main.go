@@ -5,22 +5,30 @@
 //
 // KARAKTERISTIK:
 //   - Idempotent: aman dijalankan berkali-kali
+//   - Password TIDAK di-hardcode: diambil dari environment SEED_ADMIN_PASSWORD;
+//     bila kosong, seeder membuat password acak kuat (ditampilkan SEKALI)
 //   - Password di-hash dengan Argon2id (parameter identik dengan auth_service.go)
 //   - Lookup ID provinsi/kabupaten secara DINAMIS dari DB (tidak hardcode)
-//   - TIDAK BOLEH dijalankan di production (destructive if misused)
+//   - Fail-closed: HANYA boleh dijalankan di APP_ENV development/test/local
 //
 // Cara pakai:
-//   cd backend
-//   go run ./cmd/seed
+//
+//	cd backend
+//	$env:SEED_ADMIN_PASSWORD='<password-kuat>'; go run ./cmd/seed   # PowerShell
+//	SEED_ADMIN_PASSWORD='<password-kuat>' go run ./cmd/seed         # bash
 package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/alexedwards/argon2id"
 	"github.com/google/uuid"
@@ -37,18 +45,36 @@ import (
 // ============================================================
 
 const (
-	// Password untuk SEMUA user testing. Ganti jika perlu.
-	DefaultPassword = "AdminKipan2026!"
+	// PasswordEnvVar — nama environment variable yang menentukan password
+	// akun admin yang di-seed. WAJIB diisi; jika kosong seeder membuat
+	// password acak sendiri (ditampilkan SEKALI di output).
+	PasswordEnvVar = "SEED_ADMIN_PASSWORD"
+
+	// minPasswordLength — panjang minimum password seeder. Lebih ketat dari
+	// rule password_strength di pkg/validator (min 8) karena akun ini adalah
+	// akun admin dengan hak akses tinggi.
+	minPasswordLength = 12
 
 	// Email user testing (harus sama dengan pentest_suite.ps1)
-	SuperAdminEmail = "superadmin@kipan.id"
-	ProvAdminEmail  = "adminprov.jabar@kipan.id"
-	KabAdminEmail   = "adminkab.bandung@kipan.id"
+	SuperAdminEmail    = "superadmin@kipan.id"
+	NasionalAdminEmail = "adminnasional@kipan.id"
+	ProvAdminEmail     = "adminprov.jabar@kipan.id"
+	KabAdminEmail      = "adminkab.bandung@kipan.id"
 
 	// Kode BPS (dipakai untuk lookup, bukan untuk ID)
 	JawaBaratKode   = "32"
 	KotaBandungKode = "3273"
 )
+
+// allowedSeedEnvs — seeder HANYA boleh berjalan di environment berikut.
+// Fail-closed: environment yang tidak terdaftar (termasuk "production")
+// ditolak, sehingga tidak ada satu pun string yang bisa "lolos".
+var allowedSeedEnvs = map[string]bool{
+	"development": true,
+	"dev":         true,
+	"test":        true,
+	"local":       true,
+}
 
 // Parameter Argon2id — WAJIB sama dengan auth_service.go agar
 // hash yang di-seed bisa diverifikasi oleh ComparePasswordAndHash.
@@ -81,12 +107,28 @@ func main() {
 
 	log.Info().Msg("🌱 Memulai seeder data minimal...")
 
-	// Guard: cegah eksekusi di production
-	if os.Getenv("APP_ENV") == "production" {
-		log.Fatal().Msg("❌ Seeder tidak boleh dijalankan di environment production")
+	v := loadEnv()
+
+	// Guard FAIL-CLOSED: seeder hanya boleh berjalan di environment lokal.
+	// APP_ENV dibaca lewat viper agar nilai di file .env juga terbaca.
+	// (Sebelumnya hanya os.Getenv, sehingga APP_ENV yang hanya ada di .env
+	// tidak terdeteksi dan seeder tetap jalan di server produksi.)
+	appEnv := strings.ToLower(strings.TrimSpace(v.GetString("APP_ENV")))
+	if appEnv == "" {
+		appEnv = "development"
+	}
+	if !allowedSeedEnvs[appEnv] {
+		log.Fatal().
+			Str("app_env", appEnv).
+			Msg("❌ Seeder ditolak: hanya boleh dijalankan di environment development/test/local")
 	}
 
-	db := mustConnectDB()
+	password, generated, err := resolveSeedPassword(v)
+	if err != nil {
+		log.Fatal().Err(err).Msg("❌ Konfigurasi password seeder tidak valid")
+	}
+
+	db := mustConnectDB(v)
 	defer func() {
 		if err := db.Close(); err != nil {
 			log.Warn().Err(err).Msg("Gagal menutup koneksi DB")
@@ -96,11 +138,141 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := seedAll(ctx, db); err != nil {
+	if err := seedAll(ctx, db, password); err != nil {
 		log.Fatal().Err(err).Msg("❌ Seeder gagal")
 	}
 
-	printSummary()
+	printSummary(password, generated)
+}
+
+// ============================================================
+// Konfigurasi environment & password
+// ============================================================
+
+// loadEnv membaca konfigurasi dari file .env (opsional) lalu environment.
+// Dipakai bersama oleh guard APP_ENV, resolusi password, dan koneksi DB.
+// Sengaja TIDAK memanggil config.Load() karena seeder tidak butuh crypto key.
+func loadEnv() *viper.Viper {
+	v := viper.New()
+	v.SetConfigName(".env")
+	v.SetConfigType("env")
+	v.AddConfigPath(".")
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	_ = v.ReadInConfig()
+	return v
+}
+
+// resolveSeedPassword menentukan password akun admin yang akan di-seed.
+//
+// Aturan (RULES #9 — dilarang memakai password default produksi):
+//  1. Utamakan nilai SEED_ADMIN_PASSWORD dari environment / .env.
+//  2. Jika kosong, buat password acak kuat secara kriptografis.
+//  3. Tolak password yang tidak memenuhi syarat kekuatan.
+//
+// Nilai `generated` menandai password dibuat otomatis, sehingga hanya
+// password hasil generate yang ditampilkan ke stdout.
+func resolveSeedPassword(v *viper.Viper) (password string, generated bool, err error) {
+	raw := strings.TrimSpace(v.GetString(PasswordEnvVar))
+	if raw == "" {
+		pw, genErr := generateStrongPassword(24)
+		if genErr != nil {
+			return "", false, fmt.Errorf("gagal membuat password acak: %w", genErr)
+		}
+		return pw, true, nil
+	}
+
+	if err := validateSeedPassword(raw); err != nil {
+		return "", false, fmt.Errorf("%s tidak memenuhi syarat: %w", PasswordEnvVar, err)
+	}
+	return raw, false, nil
+}
+
+// validateSeedPassword memastikan password memenuhi syarat minimum:
+// panjang >= minPasswordLength serta memuat huruf besar, huruf kecil,
+// angka, dan simbol (selaras dengan rule password_strength).
+func validateSeedPassword(pw string) error {
+	if utf8.RuneCountInString(pw) < minPasswordLength {
+		return fmt.Errorf("minimal %d karakter", minPasswordLength)
+	}
+
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, ch := range pw {
+		switch {
+		case unicode.IsUpper(ch):
+			hasUpper = true
+		case unicode.IsLower(ch):
+			hasLower = true
+		case unicode.IsDigit(ch):
+			hasDigit = true
+		case unicode.IsPunct(ch) || unicode.IsSymbol(ch):
+			hasSpecial = true
+		}
+	}
+
+	if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
+		return fmt.Errorf("wajib memuat huruf besar, huruf kecil, angka, dan simbol")
+	}
+	return nil
+}
+
+// passwordAlphabet — karakter untuk password acak. Simbol yang dipilih aman
+// untuk shell dan file .env (tanpa kutip, backslash, dolar, atau spasi).
+const passwordAlphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%^*-_=+?"
+
+// generateStrongPassword membuat password acak dengan crypto/rand.
+// Setiap kelas karakter dijamin muncul minimal satu kali.
+func generateStrongPassword(length int) (string, error) {
+	if length < minPasswordLength {
+		length = minPasswordLength
+	}
+
+	classes := []string{
+		"abcdefghijkmnopqrstuvwxyz",
+		"ABCDEFGHJKLMNPQRSTUVWXYZ",
+		"23456789",
+		"!@#%^*-_=+?",
+	}
+
+	out := make([]byte, 0, length)
+	for _, class := range classes {
+		idx, err := randInt(len(class))
+		if err != nil {
+			return "", err
+		}
+		out = append(out, class[idx])
+	}
+
+	for len(out) < length {
+		idx, err := randInt(len(passwordAlphabet))
+		if err != nil {
+			return "", err
+		}
+		out = append(out, passwordAlphabet[idx])
+	}
+
+	// Acak posisi agar kelas karakter tidak selalu berada di depan.
+	for i := len(out) - 1; i > 0; i-- {
+		j, err := randInt(i + 1)
+		if err != nil {
+			return "", err
+		}
+		out[i], out[j] = out[j], out[i]
+	}
+
+	return string(out), nil
+}
+
+// randInt mengembalikan angka acak pada rentang [0, max) dari crypto/rand.
+func randInt(max int) (int, error) {
+	if max <= 0 {
+		return 0, nil
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0, err
+	}
+	return int(n.Int64()), nil
 }
 
 func setupLogger() {
@@ -111,23 +283,36 @@ func setupLogger() {
 	})
 }
 
-func printSummary() {
+func printSummary(password string, generated bool) {
 	log.Info().Msg("✅ Seeder selesai dengan sukses")
 	log.Info().Msg("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	if generated {
+		log.Warn().Msg("🔐 Password acak dibuat untuk sesi seeder ini.")
+		log.Warn().Msg("   Password hanya ditampilkan di sini dan TIDAK disimpan di mana pun.")
+		log.Warn().Msg("   Salin sekarang ke password manager sebelum terminal ditutup.")
+		log.Info().Str("password", password).Msg("   → Password akun admin")
+	} else {
+		log.Info().
+			Str("env", PasswordEnvVar).
+			Msg("   → Password diambil dari environment (sengaja tidak ditampilkan)")
+	}
+
 	log.Info().Msg("Kredensial login untuk testing:")
 	log.Info().
 		Str("email", SuperAdminEmail).
-		Str("password", DefaultPassword).
 		Str("role", "SUPER_ADMIN").
 		Msg("  → Super Admin")
 	log.Info().
+		Str("email", NasionalAdminEmail).
+		Str("role", "ADMIN_NASIONAL").
+		Msg("  → Admin DPP Nasional")
+	log.Info().
 		Str("email", ProvAdminEmail).
-		Str("password", DefaultPassword).
 		Str("role", "ADMIN_PROVINSI").
 		Msg("  → Admin DPD Jawa Barat")
 	log.Info().
 		Str("email", KabAdminEmail).
-		Str("password", DefaultPassword).
 		Str("role", "ADMIN_KABUPATEN").
 		Msg("  → Admin DPC Kota Bandung")
 	log.Info().Msg("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -137,17 +322,9 @@ func printSummary() {
 // Database connection
 // ============================================================
 
-// mustConnectDB membaca konfigurasi dari .env (jika ada) atau environment.
+// mustConnectDB membuka koneksi PostgreSQL memakai konfigurasi dari loadEnv.
 // Sengaja TIDAK memanggil config.Load() karena seeder tidak butuh crypto key.
-func mustConnectDB() *sqlx.DB {
-	v := viper.New()
-	v.SetConfigName(".env")
-	v.SetConfigType("env")
-	v.AddConfigPath(".")
-	v.AutomaticEnv()
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	_ = v.ReadInConfig()
-
+func mustConnectDB(v *viper.Viper) *sqlx.DB {
 	dsn := buildDSN(v)
 	if dsn == "" {
 		log.Fatal().Msg("Konfigurasi DB tidak ditemukan. Set DATABASE_URL atau DB_HOST/DB_NAME.")
@@ -193,7 +370,7 @@ func getDefault(v *viper.Viper, key, fallback string) string {
 // Seed orchestration
 // ============================================================
 
-func seedAll(ctx context.Context, db *sqlx.DB) error {
+func seedAll(ctx context.Context, db *sqlx.DB, password string) error {
 	provID, err := seedProvinsi(ctx, db)
 	if err != nil {
 		return fmt.Errorf("seed provinsi: %w", err)
@@ -204,7 +381,7 @@ func seedAll(ctx context.Context, db *sqlx.DB) error {
 		return fmt.Errorf("seed kabupaten: %w", err)
 	}
 
-	if err := seedUsers(ctx, db, provID, kabID); err != nil {
+	if err := seedUsers(ctx, db, password, provID, kabID); err != nil {
 		return fmt.Errorf("seed users: %w", err)
 	}
 
@@ -289,8 +466,10 @@ func seedKabupaten(ctx context.Context, db *sqlx.DB, provinsiID int) (int, error
 // Seed Users
 // ============================================================
 
-func seedUsers(ctx context.Context, db *sqlx.DB, provinsiID, kabupatenID int) error {
-	hash, err := argon2id.CreateHash(DefaultPassword, argon2Params)
+// seedUsers membuat / memperbarui 3 akun admin pengujian memakai `password`
+// yang diberikan pemanggil. Password TIDAK di-hardcode di sini (RULES #9).
+func seedUsers(ctx context.Context, db *sqlx.DB, password string, provinsiID, kabupatenID int) error {
+	hash, err := argon2id.CreateHash(password, argon2Params)
 	if err != nil {
 		return fmt.Errorf("gagal hash password: %w", err)
 	}
@@ -300,6 +479,11 @@ func seedUsers(ctx context.Context, db *sqlx.DB, provinsiID, kabupatenID int) er
 			Email: SuperAdminEmail,
 			Name:  "Super Admin DPP",
 			Role:  "SUPER_ADMIN",
+		},
+		{
+			Email: NasionalAdminEmail,
+			Name:  "Sekretariat DPP KIPAN Nasional",
+			Role:  "ADMIN_NASIONAL",
 		},
 		{
 			Email:      ProvAdminEmail,
