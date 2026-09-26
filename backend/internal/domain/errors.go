@@ -1,5 +1,7 @@
 package domain
 
+import "errors"
+
 // ErrNotFound dikembalikan saat resource tidak ditemukan di database
 var ErrNotFound = &AppError{Code: 404, Message: "Data tidak ditemukan"}
 
@@ -20,12 +22,20 @@ var ErrInvalidToken = &AppError{Code: 401, Message: "Token tidak valid atau tela
 var ErrInvalidCredentials = &AppError{Code: 401, Message: "Email atau kata sandi tidak sesuai"}
 var ErrUserInactive = &AppError{Code: 403, Message: "Akun pengguna sedang dinonaktifkan"}
 
+// ErrTokenAlreadyRotated adalah sinyal INTERNAL dari repository: rotasi refresh
+// token kalah dalam race karena token yang sama sudah dirotasi lebih dulu oleh
+// request lain (indikasi session cloning / replay).
+//
+// Ini BUKAN pesan untuk pengguna akhir. Service wajib menanganinya dengan
+// mencabut seluruh token dalam family tersebut, lalu mengembalikan 403.
+var ErrTokenAlreadyRotated = errors.New("refresh token sudah dirotasi oleh request lain")
+
 // AppError adalah custom error type dengan HTTP status code
 type AppError struct {
 	Code    int
 	Message string
 	Detail  string
-} 
+}
 
 func (e *AppError) Error() string {
 	if e.Detail != "" {

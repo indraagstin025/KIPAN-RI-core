@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -184,7 +185,6 @@ func (s *authService) Logout(ctx context.Context, rawAccessToken, rawRefreshToke
 	return nil
 }
 
-
 func (s *authService) revokeRefreshFamily(ctx context.Context, rawRefreshToken string) {
 	if rawRefreshToken == "" {
 		return
@@ -337,6 +337,21 @@ func (s *authService) rotateSession(
 		oldRecord.FamilyID,
 		time.Now().Add(refreshExpiry),
 	); err != nil {
+		// Race terdeteksi: token yang sama ternyata sudah dirotasi oleh request
+		// paralel. Ini pola khas session cloning (satu token dipakai dua pihak),
+		// sehingga seluruh family dicabut — sama seperti penanganan reuse di
+		// RefreshToken. Tanpa cabang ini, kegagalan CAS akan tampak seperti
+		// error internal biasa dan sesi penyerang tetap hidup.
+		if errors.Is(err, domain.ErrTokenAlreadyRotated) {
+			_ = s.userRepo.RevokeFamilyTokens(ctx, oldRecord.FamilyID)
+			log.Warn().
+				Str("user_id", user.ID).
+				Str("family_id", oldRecord.FamilyID).
+				Msg("Rotasi refresh token paralel terdeteksi — seluruh sesi family dicabut")
+			return "", nil, domain.NewForbiddenError(
+				"Token refresh terindikasi digunakan ulang. Sesi Anda dihentikan demi keamanan.")
+		}
+
 		return "", nil, fmt.Errorf("gagal rotasi refresh token: %w", err)
 	}
 

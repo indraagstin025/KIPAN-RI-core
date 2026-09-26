@@ -146,11 +146,20 @@ func (r *userRepo) RevokeAllUserTokens(ctx context.Context, userID string) error
 }
 
 // RotateRefreshToken melakukan rotasi token secara ATOMIK:
-//   1. Revoke token lama (hanya yang ini, bukan seluruh family)
-//   2. Insert token baru dalam family yang sama
+//  1. Revoke token lama dengan COMPARE-AND-SWAP (hanya jika belum di-revoke)
+//  2. Insert token baru dalam family yang sama
 //
 // Jika salah satu gagal, seluruh transaksi di-rollback. Ini mencegah
 // skenario user kehilangan semua token karena kegagalan parsial.
+//
+// KEAMANAN (race condition / session cloning):
+// Langkah 1 memakai kondisi `AND is_revoked = FALSE` dan memeriksa
+// RowsAffected. Dua request refresh PARALEL dengan token yang sama akan
+// menghasilkan tepat SATU pemenang; yang kalah mendapat
+// domain.ErrTokenAlreadyRotated sehingga service bisa mencabut seluruh family.
+// Tanpa kondisi itu, keduanya lolos pemeriksaan IsRevoked (yang dibaca sebelum
+// transaksi) dan sama-sama menerbitkan token baru dari satu token = session
+// cloning. Lihat RULES #8.
 func (r *userRepo) RotateRefreshToken(
 	ctx context.Context,
 	oldTokenID, userID, newTokenHash, familyID string,
@@ -162,12 +171,25 @@ func (r *userRepo) RotateRefreshToken(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Step 1: revoke token lama (hanya yang dipakai, bukan family)
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE user_refresh_tokens SET is_revoked = TRUE WHERE id = $1`,
+	// Step 1: revoke token lama — COMPARE-AND-SWAP, hanya berhasil sekali.
+	res, err := tx.ExecContext(ctx,
+		`UPDATE user_refresh_tokens
+		 SET is_revoked = TRUE
+		 WHERE id = $1 AND is_revoked = FALSE`,
 		oldTokenID,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("gagal revoke token lama: %w", err)
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("gagal membaca hasil revoke token lama: %w", err)
+	}
+	if affected == 0 {
+		// Token sudah dirotasi/dicabut oleh request lain. Transaksi dibatalkan
+		// oleh deferred Rollback, sehingga TIDAK ada token baru yang terbit.
+		return domain.ErrTokenAlreadyRotated
 	}
 
 	// Step 2: insert token baru
