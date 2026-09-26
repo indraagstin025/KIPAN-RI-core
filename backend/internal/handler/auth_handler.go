@@ -13,23 +13,26 @@ import (
 )
 
 type AuthHandler struct {
-	authService service.AuthService
-	validator   *validator.CustomValidator
-	refreshTTL  time.Duration
+	authService  service.AuthService
+	validator    *validator.CustomValidator
+	refreshTTL   time.Duration
+	secureCookie bool
 }
 
 func NewAuthHandler(
 	authService service.AuthService,
 	validator *validator.CustomValidator,
 	refreshTTL time.Duration,
+	secureCookie bool,
 ) *AuthHandler {
 	if refreshTTL <= 0 {
 		refreshTTL = 7 * 24 * time.Hour
 	}
 	return &AuthHandler{
-		authService: authService,
-		validator:   validator,
-		refreshTTL:  refreshTTL,
+		authService:  authService,
+		validator:    validator,
+		refreshTTL:   refreshTTL,
+		secureCookie: secureCookie,
 	}
 }
 
@@ -50,7 +53,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return response.FromError(c, err)
 	}
 
-	setRefreshTokenCookie(c, refreshToken, h.refreshTTL)
+	h.setRefreshTokenCookie(c, refreshToken, h.refreshTTL)
 	return response.Success(c, "Login berhasil", resp)
 }
 
@@ -66,11 +69,11 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 
 	newRefreshToken, resp, err := h.authService.RefreshToken(c.Context(), tokenStr)
 	if err != nil {
-		clearRefreshTokenCookie(c)
+		h.clearRefreshTokenCookie(c)
 		return response.FromError(c, err)
 	}
 
-	setRefreshTokenCookie(c, newRefreshToken, h.refreshTTL)
+	h.setRefreshTokenCookie(c, newRefreshToken, h.refreshTTL)
 	return response.Success(c, "Token berhasil diperbarui", resp)
 }
 
@@ -86,7 +89,7 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	}
 
 	_ = h.authService.Logout(c.Context(), rawAccess, tokenStr)
-	clearRefreshTokenCookie(c)
+	h.clearRefreshTokenCookie(c)
 
 	return response.Success(c, "Logout berhasil", nil)
 }
@@ -128,7 +131,7 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 
 	// Password berubah → seluruh sesi lain dicabut oleh service.
 	// Hapus juga cookie di browser ini agar user login ulang segar.
-	clearRefreshTokenCookie(c)
+	h.clearRefreshTokenCookie(c)
 
 	return response.Success(c,
 		"Kata sandi berhasil diperbarui. Seluruh sesi lain telah dihentikan, silakan login kembali.", nil)
@@ -140,15 +143,17 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 
 // setRefreshTokenCookie menyimpan refresh token di HttpOnly cookie.
 // Path dibatasi ke endpoint /auth agar cookie tidak dikirim ke request lain.
-func setRefreshTokenCookie(c *fiber.Ctx, token string, ttl time.Duration) {
+//
+// KEAMANAN (flag Secure — RULES #8):
+// Nilai flag Secure diambil dari konfigurasi server (APP_ENV != development),
+// BUKAN dari header request (X-Forwarded-Proto) yang bisa dipalsukan klien.
+// Di belakang reverse proxy (Caddy/Nginx), c.Protocol() selalu "http" karena
+// TLS di-terminate di proxy — sehingga keputusan berbasis header tidak bisa
+// dipercaya dan cookie berisiko terbit tanpa Secure (kirim via HTTP polos).
+func (h *AuthHandler) setRefreshTokenCookie(c *fiber.Ctx, token string, ttl time.Duration) {
 	if ttl <= 0 {
 		ttl = 7 * 24 * time.Hour
 	}
-
-	// Deteksi HTTPS di belakang reverse proxy (Caddy/Nginx).
-	// X-Forwarded-Proto di-set oleh proxy yang terminate TLS.
-	isHTTPS := c.Protocol() == "https" ||
-		strings.EqualFold(c.Get("X-Forwarded-Proto"), "https")
 
 	c.Cookie(&fiber.Cookie{
 		Name:     "refresh_token",
@@ -156,20 +161,20 @@ func setRefreshTokenCookie(c *fiber.Ctx, token string, ttl time.Duration) {
 		Expires:  time.Now().Add(ttl),
 		MaxAge:   int(ttl.Seconds()),
 		HTTPOnly: true,
-		Secure:   isHTTPS,
+		Secure:   h.secureCookie,
 		SameSite: "Strict",
 		Path:     "/api/v1/auth",
 	})
 }
 
-func clearRefreshTokenCookie(c *fiber.Ctx) {
+func (h *AuthHandler) clearRefreshTokenCookie(c *fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{
 		Name:     "refresh_token",
 		Value:    "",
 		Expires:  time.Now().Add(-1 * time.Hour),
 		MaxAge:   -1,
 		HTTPOnly: true,
-		Secure:   c.Protocol() == "https",
+		Secure:   h.secureCookie,
 		SameSite: "Strict",
 		Path:     "/api/v1/auth",
 	})

@@ -41,7 +41,10 @@ func RegisterRoutes(
 	// ============================================================
 	userRepo := repository.NewUserRepository(db)
 	authService := service.NewAuthService(cfg, userRepo, rdb)
-	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL)
+	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
+	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
+	secureCookie := cfg.App.Env != "development"
+	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL, secureCookie)
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.AccessTokenSecret, rdb)
 
 	// ============================================================
