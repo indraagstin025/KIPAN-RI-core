@@ -30,3 +30,11 @@ tmp/
 # OS
 .DS_Store
 Thumbs.db
+
+# Security scan reports (generate ulang tiap run, jangan commit artefak statis)
+results.json
+results.sarif
+reports/
+
+# Uploads lokal (PII — jangan pernah commit berkas identitas)
+uploads/
