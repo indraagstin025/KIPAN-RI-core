@@ -10,17 +10,16 @@
 
 | Fase | Nama Modul / Area Kerja | Status | Output Utama |
 |:---:|:---|:---:|:---|
-| **Fase 0** | Fondasi, Kriptografi & Skema Database | ✅ **SELESAI** | Monorepo, DB Migrations PostgreSQL 16, AES-256-GCM, Argon2id |
-| **Fase 1A**| Subsistem Autentikasi & Otorisasi Core | ✅ **SELESAI** | JWT, HttpOnly Cookie RTR, RBAC Scope Wilayah, Pentest Suite v2.1 (20/20 PASS) |
-| **Fase 1B**| **Core Membership Engine (Pendaftaran & Kader)** | 🎯 **SEDANG BERJALAN** | Pendaftaran Mandiri, NIK Blind Index, Verifikasi Berjenjang, Generator NIA & KTA |
-| **Fase 2** | Tata Kelola Surat Keputusan (SK) & Pengurus | ⏳ Antrean | Draf SK, Alur Pengesahan, Mutasi Jabatan, Otomasi Demisioner |
-| **Fase 3** | CMS Publik & Informasi Organisasi | ⏳ Antrean | Berita Berjenjang, Galeri Dokumentasi, Program Kerja |
-| **Fase 4** | Audit Trail & Notifikasi In-App | ⏳ Antrean | Activity Log Imutabel & Notifikasi Verifikator |
-| **Fase 5** | Hardening, Storage S3 & Deploy Produksi | ⏳ Antrean | Caddy Auto-SSL, Cloudflare/IDCloudHost, CI/CD Actions |
+| **Fase 1** | Fondasi, Kriptografi, Database, Autentikasi & Otorisasi Core | ✅ **SELESAI** | Monorepo, PostgreSQL 16, AES-256-GCM, Argon2id, JWT, HttpOnly Cookie RTR, RBAC Scope Wilayah, Pentest Suite v2.1 (20/20 PASS) |
+| **Fase 2** | **Core Membership Engine (Pendaftaran & Kader)** | 🎯 **SEDANG BERJALAN** | Pendaftaran Mandiri, NIK Blind Index, Verifikasi Berjenjang, Generator NIA & KTA |
+| **Fase 3** | Tata Kelola Surat Keputusan (SK) & Pengurus | ⏳ Antrean | Draf SK, Alur Pengesahan, Mutasi Jabatan, Otomasi Demisioner |
+| **Fase 4** | CMS Publik & Informasi Organisasi | ⏳ Antrean | Berita Berjenjang, Galeri Dokumentasi, Program Kerja |
+| **Fase 5** | Audit Trail & Notifikasi In-App | ⏳ Antrean | Activity Log Imutabel & Notifikasi Verifikator |
+| **Fase 6** | Hardening, Storage S3 & Deploy Produksi | ⏳ Antrean | Caddy Auto-SSL, Cloudflare/IDCloudHost, CI/CD Actions |
 
 ---
 
-## 🎯 TAHAPAN DETAIL FASE 1B: CORE MEMBERSHIP ENGINE
+## 🎯 TAHAPAN DETAIL FASE 2: CORE MEMBERSHIP ENGINE
 
 Tahapan ini berfokus menyelesaikan **seluruh siklus hidup pendaftaran calon anggota hingga resmi menjadi kader ber-Nomor Induk Anggota (NIA) dan memiliki kartu KTA digital**.
 
@@ -156,7 +155,7 @@ Tahapan ini berfokus menyelesaikan **seluruh siklus hidup pendaftaran calon angg
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ FASE 2: TATA KELOLA SURAT KEPUTUSAN (SK) & KEPENGURUSAN                    │
+│ FASE 3: TATA KELOLA SURAT KEPUTUSAN (SK) & KEPENGURUSAN                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ • Master Jabatan & Hirarki Organisasi (Ketua, Sekretaris, Bendahara, Bidang)│
 │ • Siklus Draf SK Kepengurusan Baru (Upload Naskah SK PDF)                   │
@@ -167,7 +166,7 @@ Tahapan ini berfokus menyelesaikan **seluruh siklus hidup pendaftaran calon angg
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ FASE 3: CMS PUBLIK & INFORMASI ORGANISASI                                   │
+│ FASE 4: CMS PUBLIK & INFORMASI ORGANISASI                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ • Manajemen Berita & Opini Berjenjang (Publik vs Internal Portal Kader)     │
 │ • Galeri Dokumentasi Kegiatan Anti-Narkoba (Sosialisasi, Bimtek, Pelantikan)│
@@ -177,7 +176,7 @@ Tahapan ini berfokus menyelesaikan **seluruh siklus hidup pendaftaran calon angg
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ FASE 4: AUDIT TRAIL, OBSERVABILITY & NOTIFIKASI                             │
+│ FASE 5: AUDIT TRAIL, OBSERVABILITY & NOTIFIKASI                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ • Activity Log Imutabel (Snapshot Perubahan Data, Aktor, IP, Timestamp)     │
 │ • Lonceng Notifikasi In-App Verifikator saat Berkas Masuk / Butuh Approval  │
@@ -186,7 +185,7 @@ Tahapan ini berfokus menyelesaikan **seluruh siklus hidup pendaftaran calon angg
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ FASE 5: TESTING KOMPREHENSIF, QA & DEPLOYMENT IDCLOUDHOST                  │
+│ FASE 6: TESTING KOMPREHENSIF, QA & DEPLOYMENT IDCLOUDHOST                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ • Setup Reverse Proxy Caddy v2 (Otomatis SSL Let's Encrypt)                 │
 │ • Migrasi Berkas Identitas ke Penyimpanan Kompatibel S3                     │

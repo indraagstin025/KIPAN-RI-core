@@ -25,7 +25,7 @@ type AppError struct {
 	Code    int
 	Message string
 	Detail  string
-} 
+}
 
 func (e *AppError) Error() string {
 	if e.Detail != "" {
@@ -47,4 +47,8 @@ func NewNotFoundError(entity string) *AppError {
 // NewForbiddenError membuat AppError forbidden dengan konteks
 func NewForbiddenError(detail string) *AppError {
 	return &AppError{Code: 403, Message: "Akses ditolak", Detail: detail}
+}
+
+func NewConflictError(detail string) *AppError {
+	return &AppError{Code: 409, Message: "Data sudah ada", Detail: detail}
 }

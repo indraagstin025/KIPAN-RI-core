@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS anggota CASCADE;
+DROP TABLE IF EXISTS anggota_nia_sequence CASCADE;
+DROP TABLE IF EXISTS pendaftaran_riwayat CASCADE;
+DROP TABLE IF EXISTS pendaftaran CASCADE;

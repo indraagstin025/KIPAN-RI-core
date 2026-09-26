@@ -40,8 +40,11 @@ func RegisterRoutes(
 	// Dependency wiring (Simple DI manual)
 	// ============================================================
 	userRepo := repository.NewUserRepository(db)
+	pendaftaranRepo := repository.NewPendaftaranRepository(db)
 	authService := service.NewAuthService(cfg, userRepo, rdb)
+	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo)
 	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL)
+	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, pendaftaranRepo, val)
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.AccessTokenSecret, rdb)
 
 	// ============================================================
@@ -49,8 +52,8 @@ func RegisterRoutes(
 	// ============================================================
 	v1 := app.Group("/api/v1")
 
-	// PERBAIKAN: teruskan rdb ke registerAuthRoutes
 	registerAuthRoutes(v1, rdb, authHandler, authMiddleware)
+	registerMembershipRoutes(v1, authMiddleware, pendaftaranHandler)
 	registerAdminRoutes(v1, authMiddleware)
 }
 
@@ -93,6 +96,26 @@ func registerAdminRoutes(v1 fiber.Router, authMiddleware *middleware.AuthMiddlew
 	)
 }
 
+func registerMembershipRoutes(
+	v1 fiber.Router,
+	authMiddleware *middleware.AuthMiddleware,
+	handler *PendaftaranHandler,
+) {
+	public := v1.Group("/pendaftaran")
+	public.Post("", handler.Submit)
+	public.Get("/track/:nomor", handler.TrackStatus)
+	public.Post("/revisi", handler.RequestRevision)
+	public.Get("/kta/:nomor", handler.VerifyKTA)
+
+	adminPendaftaran := v1.Group("/admin/pendaftaran", authMiddleware.Authenticate())
+	adminPendaftaran.Get("", middleware.ScopeWilayah(), handler.ListQueue)
+	adminPendaftaran.Get("/:id", middleware.ScopeWilayah(), handler.Detail)
+	adminPendaftaran.Post("/:id/verifikasi", middleware.ScopeWilayah(), handler.Verify)
+	adminPendaftaran.Post("/:id/perbaikan", middleware.ScopeWilayah(), handler.RequestRevision)
+	adminPendaftaran.Post("/:id/tolak", middleware.ScopeWilayah(), handler.Reject)
+	adminPendaftaran.Post("/:id/setujui", middleware.ScopeWilayah(), handler.Approve)
+}
+
 // ============================================================
 // Test handlers (endpoint dummy untuk verifikasi RBAC/Scope)
 // ============================================================
@@ -107,14 +130,14 @@ func handleMeScope(c *fiber.Ctx) error {
 	scope := middleware.GetWilayahScope(c)
 
 	return response.Success(c, "Akses otorisasi wilayah terverifikasi", fiber.Map{
-		"user_id":           claims.UserID,
-		"email":             claims.Email,
-		"role":              claims.Role,
-		"provinsi_id_claim": claims.ProvinsiID,
-		"kabupaten_id_claim": claims.KabupatenID,
-		"filter_provinsi_id": scope.ProvinsiID,
+		"user_id":             claims.UserID,
+		"email":               claims.Email,
+		"role":                claims.Role,
+		"provinsi_id_claim":   claims.ProvinsiID,
+		"kabupaten_id_claim":  claims.KabupatenID,
+		"filter_provinsi_id":  scope.ProvinsiID,
 		"filter_kabupaten_id": scope.KabupatenID,
-		"is_nasional_scope":  scope.IsNasional(),
+		"is_nasional_scope":   scope.IsNasional(),
 	})
 }
 
