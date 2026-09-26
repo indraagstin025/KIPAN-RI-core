@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS user_refresh_tokens CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS wilayah_kabupaten CASCADE;
+DROP TABLE IF EXISTS wilayah_provinsi CASCADE;
