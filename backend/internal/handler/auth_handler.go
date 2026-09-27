@@ -6,11 +6,30 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
+
+// auditContextOf membangun konteks forensik transport untuk audit trail
+// (RULES 21): IP client (menghormati TrustedProxies), user agent, dan
+// request ID. Murni baca request — bukan keputusan bisnis.
+func auditContextOf(c *fiber.Ctx) domain.AuditContext {
+	return domain.AuditContext{
+		IP:        c.IP(),
+		UserAgent: c.Get("User-Agent"),
+		RequestID: requestIDOf(c),
+	}
+}
+
+func requestIDOf(c *fiber.Ctx) string {
+	if id, ok := c.Locals("requestid").(string); ok && id != "" {
+		return id
+	}
+	return c.GetRespHeader("X-Request-ID")
+}
 
 type AuthHandler struct {
 	authService  service.AuthService
@@ -48,7 +67,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return response.ValidationError(c, "Validasi gagal", errs)
 	}
 
-	refreshToken, resp, err := h.authService.Login(c.Context(), req)
+	refreshToken, resp, err := h.authService.Login(c.Context(), req, auditContextOf(c))
 	if err != nil {
 		return response.FromError(c, err)
 	}
@@ -67,7 +86,7 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 		return response.Unauthorized(c, "Refresh token tidak ditemukan. Silakan login kembali")
 	}
 
-	newRefreshToken, resp, err := h.authService.RefreshToken(c.Context(), tokenStr)
+	newRefreshToken, resp, err := h.authService.RefreshToken(c.Context(), tokenStr, auditContextOf(c))
 	if err != nil {
 		h.clearRefreshTokenCookie(c)
 		return response.FromError(c, err)
@@ -78,6 +97,10 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 }
 
 // Logout mencabut sesi dan membersihkan refresh cookie.
+//
+// SENGAJA tanpa middleware Authenticate(): route didaftarkan publik agar
+// pencabutan via refresh cookie tetap jalan saat access token kedaluwarsa.
+// Selalu kembalikan sukses (idempoten) agar tidak menjadi oracle sesi.
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	tokenStr := c.Cookies("refresh_token")
 
@@ -88,7 +111,7 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 		rawAccess = strings.TrimSpace(parts[1])
 	}
 
-	_ = h.authService.Logout(c.Context(), rawAccess, tokenStr)
+	_ = h.authService.Logout(c.Context(), rawAccess, tokenStr, auditContextOf(c))
 	h.clearRefreshTokenCookie(c)
 
 	return response.Success(c, "Logout berhasil", nil)
@@ -125,7 +148,7 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 		return response.ValidationError(c, "Validasi gagal", errs)
 	}
 
-	if err := h.authService.ChangePassword(c.Context(), claims.UserID, req); err != nil {
+	if err := h.authService.ChangePassword(c.Context(), claims.UserID, req, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
 

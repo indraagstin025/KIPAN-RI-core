@@ -291,7 +291,10 @@ func printSummary(password string, generated bool) {
 		log.Warn().Msg("🔐 Password acak dibuat untuk sesi seeder ini.")
 		log.Warn().Msg("   Password hanya ditampilkan di sini dan TIDAK disimpan di mana pun.")
 		log.Warn().Msg("   Salin sekarang ke password manager sebelum terminal ditutup.")
-		log.Info().Str("password", password).Msg("   → Password akun admin")
+		// M-3 (RULES 12): password TIDAK boleh masuk structured log — field
+		// zerolog bisa diteruskan ke agregator (Loki/ELK/file). Cetak sekali
+		// ke stdout murni yang tidak melewati logger.
+		fmt.Println("   → Password akun admin (tampilkan sekali, jangan commit): " + password)
 	} else {
 		log.Info().
 			Str("env", PasswordEnvVar).

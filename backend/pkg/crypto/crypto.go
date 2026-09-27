@@ -110,6 +110,30 @@ func KTASignature(nia, tanggalAngkat string, anggotaID int, keyHex string) (stri
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
+// VerifyKTASignature memverifikasi signature QR Code KTA (RULES 20).
+// Menghitung ulang HMAC dari data canonical yang sama dengan KTASignature
+// lalu membandingkan dengan hmac.Equal (constant-time) agar tidak bocor
+// informasi via timing side-channel. Semua jalur gagal mengembalikan pesan
+// yang sama agar tidak menjadi oracle (publik cukup tahu VALID/TIDAK).
+func VerifyKTASignature(nia, tanggalAngkat string, anggotaID int, signatureHex, keyHex string) error {
+	expected, err := KTASignature(nia, tanggalAngkat, anggotaID, keyHex)
+	if err != nil {
+		return err
+	}
+	sigBytes, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		return fmt.Errorf("signature KTA tidak valid")
+	}
+	expectedBytes, err := hex.DecodeString(expected)
+	if err != nil {
+		return fmt.Errorf("signature KTA tidak valid")
+	}
+	if !hmac.Equal(sigBytes, expectedBytes) {
+		return fmt.Errorf("signature KTA tidak valid")
+	}
+	return nil
+}
+
 // MaskNIK menyembunyikan 12 digit terakhir NIK untuk tampilan UI.
 // Contoh: "3204123456780001" -> "3204************"
 func MaskNIK(nik string) string {

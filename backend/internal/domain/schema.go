@@ -338,6 +338,15 @@ type ActivityLog struct {
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }
 
+// AuditContext adalah konteks forensik transport (IP, user agent, request ID)
+// yang dipasok handler ke service agar audit trail lengkap tanpa service
+// bergantung pada framework HTTP (domain bebas Fiber — RULES 3).
+type AuditContext struct {
+	IP        string
+	UserAgent string
+	RequestID string
+}
+
 // Notification notifikasi in-app untuk akun admin verifikator
 type Notification struct {
 	ID        int64            `db:"id" json:"id"`

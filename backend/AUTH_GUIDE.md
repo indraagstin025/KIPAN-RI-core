@@ -51,6 +51,13 @@ Akun yang dibuat (email sama dengan `pentest_suite.ps1`):
   - Memakai cookie `refresh_token` (HttpOnly). Body JSON TIDAK diterima.
   - **Fitur Keamanan**: *Refresh Token Rotation (RTR)* dengan deteksi pencurian token (*reuse detection*).
 
+* **`POST /api/v1/auth/logout`**
+  - **Publik (tanpa Bearer wajib)**: mencabut sesi via cookie `refresh_token`
+    bahkan saat access token sudah kedaluwarsa/invalid.
+  - Access token di header (jika ada) dimasukkan ke **Redis Blacklist**
+    secara best-effort; refresh token family dicabut di database.
+  - Selalu mengembalikan sukses (idempoten) dan membersihkan cookie.
+
 ### 2. Autentikasi Terproteksi (Wajib Header `Authorization: Bearer <access_token>`)
 * **`GET /api/v1/auth/me`**
   - Mengembalikan informasi profil user yang sedang login beserta nama wilayahnya.
@@ -59,9 +66,6 @@ Akun yang dibuat (email sama dengan `pentest_suite.ps1`):
   - **Body**: `{"old_password": "<SEED_ADMIN_PASSWORD>", "new_password": "NewSecretPassword2026!"}`
   - Mengubah kata sandi dengan validasi sandi lama dan hashing Argon2id.
   - Semua refresh token milik user dicabut setelah perubahan berhasil.
-
-* **`POST /api/v1/auth/logout`**
-  - Memasukkan access token ke **Redis Blacklist** seketika dan mencabut token family di database.
 
 ### 3. Pengujian Otorisasi & Scoping Wilayah (Protected)
 * **`GET /api/v1/admin/me-scope`**
