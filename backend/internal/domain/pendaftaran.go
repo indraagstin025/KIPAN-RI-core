@@ -74,6 +74,25 @@ type PendaftaranCreateResult struct {
 	Status           string `json:"status"`
 }
 
+// PendaftaranTrackingResponse adalah DTO publik minimal untuk pelacakan
+// mandiri: tanpa nama, kontak, alamat, maupun object key (RULES 12).
+type PendaftaranTrackingResponse struct {
+	NomorPendaftaran string    `json:"nomor_pendaftaran"`
+	Status           string    `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// KTAVerificationResponse adalah DTO publik verifikasi KTA: hanya data yang
+// memang boleh tampil ke publik + verdict. Tanpa kontak, NIK, maupun key.
+type KTAVerificationResponse struct {
+	NIA           string     `json:"nia"`
+	Valid         bool       `json:"valid"`
+	NamaLengkap   string     `json:"nama_lengkap,omitempty"`
+	Status        string     `json:"status,omitempty"`
+	TanggalAngkat *time.Time `json:"tanggal_angkat,omitempty"`
+}
+
 // PendaftaranDetailResponse response detail pendaftaran untuk admin/public.
 type PendaftaranDetailResponse struct {
 	ID               int       `json:"id"`

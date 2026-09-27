@@ -2,25 +2,23 @@ package generator
 
 import (
 	"fmt"
-	"time"
 )
 
 // GenerateRegistrationNumber menghasilkan nomor pendaftaran dengan format
-// REG-YYYYMM-XXXXX.
+// REG-YYYYMM-XXXXX (contoh: REG-202609-00001).
 //
-// Parameter year dipakai sebagai tahun pendaftaran, sedangkan seq dipakai sebagai
-// nomor urut pendaftar dalam bulan berjalan.
-func GenerateRegistrationNumber(year int, seq int) (string, error) {
+// year dan month menentukan periode; seq adalah nomor urut dalam periode
+// tersebut. seq WAJIB dialokasikan dari database (NextRegistrationSequence)
+// agar atomik — jangan pernah menghitung via SELECT MAX di aplikasi.
+func GenerateRegistrationNumber(year, month, seq int) (string, error) {
 	if year <= 0 {
 		return "", fmt.Errorf("tahun pendaftaran tidak valid: %d", year)
 	}
-	if seq < 0 {
-		return "", fmt.Errorf("sequence tidak valid: %d", seq)
+	if month < 1 || month > 12 {
+		return "", fmt.Errorf("bulan pendaftaran tidak valid: %d", month)
 	}
-
-	month := time.Now().Month()
-	if year != time.Now().Year() {
-		month = time.Now().Month()
+	if seq <= 0 {
+		return "", fmt.Errorf("sequence tidak valid: %d", seq)
 	}
 
 	return fmt.Sprintf("REG-%d%02d-%05d", year, month, seq), nil

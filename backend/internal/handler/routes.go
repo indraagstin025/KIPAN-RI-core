@@ -43,12 +43,13 @@ func RegisterRoutes(
 	auditRepo := repository.NewAuditLogRepository(db)
 	pendaftaranRepo := repository.NewPendaftaranRepository(db)
 	authService := service.NewAuthService(cfg, userRepo, rdb, auditRepo)
-	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo)
+	anggotaRepo := repository.NewAnggotaRepository(db)
+	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo)
 	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
 	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
 	secureCookie := cfg.App.Env != "development"
 	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL, secureCookie)
-	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, pendaftaranRepo, val)
+	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, val)
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.AccessTokenSecret, rdb)
 
 	// ============================================================
@@ -57,7 +58,7 @@ func RegisterRoutes(
 	v1 := app.Group("/api/v1")
 
 	registerAuthRoutes(v1, rdb, authHandler, authMiddleware)
-	registerMembershipRoutes(v1, authMiddleware, pendaftaranHandler)
+	registerMembershipRoutes(v1, rdb, authMiddleware, pendaftaranHandler)
 	registerAdminRoutes(v1, authMiddleware)
 }
 
@@ -106,16 +107,32 @@ func registerAdminRoutes(v1 fiber.Router, authMiddleware *middleware.AuthMiddlew
 
 func registerMembershipRoutes(
 	v1 fiber.Router,
+	rdb *redis.Client,
 	authMiddleware *middleware.AuthMiddleware,
 	handler *PendaftaranHandler,
 ) {
+	// Limiter publik (anti enumerasi/spam) + limiter mutasi sensitif.
+	// Redis-backed agar konsisten multi-instance (seperti auth).
+	publicLimiter := middleware.AuthRateLimiter(rdb, 30, 1*time.Minute)
+	adminMutasiLimiter := middleware.AuthRateLimiter(rdb, 20, 1*time.Minute)
+
 	public := v1.Group("/pendaftaran")
+	public.Use(publicLimiter)
 	public.Post("", handler.Submit)
 	public.Get("/track/:nomor", handler.TrackStatus)
-	public.Post("/revisi", handler.RequestRevision)
-	public.Get("/kta/:nomor", handler.VerifyKTA)
+	public.Post("/revisi", handler.RequestRevisionPublic)
+	public.Get("/kta/:nia", handler.VerifyKTA)
 
-	adminPendaftaran := v1.Group("/admin/pendaftaran", authMiddleware.Authenticate())
+	adminPendaftaran := v1.Group("/admin/pendaftaran",
+		authMiddleware.Authenticate(),
+		middleware.RequireRoles(
+			domain.RoleSuperAdmin,
+			domain.RoleAdminNasional,
+			domain.RoleAdminProvinsi,
+			domain.RoleAdminKabupaten,
+		),
+		adminMutasiLimiter,
+	)
 	adminPendaftaran.Get("", middleware.ScopeWilayah(), handler.ListQueue)
 	adminPendaftaran.Get("/:id", middleware.ScopeWilayah(), handler.Detail)
 	adminPendaftaran.Post("/:id/verifikasi", middleware.ScopeWilayah(), handler.Verify)

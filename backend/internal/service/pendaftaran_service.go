@@ -2,9 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/mail"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
@@ -14,123 +20,400 @@ import (
 )
 
 // PendaftaranService berisi business logic pendaftaran calon anggota.
+//
+// Aturan otorisasi (RULES 5, 6, 7): setiap aksi admin menerima actor
+// (identitas server-side dari JWT) dan menegakkan jurisdiction di sini.
+// Handler tidak boleh meneruskan role/wilayah dari client.
 type PendaftaranService interface {
 	ValidateSubmitRequest(req domain.PendaftaranSubmitRequest) error
-	BuildRegistrationNumber(year int) (string, error)
+	BuildRegistrationNumber(ctx context.Context, year, month int) (string, error)
 	GenerateBlindIndex(nik string) (string, error)
 	EncryptNIK(nik string) (string, error)
-	CreateRegistration(ctx context.Context, req domain.PendaftaranSubmitRequest) (*domain.PendaftaranCreateResult, error)
-	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string) error
+	CreateRegistration(ctx context.Context, req domain.PendaftaranSubmitRequest, audit domain.AuditContext) (*domain.PendaftaranCreateResult, error)
+	// GetTracking adalah jalur publik: kembalikan DTO minimal tanpa PII.
+	GetTracking(ctx context.Context, nomor string) (*domain.PendaftaranTrackingResponse, error)
+	// VerifyKTA memverifikasi keaslian KTA: selalu 200 + verdict (tanpa
+	// oracle bedakan NIA tak dikenal vs signature salah).
+	VerifyKTA(ctx context.Context, nia, sig string) (*domain.KTAVerificationResponse, error)
+	// GetDetail adalah jalur admin: tolak objek di luar wilayah aktor.
+	GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Pendaftaran, error)
+	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error
 }
 
 type pendaftaranService struct {
-	cfg  *config.Config
-	repo repository.PendaftaranRepository
+	cfg         *config.Config
+	repo        repository.PendaftaranRepository
+	anggotaRepo repository.AnggotaRepository
+	auditRepo   repository.AuditLogRepository
 }
 
-func NewPendaftaranService(cfg *config.Config, repo ...repository.PendaftaranRepository) PendaftaranService {
-	var selected repository.PendaftaranRepository
-	if len(repo) > 0 {
-		selected = repo[0]
-	}
-	return &pendaftaranService{cfg: cfg, repo: selected}
+func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository) PendaftaranService {
+	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo}
 }
 
 var nipPattern = regexp.MustCompile(`^\d{16}$`)
-var phonePattern = regexp.MustCompile(`^(08|\+62)\d{8,13}$`)
+
+// phonePattern selaras dengan rule id_phone di pkg/validator: prefix
+// 0/62/+62, operator 8, digit kedua bukan 0, total 9-14 digit.
+var phonePattern = regexp.MustCompile(`^(\+62|62|0)8[1-9][0-9]{6,10}$`)
+
+// objectKeyPattern allowlist pola S3 object key (anti path-traversal dan
+// key lintas namespace). Verifikasi keberadaan object (HeadObject) menyusul
+// di batch storage presign.
+var objectKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/_\.\-]{0,254}$`)
+
+// Batas panjang field selaras kolom database (anti-DoS + 422, bukan 500).
+const (
+	maxNamaLen          = 150
+	maxTempatLahirLen   = 100
+	maxAlamatLen        = 2000
+	maxEmailLen         = 255
+	maxWhatsappLen      = 25
+	maxKecamatanDesaLen = 100
+	maxKodePosLen       = 10
+	maxMotivasiLen      = 1000
+	maxBebasLen         = 100
+	minPendaftarAge     = 17
+	maxPendaftarAge     = 100
+)
 
 // ValidateSubmitRequest memastikan payload pendaftaran aman dan valid sebelum masuk DB.
+// Single source of truth validasi server-side (DTO sengaja tanpa tag agar tidak divergen).
 func (s *pendaftaranService) ValidateSubmitRequest(req domain.PendaftaranSubmitRequest) error {
-	if strings.TrimSpace(req.NamaLengkap) == "" {
-		return domain.NewValidationError("Nama lengkap wajib diisi")
+	nama := strings.TrimSpace(req.NamaLengkap)
+	if len([]rune(nama)) < 3 || len([]rune(nama)) > maxNamaLen {
+		return domain.NewValidationError("Nama lengkap wajib 3-150 karakter")
 	}
-	if strings.TrimSpace(req.NIK) == "" || !nipPattern.MatchString(req.NIK) {
+	if containsAngleBracket(nama) {
+		return domain.NewValidationError("Nama lengkap tidak boleh mengandung karakter < atau >")
+	}
+	nik := strings.TrimSpace(req.NIK)
+	if !nipPattern.MatchString(nik) {
 		return domain.NewValidationError("NIK harus berisi 16 digit angka")
 	}
-	if strings.TrimSpace(req.TempatLahir) == "" {
-		return domain.NewValidationError("Tempat lahir wajib diisi")
+	if !isPlausibleNIKDate(nik) {
+		return domain.NewValidationError("Segmen tanggal lahir pada NIK tidak valid")
 	}
-	if _, err := time.Parse(time.RFC3339, req.TanggalLahir); err != nil {
+	tempat := strings.TrimSpace(req.TempatLahir)
+	if tempat == "" || len([]rune(tempat)) > maxTempatLahirLen {
+		return domain.NewValidationError("Tempat lahir wajib diisi (maks 100 karakter)")
+	}
+	if containsAngleBracket(tempat) {
+		return domain.NewValidationError("Tempat lahir tidak boleh mengandung karakter < atau >")
+	}
+	dob, err := time.Parse(time.RFC3339, strings.TrimSpace(req.TanggalLahir))
+	if err != nil {
 		return domain.NewValidationError("Format tanggal lahir tidak valid")
+	}
+	if err := checkPendaftarAge(dob, time.Now()); err != nil {
+		return err
 	}
 	if strings.TrimSpace(req.JenisKelamin) == "" || (req.JenisKelamin != "L" && req.JenisKelamin != "P") {
 		return domain.NewValidationError("Jenis kelamin harus L atau P")
 	}
-	if strings.TrimSpace(req.Alamat) == "" {
-		return domain.NewValidationError("Alamat wajib diisi")
+	alamat := strings.TrimSpace(req.Alamat)
+	if len([]rune(alamat)) < 10 || len([]rune(alamat)) > maxAlamatLen {
+		return domain.NewValidationError("Alamat wajib 10-2000 karakter")
+	}
+	if containsAngleBracket(alamat) {
+		return domain.NewValidationError("Alamat tidak boleh mengandung karakter < atau >")
 	}
 	if req.ProvinsiID <= 0 || req.KabupatenID <= 0 {
 		return domain.NewValidationError("Wilayah provinsi dan kabupaten wajib dipilih")
 	}
-	if strings.TrimSpace(req.Email) == "" || !strings.Contains(req.Email, "@") {
-		return domain.NewValidationError("Email wajib valid")
+	email := strings.TrimSpace(req.Email)
+	if len(email) < 5 || len(email) > maxEmailLen {
+		return domain.NewValidationError("Email wajib 5-255 karakter")
 	}
-	if strings.TrimSpace(req.Whatsapp) == "" || !phonePattern.MatchString(req.Whatsapp) {
-		return domain.NewValidationError("Nomor WhatsApp tidak valid")
+	if _, err := mail.ParseAddress(email); err != nil {
+		return domain.NewValidationError("Format email tidak valid")
 	}
-	if strings.TrimSpace(req.FotoKey) == "" || strings.TrimSpace(req.KTPKey) == "" {
-		return domain.NewValidationError("Foto dan KTP wajib diunggah")
+	wa := strings.TrimSpace(req.Whatsapp)
+	if len(wa) > maxWhatsappLen || !phonePattern.MatchString(wa) {
+		return domain.NewValidationError("Nomor WhatsApp tidak valid (contoh: 081234567890)")
+	}
+	if err := checkObjectKey("Foto", req.FotoKey, true); err != nil {
+		return err
+	}
+	if err := checkObjectKey("KTP", req.KTPKey, true); err != nil {
+		return err
+	}
+	for _, f := range []struct {
+		label string
+		key   string
+	}{
+		{"CV", req.CVKey},
+		{"SK", req.SKKey},
+		{"Surat pernyataan", req.SuratPernyataanKey},
+		{"Surat sehat", req.SuratSehatKey},
+	} {
+		if err := checkObjectKey(f.label, f.key, false); err != nil {
+			return err
+		}
+	}
+	if len([]rune(req.Motivasi)) > maxMotivasiLen {
+		return domain.NewValidationError("Motivasi maksimal 1000 karakter")
+	}
+	if containsAngleBracket(req.Motivasi) {
+		return domain.NewValidationError("Motivasi tidak boleh mengandung karakter < atau >")
+	}
+	for _, f := range []struct {
+		label string
+		val   string
+		limit int
+	}{
+		{"Agama", req.Agama, maxBebasLen},
+		{"Pendidikan", req.Pendidikan, maxBebasLen},
+		{"Pekerjaan", req.Pekerjaan, maxBebasLen},
+		{"Status pribadi", req.StatusPribadi, maxBebasLen},
+		{"Kecamatan", req.Kecamatan, maxKecamatanDesaLen},
+		{"Desa", req.Desa, maxKecamatanDesaLen},
+	} {
+		if len([]rune(strings.TrimSpace(f.val))) > f.limit {
+			return domain.NewValidationError(f.label + " melebihi batas karakter")
+		}
+	}
+	if len(strings.TrimSpace(req.KodePos)) > maxKodePosLen {
+		return domain.NewValidationError("Kode pos maksimal 10 karakter")
 	}
 	return nil
 }
 
-// BuildRegistrationNumber menghasilkan nomor registrasi baru sesuai format business.
-func (s *pendaftaranService) BuildRegistrationNumber(year int) (string, error) {
-	if year <= 0 {
-		return "", domain.NewValidationError("Tahun pendaftaran tidak valid")
+// containsAngleBracket menolak < > pada field plain-text (anti stored-XSS;
+// nama/alamat yang sah tidak pernah mengandung angle bracket).
+func containsAngleBracket(s string) bool {
+	return strings.ContainsAny(s, "<>")
+}
+
+// isPlausibleNIKDate memeriksa kewarasan segmen tanggal NIK (digit 7-12 =
+// DDMMYY; hari 01-31 atau 41-71 untuk perempuan, bulan 01-12). NIK tidak
+// punya checksum resmi sehingga ini batas maksimal yang bisa divalidasi.
+func isPlausibleNIKDate(nik string) bool {
+	if len(nik) != 16 {
+		return false
 	}
-	seq, err := nextSequenceForYear(year)
+	dd := int(nik[6]-'0')*10 + int(nik[7]-'0')
+	mm := int(nik[8]-'0')*10 + int(nik[9]-'0')
+	if mm < 1 || mm > 12 {
+		return false
+	}
+	if (dd >= 1 && dd <= 31) || (dd >= 41 && dd <= 71) {
+		return true
+	}
+	return false
+}
+
+// checkPendaftarAge menolak tanggal masa depan dan umur di luar 17-100 tahun.
+func checkPendaftarAge(dob, now time.Time) error {
+	if dob.After(now) {
+		return domain.NewValidationError("Tanggal lahir tidak boleh di masa depan")
+	}
+	age := now.Year() - dob.Year()
+	if now.YearDay() < dob.YearDay() {
+		age--
+	}
+	if age < minPendaftarAge || age > maxPendaftarAge {
+		return domain.NewValidationError("Usia pendaftar harus 17-100 tahun")
+	}
+	return nil
+}
+
+// checkObjectKey memvalidasi pola S3 object key (allowlist anti traversal).
+func checkObjectKey(label, key string, required bool) error {
+	k := strings.TrimSpace(key)
+	if k == "" {
+		if required {
+			return domain.NewValidationError(label + " wajib diunggah")
+		}
+		return nil
+	}
+	if len(k) > 255 || !objectKeyPattern.MatchString(k) || strings.Contains(k, "..") {
+		return domain.NewValidationError("Object key " + label + " tidak valid")
+	}
+	return nil
+}
+
+// BuildRegistrationNumber mengalokasikan sequence periode dari database lalu
+// memformat nomor REG-YYYYMM-XXXXX. Sequence dari DB menjamin atomisitas.
+func (s *pendaftaranService) BuildRegistrationNumber(ctx context.Context, year, month int) (string, error) {
+	if year <= 0 || month < 1 || month > 12 {
+		return "", domain.NewValidationError("Periode pendaftaran tidak valid")
+	}
+	if s.repo == nil {
+		return "", domain.NewValidationError("Repository pendaftaran belum tersedia")
+	}
+	seq, err := s.repo.NextRegistrationSequence(ctx, year, month)
 	if err != nil {
 		return "", err
 	}
-	return generator.GenerateRegistrationNumber(year, seq)
+	return generator.GenerateRegistrationNumber(year, month, seq)
 }
 
-func nextSequenceForYear(year int) (int, error) {
-	if year <= 0 {
-		return 0, domain.NewValidationError("Tahun pendaftaran tidak valid")
-	}
-	return 1, nil
-}
-
-// GenerateBlindIndex mengubah NIK menjadi blind index HMAC-SHA256 untuk deteksi duplikasi aman.
+// GenerateBlindIndex mengubah NIK ternormalisasi menjadi blind index
+// HMAC-SHA256 untuk deteksi duplikasi aman (RULES 10).
 func (s *pendaftaranService) GenerateBlindIndex(nik string) (string, error) {
 	key, err := s.getBlindIndexKey()
 	if err != nil {
 		return "", err
 	}
-	return crypto.BlindIndex(nik, key)
+	return crypto.BlindIndex(strings.TrimSpace(nik), key)
 }
 
-// EncryptNIK mengenkripsi NIK agar tidak pernah disimpan dalam plaintext.
+// EncryptNIK mengenkripsi NIK ternormalisasi agar tidak pernah disimpan plaintext.
 func (s *pendaftaranService) EncryptNIK(nik string) (string, error) {
 	key, err := s.getAESKey()
 	if err != nil {
 		return "", err
 	}
-	return crypto.EncryptAESGCM(nik, key)
+	return crypto.EncryptAESGCM(strings.TrimSpace(nik), key)
 }
 
-// CreateRegistration placeholder untuk layer repository yang akan dibuat di langkah berikutnya.
-func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.PendaftaranSubmitRequest) (*domain.PendaftaranCreateResult, error) {
+// CreateRegistration menyimpan pendaftaran baru: validasi → cek duplikat NIK
+// di DUA tabel (pendaftaran + anggota) → enkripsi → alokasi nomor → insert
+// atomik beserta riwayat SUBMIT. Duplikat dikembalikan sebagai 409.
+func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.PendaftaranSubmitRequest, audit domain.AuditContext) (*domain.PendaftaranCreateResult, error) {
 	if err := s.ValidateSubmitRequest(req); err != nil {
 		return nil, err
 	}
+	if s.repo == nil {
+		return nil, domain.NewValidationError("Repository pendaftaran belum tersedia")
+	}
 
-	number, err := s.BuildRegistrationNumber(time.Now().Year())
+	nik := strings.TrimSpace(req.NIK)
+	blindIndex, err := s.GenerateBlindIndex(nik)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetByNikHash(ctx, blindIndex); err == nil {
+		return nil, domain.NewConflictError("NIK sudah terdaftar")
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return nil, err
+	}
+	if s.anggotaRepo != nil {
+		exists, err := s.anggotaRepo.ExistsByNikHash(ctx, blindIndex)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, domain.NewConflictError("NIK sudah terdaftar sebagai anggota")
+		}
+	}
+	nikEncrypted, err := s.EncryptNIK(nik)
 	if err != nil {
 		return nil, err
 	}
 
-	return &domain.PendaftaranCreateResult{
-		ID:               1,
-		NomorPendaftaran: number,
-		Status:           string(domain.PendaftaranStatusDiajukan),
+	dob, err := time.Parse(time.RFC3339, strings.TrimSpace(req.TanggalLahir))
+	if err != nil {
+		return nil, domain.NewValidationError("Format tanggal lahir tidak valid")
+	}
+	now := time.Now()
+
+	// Retry sekali untuk perebutan nomor (UNIQUE backstop). 409 final tetap
+	// dikembalikan apa adanya (bisa jadi balapan NIK — tetap konflik valid).
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		seq, err := s.repo.NextRegistrationSequence(ctx, now.Year(), int(now.Month()))
+		if err != nil {
+			return nil, err
+		}
+		number, err := generator.GenerateRegistrationNumber(now.Year(), int(now.Month()), seq)
+		if err != nil {
+			return nil, err
+		}
+		entity := &domain.Pendaftaran{
+			NomorPendaftaran:   number,
+			NamaLengkap:        strings.TrimSpace(req.NamaLengkap),
+			NIKHash:            blindIndex,
+			NIKEncrypted:       nikEncrypted,
+			TempatLahir:        strings.TrimSpace(req.TempatLahir),
+			TanggalLahir:       dob,
+			JenisKelamin:       strings.TrimSpace(req.JenisKelamin),
+			Agama:              strings.TrimSpace(req.Agama),
+			Pendidikan:         strings.TrimSpace(req.Pendidikan),
+			Pekerjaan:          strings.TrimSpace(req.Pekerjaan),
+			StatusPribadi:      strings.TrimSpace(req.StatusPribadi),
+			Alamat:             strings.TrimSpace(req.Alamat),
+			ProvinsiID:         req.ProvinsiID,
+			KabupatenID:        req.KabupatenID,
+			Kecamatan:          strings.TrimSpace(req.Kecamatan),
+			Desa:               strings.TrimSpace(req.Desa),
+			KodePos:            strings.TrimSpace(req.KodePos),
+			Email:              strings.TrimSpace(req.Email),
+			Whatsapp:           strings.TrimSpace(req.Whatsapp),
+			Motivasi:           strings.TrimSpace(req.Motivasi),
+			FotoKey:            strings.TrimSpace(req.FotoKey),
+			KTPKey:             strings.TrimSpace(req.KTPKey),
+			CVKey:              strings.TrimSpace(req.CVKey),
+			SKKey:              strings.TrimSpace(req.SKKey),
+			SuratPernyataanKey: strings.TrimSpace(req.SuratPernyataanKey),
+			SuratSehatKey:      strings.TrimSpace(req.SuratSehatKey),
+			Status:             domain.PendaftaranStatusDiajukan,
+		}
+		if err := s.repo.CreateWithHistory(ctx, entity, "SUBMIT", "Pendaftaran mandiri diterima"); err != nil {
+			var appErr *domain.AppError
+			if errors.As(err, &appErr) && appErr.Code == 409 && attempt == 0 {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+		// Jejak audit: aktor adalah pendaftar publik (tanpa akun).
+		s.auditEvent(ctx, audit, nil, entity.NamaLengkap, "PUBLIK",
+			"pendaftaran", strconv.Itoa(entity.ID), "SUBMIT", nil)
+		return &domain.PendaftaranCreateResult{
+			ID:               entity.ID,
+			NomorPendaftaran: number,
+			Status:           string(domain.PendaftaranStatusDiajukan),
+		}, nil
+	}
+	return nil, lastErr
+}
+
+// GetTracking melayani pelacakan publik dengan DTO minimal: nomor, status,
+// dan timestamp. Tanpa nama, kontak, alamat, maupun object key (RULES 12).
+func (s *pendaftaranService) GetTracking(ctx context.Context, nomor string) (*domain.PendaftaranTrackingResponse, error) {
+	nr := strings.TrimSpace(nomor)
+	if nr == "" || len(nr) > 30 {
+		return nil, domain.NewValidationError("Nomor pendaftaran tidak valid")
+	}
+	if s.repo == nil {
+		return nil, domain.NewValidationError("Repository pendaftaran belum tersedia")
+	}
+	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.PendaftaranTrackingResponse{
+		NomorPendaftaran: item.NomorPendaftaran,
+		Status:          string(item.Status),
+		CreatedAt:       item.CreatedAt,
+		UpdatedAt:       item.UpdatedAt,
 	}, nil
 }
 
-// ProcessApproval memvalidasi transisi status pendaftaran sesuai state machine dan menyimpan riwayat aksi.
-func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string) error {
+// GetDetail melayani admin: tolak objek di luar wilayah kerja aktor (RULES 7).
+func (s *pendaftaranService) GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Pendaftaran, error) {
+	if id <= 0 {
+		return nil, domain.NewValidationError("ID pendaftaran tidak valid")
+	}
+	if s.repo == nil {
+		return nil, domain.NewValidationError("Repository pendaftaran belum tersedia")
+	}
+	item, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
+		return nil, domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
+	}
+	return item, nil
+}
+
+// ProcessApproval memvalidasi otorisasi + jurisdiction + transisi status,
+// lalu mengeksekusi secara atomik beserta riwayat beraktor dan audit trail.
+// actor WAJIB berasal dari JWT terverifikasi (RULES 6), bukan dari client.
+func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error {
 	if id <= 0 {
 		return domain.NewValidationError("ID pendaftaran tidak valid")
 	}
@@ -145,6 +428,9 @@ func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action
 	if err != nil {
 		return err
 	}
+	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
+		return domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
+	}
 
 	targetStatus, ok := mapStatusForAction(action)
 	if !ok {
@@ -153,20 +439,127 @@ func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action
 	if !domain.IsAllowedTransition(item.Status, targetStatus, action) {
 		return domain.NewValidationError("Transisi status tidak sah untuk aksi yang diminta")
 	}
+
+	note := strings.TrimSpace(catatan)
+	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
+	meta := fmt.Sprintf(`{"from":%q,"to":%q}`, string(item.Status), string(targetStatus))
+
 	if action == domain.PendaftaranActionSetujui {
-		_, err := s.repo.IssueMember(ctx, id, time.Now().Year())
-		return err
+		if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.KTASigningKey) == "" {
+			return domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
+		}
+		if _, err := s.repo.IssueMember(ctx, id, time.Now().Year(), s.cfg.Crypto.KTASigningKey); err != nil {
+			return err
+		}
+		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
+			"pendaftaran", strconv.Itoa(id), string(action), &meta)
+		return nil
 	}
 
-	if err := s.repo.UpdateStatus(ctx, id, targetStatus, strings.TrimSpace(catatan)); err != nil {
+	if err := s.repo.UpdateStatusWithHistory(ctx, id, targetStatus, string(action), &actorID, &actorName, &actorRole, note); err != nil {
 		return err
 	}
-
-	if err := s.repo.AppendHistory(ctx, id, string(action), nil, nil, strings.TrimSpace(catatan)); err != nil {
-		return err
-	}
-
+	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
+		"pendaftaran", strconv.Itoa(id), string(action), &meta)
 	return nil
+}
+
+// VerifyKTA memverifikasi keaslian KTA secara kriptografis (RULES 20).
+// NIA tak dikenal dan signature salah menghasilkan verdict valid=false yang
+// sama (tanpa oracle). Hanya input kosong yang ditolak sebagai 422.
+func (s *pendaftaranService) VerifyKTA(ctx context.Context, nia, sig string) (*domain.KTAVerificationResponse, error) {
+	code := strings.TrimSpace(nia)
+	signature := strings.TrimSpace(sig)
+	if code == "" || len(code) > 50 || len(signature) > 128 {
+		return nil, domain.NewValidationError("Parameter verifikasi KTA tidak valid")
+	}
+	if s.anggotaRepo == nil {
+		return nil, domain.NewValidationError("Repository anggota belum tersedia")
+	}
+	member, err := s.anggotaRepo.GetByNIA(ctx, code)
+	if err != nil {
+		// NIA tak dikenal = verdict tidak valid (bukan 404, anti oracle).
+		return &domain.KTAVerificationResponse{NIA: code, Valid: false}, nil
+	}
+	keys := s.ktaVerifyKeys()
+	if len(keys) == 0 {
+		return nil, domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
+	}
+	// Rotasi: coba kunci aktif dulu, lalu kunci sebelumnya. Kartu lama yang
+	// ditandatangani kunci prev tetap valid tanpa migrasi ulang.
+	valid := false
+	for _, k := range keys {
+		if err := crypto.VerifyKTASignature(
+			member.NIA,
+			member.TanggalAngkat.Format("2006-01-02"),
+			member.ID,
+			signature,
+			k,
+		); err == nil {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return &domain.KTAVerificationResponse{NIA: member.NIA, Valid: false}, nil
+	}
+	tgl := member.TanggalAngkat
+	return &domain.KTAVerificationResponse{
+		NIA:           member.NIA,
+		Valid:         true,
+		NamaLengkap:   member.NamaLengkap,
+		Status:        string(member.Status),
+		TanggalAngkat: &tgl,
+	}, nil
+}
+
+// ktaVerifyKeys mengembalikan kunci verifikasi KTA: aktif dulu, lalu kunci
+// rotasi sebelumnya (verify-only). Urutan penting untuk short-circuit.
+func (s *pendaftaranService) ktaVerifyKeys() []string {
+	if s.cfg == nil {
+		return nil
+	}
+	keys := make([]string, 0, 2)
+	if k := strings.TrimSpace(s.cfg.Crypto.KTASigningKey); k != "" {
+		keys = append(keys, k)
+	}
+	if k := strings.TrimSpace(s.cfg.Crypto.KTASigningKeyPrev); k != "" {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// auditEvent mencatat jejak audit best-effort (RULES 21): gagal tulis tidak
+// menggagalkan operasi utama. PII tidak pernah masuk metadata.
+func (s *pendaftaranService) auditEvent(
+	ctx context.Context,
+	audit domain.AuditContext,
+	actorID *string,
+	actorName, actorRole, entity, entityID, action string,
+	metadata *string,
+) {
+	if s.auditRepo == nil {
+		return
+	}
+	e := &domain.ActivityLog{
+		ActorID:    actorID,
+		ActorName:  actorName,
+		ActorRole:  actorRole,
+		IPAddress:  audit.IP,
+		UserAgent:  audit.UserAgent,
+		EntityName: entity,
+		EntityID:   entityID,
+		Action:     action,
+		Metadata:   metadata,
+		RequestID:  audit.RequestID,
+	}
+	if err := s.auditRepo.Create(ctx, e); err != nil {
+		log.Warn().
+			Err(err).
+			Str("action", action).
+			Str("entity_id", entityID).
+			Msg("Gagal mencatat audit trail pendaftaran")
+	}
 }
 
 func mapStatusForAction(action domain.PendaftaranApprovalAction) (domain.PendaftaranStatus, bool) {

@@ -264,8 +264,8 @@ type Anggota struct {
 	SuratSehatKey      string        `db:"surat_sehat_key" json:"surat_sehat_key"`
 	Status             AnggotaStatus `db:"status" json:"status"`
 	Angkatan           string        `db:"angkatan" json:"angkatan"`
-	KTAQRHash          string        `db:"kta_qr_hash" json:"kta_qr_hash"` // HMAC digital signature anti-palsu
-	KTAPDFKey          string        `db:"kta_pdf_key" json:"kta_pdf_key"`
+	KTAQRHash          *string       `db:"kta_qr_hash" json:"kta_qr_hash,omitempty"` // HMAC digital signature anti-palsu
+	KTAPDFKey          *string       `db:"kta_pdf_key" json:"kta_pdf_key,omitempty"`
 	PendaftaranID      *int          `db:"pendaftaran_id" json:"pendaftaran_id,omitempty"`
 	UserID             *string       `db:"user_id" json:"user_id,omitempty"` // Relasi ke akun admin (jika ada)
 	TanggalDaftar      time.Time     `db:"tanggal_daftar" json:"tanggal_daftar"`
@@ -345,6 +345,41 @@ type AuditContext struct {
 	IP        string
 	UserAgent string
 	RequestID string
+}
+
+// ActorContext adalah identitas server-side pemanggil (dari JWT claims
+// terverifikasi — RULES 6: tidak pernah dari body/query client). Service
+// memakai ini untuk RBAC + jurisdiction (RULES 5, 7).
+type ActorContext struct {
+	UserID      string
+	Name        string
+	Role        Role
+	ProvinsiID  *int
+	KabupatenID *int
+}
+
+// CanAccessWilayah menentukan apakah aktor boleh menyentuh objek di
+// (provID, kabID). Murni fungsi domain agar unit-testable tanpa DB.
+// SUPER_ADMIN/NASIONAL: nasional. PROVINSI: cocok provinsi. KABUPATEN:
+// cocok kabupaten (dan provinsi bila aktor memilikinya — data legacy
+// yang yatim provinsi tetap presisi karena ID kabupaten unik nasional).
+func (a ActorContext) CanAccessWilayah(provID, kabID int) bool {
+	switch a.Role {
+	case RoleSuperAdmin, RoleAdminNasional:
+		return true
+	case RoleAdminProvinsi:
+		return a.ProvinsiID != nil && *a.ProvinsiID == provID
+	case RoleAdminKabupaten:
+		if a.KabupatenID == nil || *a.KabupatenID != kabID {
+			return false
+		}
+		if a.ProvinsiID != nil && *a.ProvinsiID != provID {
+			return false
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 // Notification notifikasi in-app untuk akun admin verifikator

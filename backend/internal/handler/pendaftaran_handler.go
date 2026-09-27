@@ -1,31 +1,46 @@
 package handler
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
 // PendaftaranHandler menangani HTTP transport untuk pendaftaran membership.
+// Thin-handler (RULES 4): hanya parse request, ambil identitas server-side,
+// panggil service, format response. Seluruh akses data lewat service.
 type PendaftaranHandler struct {
 	service   service.PendaftaranService
-	repo      repository.PendaftaranRepository
 	validator *validator.CustomValidator
 }
 
 func NewPendaftaranHandler(
 	service service.PendaftaranService,
-	repo repository.PendaftaranRepository,
 	validator *validator.CustomValidator,
 ) *PendaftaranHandler {
-	return &PendaftaranHandler{service: service, repo: repo, validator: validator}
+	return &PendaftaranHandler{service: service, validator: validator}
+}
+
+// actorOf membangun identitas server-side dari JWT terverifikasi (RULES 6).
+// Kembalikan false bila tidak ada claims (route admin wajib Authenticate).
+func actorOf(c *fiber.Ctx) (domain.ActorContext, bool) {
+	claims := middleware.GetUser(c)
+	if claims == nil {
+		return domain.ActorContext{}, false
+	}
+	return domain.ActorContext{
+		UserID:      claims.UserID,
+		Name:        claims.Email,
+		Role:        claims.Role,
+		ProvinsiID:  claims.ProvinsiID,
+		KabupatenID: claims.KabupatenID,
+	}, true
 }
 
 func (h *PendaftaranHandler) Submit(c *fiber.Ctx) error {
@@ -39,7 +54,7 @@ func (h *PendaftaranHandler) Submit(c *fiber.Ctx) error {
 	if err := h.service.ValidateSubmitRequest(req); err != nil {
 		return response.FromError(c, err)
 	}
-	result, err := h.service.CreateRegistration(c.Context(), req)
+	result, err := h.service.CreateRegistration(c.Context(), req, auditContextOf(c))
 	if err != nil {
 		return response.FromError(c, err)
 	}
@@ -51,10 +66,7 @@ func (h *PendaftaranHandler) TrackStatus(c *fiber.Ctx) error {
 	if nomor == "" {
 		return response.BadRequest(c, "Nomor pendaftaran wajib diisi")
 	}
-	if h.repo == nil {
-		return response.InternalServerError(c, "Repository pendaftaran belum terhubung")
-	}
-	item, err := h.repo.GetByNomorPendaftaran(c.Context(), nomor)
+	item, err := h.service.GetTracking(c.Context(), nomor)
 	if err != nil {
 		return response.FromError(c, err)
 	}
@@ -66,10 +78,11 @@ func (h *PendaftaranHandler) Detail(c *fiber.Ctx) error {
 	if err != nil || id <= 0 {
 		return response.BadRequest(c, "ID pendaftaran tidak valid")
 	}
-	if h.repo == nil {
-		return response.InternalServerError(c, "Repository pendaftaran belum terhubung")
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
-	item, err := h.repo.GetByID(c.Context(), id)
+	item, err := h.service.GetDetail(c.Context(), id, actor)
 	if err != nil {
 		return response.FromError(c, err)
 	}
@@ -81,69 +94,61 @@ func (h *PendaftaranHandler) ListQueue(c *fiber.Ctx) error {
 }
 
 func (h *PendaftaranHandler) Verify(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id")
-	if err != nil || id <= 0 {
-		return response.BadRequest(c, "ID pendaftaran tidak valid")
-	}
-	var payload struct {
-		Catatan string `json:"catatan"`
-	}
-	_ = c.BodyParser(&payload)
-	if err := h.service.ProcessApproval(c.Context(), id, domain.PendaftaranActionVerifikasi, payload.Catatan); err != nil {
-		return response.FromError(c, err)
-	}
-	return response.Success(c, "Verifikasi berhasil diproses", nil)
+	return h.processApproval(c, domain.PendaftaranActionVerifikasi, "Verifikasi berhasil diproses")
 }
 
 func (h *PendaftaranHandler) RequestRevision(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id")
-	if err != nil || id <= 0 {
-		return response.BadRequest(c, "ID pendaftaran tidak valid")
-	}
-	var payload struct {
-		Catatan string `json:"catatan"`
-	}
-	_ = c.BodyParser(&payload)
-	if err := h.service.ProcessApproval(c.Context(), id, domain.PendaftaranActionPerbaikan, payload.Catatan); err != nil {
-		return response.FromError(c, err)
-	}
-	return response.Success(c, "Permintaan revisi dikirim", nil)
+	return h.processApproval(c, domain.PendaftaranActionPerbaikan, "Permintaan revisi dikirim")
+}
+
+// RequestRevisionPublic adalah endpoint applicant. Alur revisi mandiri
+// bertoken (magic-link + expiry) dibangun di batch berikutnya; endpoint ini
+// SENGAJA mengembalikan 501 agar tidak menjadi jalur bypass (dulu selalu
+// 400 karena membaca :id yang tidak ada di rute publik).
+func (h *PendaftaranHandler) RequestRevisionPublic(c *fiber.Ctx) error {
+	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
+		"success": false,
+		"code":    "NOT_IMPLEMENTED",
+		"message": "Revisi mandiri via token tersedia di tahap berikutnya",
+	})
 }
 
 func (h *PendaftaranHandler) Reject(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id")
-	if err != nil || id <= 0 {
-		return response.BadRequest(c, "ID pendaftaran tidak valid")
-	}
-	var payload struct {
-		Catatan string `json:"catatan"`
-	}
-	_ = c.BodyParser(&payload)
-	if err := h.service.ProcessApproval(c.Context(), id, domain.PendaftaranActionTolak, payload.Catatan); err != nil {
-		return response.FromError(c, err)
-	}
-	return response.Success(c, "Pendaftaran ditolak", nil)
+	return h.processApproval(c, domain.PendaftaranActionTolak, "Pendaftaran ditolak")
 }
 
 func (h *PendaftaranHandler) Approve(c *fiber.Ctx) error {
+	return h.processApproval(c, domain.PendaftaranActionSetujui, "Pendaftaran disetujui")
+}
+
+func (h *PendaftaranHandler) processApproval(c *fiber.Ctx, action domain.PendaftaranApprovalAction, successMsg string) error {
 	id, err := c.ParamsInt("id")
 	if err != nil || id <= 0 {
 		return response.BadRequest(c, "ID pendaftaran tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
 	var payload struct {
 		Catatan string `json:"catatan"`
 	}
 	_ = c.BodyParser(&payload)
-	if err := h.service.ProcessApproval(c.Context(), id, domain.PendaftaranActionSetujui, payload.Catatan); err != nil {
+	if err := h.service.ProcessApproval(c.Context(), id, action, payload.Catatan, actor, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
-	return response.Success(c, "Pendaftaran disetujui", nil)
+	return response.Success(c, successMsg, nil)
 }
 
 func (h *PendaftaranHandler) VerifyKTA(c *fiber.Ctx) error {
-	nomor := strings.TrimSpace(c.Params("nomor"))
-	if nomor == "" {
-		return response.BadRequest(c, "Nomor registrasi tidak valid")
+	nia := strings.TrimSpace(c.Params("nia"))
+	sig := strings.TrimSpace(c.Query("sig"))
+	if nia == "" {
+		return response.BadRequest(c, "NIA wajib diisi")
 	}
-	return response.Success(c, "Verifikasi KTA", fiber.Map{"nomor": nomor, "status": "valid", "signature": fmt.Sprintf("sig-%s", nomor)})
+	result, err := h.service.VerifyKTA(c.Context(), nia, sig)
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Hasil verifikasi KTA", result)
 }

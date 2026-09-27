@@ -67,6 +67,9 @@ type CryptoConfig struct {
 	AESMasterKey  string
 	BlindIndexKey string
 	KTASigningKey string
+	// KTASigningKeyPrev adalah kunci KTA sebelumnya (opsional, verify-only)
+	// untuk rotasi tanpa mematikan kartu lama. Kosongkan bila tak dipakai.
+	KTASigningKeyPrev string
 }
 
 // Load membaca konfigurasi dari environment + file .env (opsional),
@@ -193,9 +196,10 @@ func Load() (*Config, error) {
 			PresignedTTL:    presignedTTL,
 		},
 		Crypto: CryptoConfig{
-			AESMasterKey:  v.GetString("AES_MASTER_KEY"),
-			BlindIndexKey: v.GetString("BLIND_INDEX_KEY"),
-			KTASigningKey: v.GetString("KTA_SIGNING_KEY"),
+			AESMasterKey:      v.GetString("AES_MASTER_KEY"),
+			BlindIndexKey:     v.GetString("BLIND_INDEX_KEY"),
+			KTASigningKey:     v.GetString("KTA_SIGNING_KEY"),
+			KTASigningKeyPrev: v.GetString("KTA_SIGNING_KEY_PREV"),
 		},
 	}
 
@@ -270,6 +274,29 @@ func validateCryptoKeys(c CryptoConfig) error {
 	}
 	if c.BlindIndexKey == c.KTASigningKey {
 		return fmt.Errorf("BLIND_INDEX_KEY dan KTA_SIGNING_KEY harus berbeda")
+	}
+
+	// Kunci rotasi (opsional): bila diisi wajib 64-char hex valid dan
+	// berbeda dari kunci aktif. Kunci aktif dipakai untuk tanda tangan
+	// baru; kunci lama hanya untuk verifikasi kartu lama.
+	if c.KTASigningKeyPrev != "" {
+		if len(c.KTASigningKeyPrev) != 64 {
+			return fmt.Errorf(
+				"kunci kriptografi KTA_SIGNING_KEY_PREV harus tepat 64 karakter hex (32 byte), saat ini %d karakter",
+				len(c.KTASigningKeyPrev))
+		}
+		if _, err := hex.DecodeString(c.KTASigningKeyPrev); err != nil {
+			return fmt.Errorf(
+				"kunci kriptografi KTA_SIGNING_KEY_PREV bukan hex valid: %w. "+
+					"Generate dengan: openssl rand -hex 32",
+				err)
+		}
+		if c.KTASigningKeyPrev == c.KTASigningKey {
+			return fmt.Errorf("KTA_SIGNING_KEY_PREV harus berbeda dari KTA_SIGNING_KEY")
+		}
+		if c.KTASigningKeyPrev == c.AESMasterKey || c.KTASigningKeyPrev == c.BlindIndexKey {
+			return fmt.Errorf("KTA_SIGNING_KEY_PREV harus berbeda dari kunci lainnya")
+		}
 	}
 
 	return nil
