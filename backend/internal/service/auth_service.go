@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -63,11 +64,11 @@ type UserResponse struct {
 // sebagai return value terpisah. Handler WAJIB menaruhnya di HttpOnly cookie,
 // BUKAN di JSON response.
 type AuthService interface {
-	Login(ctx context.Context, req LoginRequest) (refreshToken string, resp *AuthResponse, err error)
-	RefreshToken(ctx context.Context, rawRefreshToken string) (newRefreshToken string, resp *AuthResponse, err error)
-	Logout(ctx context.Context, rawAccessToken, rawRefreshToken string) error
+	Login(ctx context.Context, req LoginRequest, audit domain.AuditContext) (refreshToken string, resp *AuthResponse, err error)
+	RefreshToken(ctx context.Context, rawRefreshToken string, audit domain.AuditContext) (newRefreshToken string, resp *AuthResponse, err error)
+	Logout(ctx context.Context, rawAccessToken, rawRefreshToken string, audit domain.AuditContext) error
 	GetProfile(ctx context.Context, userID string) (*UserResponse, error)
-	ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest) error
+	ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest, audit domain.AuditContext) error
 }
 
 // ============================================================
@@ -75,9 +76,10 @@ type AuthService interface {
 // ============================================================
 
 type authService struct {
-	cfg      *config.Config
-	userRepo repository.UserRepository
-	rdb      *redis.Client
+	cfg       *config.Config
+	userRepo  repository.UserRepository
+	auditRepo repository.AuditLogRepository
+	rdb       *redis.Client
 }
 
 // Parameter Argon2id sesuai OWASP 2025 & spesifikasi proyek (Rule 9).
@@ -89,11 +91,12 @@ var argon2Params = &argon2id.Params{
 	KeyLength:   32,
 }
 
-func NewAuthService(cfg *config.Config, userRepo repository.UserRepository, rdb *redis.Client) AuthService {
+func NewAuthService(cfg *config.Config, userRepo repository.UserRepository, rdb *redis.Client, auditRepo repository.AuditLogRepository) AuthService {
 	return &authService{
-		cfg:      cfg,
-		userRepo: userRepo,
-		rdb:      rdb,
+		cfg:       cfg,
+		userRepo:  userRepo,
+		auditRepo: auditRepo,
+		rdb:       rdb,
 	}
 }
 
@@ -101,7 +104,7 @@ func NewAuthService(cfg *config.Config, userRepo repository.UserRepository, rdb 
 // LOGIN
 // ============================================================
 
-func (s *authService) Login(ctx context.Context, req LoginRequest) (string, *AuthResponse, error) {
+func (s *authService) Login(ctx context.Context, req LoginRequest, audit domain.AuditContext) (string, *AuthResponse, error) {
 	user, err := s.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		// Timing equalization (fix C-9): jalankan operasi argon2id setara agar
@@ -128,14 +131,20 @@ func (s *authService) Login(ctx context.Context, req LoginRequest) (string, *Aut
 	}
 
 	familyID := uuid.NewString()
-	return s.issueNewSession(ctx, user, familyID)
+	rawRefresh, resp, err := s.issueNewSession(ctx, user, familyID)
+	if err != nil {
+		return "", nil, err
+	}
+	s.auditEvent(ctx, audit, user.ID, user.Name, string(user.Role),
+		"users", user.ID, "LOGIN", nil)
+	return rawRefresh, resp, nil
 }
 
 // ============================================================
 // REFRESH TOKEN — Token Rotation (Atomic & Safe)
 // ============================================================
 
-func (s *authService) RefreshToken(ctx context.Context, rawRefreshToken string) (string, *AuthResponse, error) {
+func (s *authService) RefreshToken(ctx context.Context, rawRefreshToken string, audit domain.AuditContext) (string, *AuthResponse, error) {
 	tokenHash := crypto.HashToken(rawRefreshToken)
 	tokenRecord, err := s.userRepo.FindRefreshToken(ctx, tokenHash)
 	if err != nil {
@@ -150,6 +159,10 @@ func (s *authService) RefreshToken(ctx context.Context, rawRefreshToken string) 
 			Str("user_id", tokenRecord.UserID).
 			Str("family_id", tokenRecord.FamilyID).
 			Msg("Refresh token reuse terdeteksi — seluruh sesi family dicabut")
+		name, role := s.resolveActor(ctx, tokenRecord.UserID)
+		reuseMeta := fmt.Sprintf(`{"family_id":%q,"revoked":true}`, tokenRecord.FamilyID)
+		s.auditEvent(ctx, audit, tokenRecord.UserID, name, role,
+			"users", tokenRecord.UserID, "TOKEN_REUSE", &reuseMeta)
 		return "", nil, domain.NewForbiddenError(
 			"Token refresh terindikasi digunakan ulang. Sesi Anda dihentikan demi keamanan.")
 	}
@@ -171,19 +184,37 @@ func (s *authService) RefreshToken(ctx context.Context, rawRefreshToken string) 
 
 	// Fix C-6: rotasi atomik — revoke token lama + insert token baru
 	// dalam satu transaksi DB. Jika salah satu gagal, rollback total.
-	return s.rotateSession(ctx, user, tokenRecord)
+	newRefresh, resp, err := s.rotateSession(ctx, user, tokenRecord, audit)
+	if err != nil {
+		return "", nil, err
+	}
+	s.auditEvent(ctx, audit, user.ID, user.Name, string(user.Role),
+		"users", user.ID, "REFRESH", nil)
+	return newRefresh, resp, nil
 }
 
 // ============================================================
 // LOGOUT
 // ============================================================
 
-func (s *authService) Logout(ctx context.Context, rawAccessToken, rawRefreshToken string) error {
+func (s *authService) Logout(ctx context.Context, rawAccessToken, rawRefreshToken string, audit domain.AuditContext) error {
+	// Identifikasi aktor best-effort dari refresh cookie (logout publik —
+	// access token bisa saja sudah kedaluwarsa). Tanpa aktor teridentifikasi,
+	// sesi tetap dicabut tetapi tidak ada baris audit yang ditulis.
+	actorID := ""
+	if rawRefreshToken != "" {
+		if rec, err := s.userRepo.FindRefreshToken(ctx, crypto.HashToken(rawRefreshToken)); err == nil && rec != nil {
+			actorID = rec.UserID
+		}
+	}
 	s.revokeRefreshFamily(ctx, rawRefreshToken)
 	s.blacklistAccessToken(ctx, rawAccessToken)
+	if actorID != "" {
+		name, role := s.resolveActor(ctx, actorID)
+		s.auditEvent(ctx, audit, actorID, name, role, "users", actorID, "LOGOUT", nil)
+	}
 	return nil
 }
-
 
 func (s *authService) revokeRefreshFamily(ctx context.Context, rawRefreshToken string) {
 	if rawRefreshToken == "" {
@@ -247,7 +278,7 @@ func (s *authService) GetProfile(ctx context.Context, userID string) (*UserRespo
 // CHANGE PASSWORD
 // ============================================================
 
-func (s *authService) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest) error {
+func (s *authService) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest, audit domain.AuditContext) error {
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return domain.ErrUserNotFound
@@ -279,7 +310,56 @@ func (s *authService) ChangePassword(ctx context.Context, userID string, req Cha
 			Msg("Gagal mencabut seluruh sesi setelah ganti password")
 	}
 
+	changeMeta := `{"event":"password_change","sessions_revoked":true}`
+	s.auditEvent(ctx, audit, u.ID, u.Name, string(u.Role),
+		"users", userID, "UPDATE", &changeMeta)
+
 	return nil
+}
+
+// auditEvent mencatat jejak audit secara best-effort (RULES 21).
+// Kegagalan tulis TIDAK menggagalkan operasi utama (availability) —
+// hanya diperingatkan di log server. PII tidak pernah masuk metadata;
+// pemanggil wajib memasking sebelum memanggil helper ini.
+func (s *authService) auditEvent(
+	ctx context.Context,
+	audit domain.AuditContext,
+	userID, actorName, actorRole, entity, entityID, action string,
+	metadata *string,
+) {
+	if s.auditRepo == nil {
+		return
+	}
+	e := &domain.ActivityLog{
+		ActorID:    &userID,
+		ActorName:  actorName,
+		ActorRole:  actorRole,
+		IPAddress:  audit.IP,
+		UserAgent:  audit.UserAgent,
+		EntityName: entity,
+		EntityID:   entityID,
+		Action:     action,
+		Metadata:   metadata,
+		RequestID:  audit.RequestID,
+	}
+	if err := s.auditRepo.Create(ctx, e); err != nil {
+		log.Warn().
+			Err(err).
+			Str("action", action).
+			Str("entity_id", entityID).
+			Msg("Gagal mencatat audit trail")
+	}
+}
+
+// resolveActor mengambil nama/role aktor secara best-effort untuk audit.
+// Jika user sudah terhapus, kembalikan placeholder agar baris audit tetap
+// tercatat (foreign key actor_id ON DELETE SET NULL menjaga integritas).
+func (s *authService) resolveActor(ctx context.Context, userID string) (name, role string) {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return "Tidak diketahui", "UNKNOWN"
+	}
+	return u.Name, string(u.Role)
 }
 
 // ============================================================
@@ -320,6 +400,7 @@ func (s *authService) rotateSession(
 	ctx context.Context,
 	user *domain.User,
 	oldRecord *repository.RefreshTokenRecord,
+	audit domain.AuditContext,
 ) (string, *AuthResponse, error) {
 	accessToken, expiry, err := s.generateAccessToken(user)
 	if err != nil {
@@ -337,6 +418,24 @@ func (s *authService) rotateSession(
 		oldRecord.FamilyID,
 		time.Now().Add(refreshExpiry),
 	); err != nil {
+		// Race terdeteksi: token yang sama ternyata sudah dirotasi oleh request
+		// paralel. Ini pola khas session cloning (satu token dipakai dua pihak),
+		// sehingga seluruh family dicabut — sama seperti penanganan reuse di
+		// RefreshToken. Tanpa cabang ini, kegagalan CAS akan tampak seperti
+		// error internal biasa dan sesi penyerang tetap hidup.
+		if errors.Is(err, domain.ErrTokenAlreadyRotated) {
+			_ = s.userRepo.RevokeFamilyTokens(ctx, oldRecord.FamilyID)
+			log.Warn().
+				Str("user_id", user.ID).
+				Str("family_id", oldRecord.FamilyID).
+				Msg("Rotasi refresh token paralel terdeteksi — seluruh sesi family dicabut")
+			reuseMeta := fmt.Sprintf(`{"family_id":%q,"revoked":true}`, oldRecord.FamilyID)
+			s.auditEvent(ctx, audit, user.ID, user.Name, string(user.Role),
+				"users", user.ID, "TOKEN_REUSE", &reuseMeta)
+			return "", nil, domain.NewForbiddenError(
+				"Token refresh terindikasi digunakan ulang. Sesi Anda dihentikan demi keamanan.")
+		}
+
 		return "", nil, fmt.Errorf("gagal rotasi refresh token: %w", err)
 	}
 

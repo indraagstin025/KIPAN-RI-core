@@ -4,9 +4,9 @@
 run:
 	air
 
-# Build binary production
+# Build binary production (SATU entrypoint: ./cmd/api)
 build:
-	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/kipan-api main.go
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/kipan-api ./cmd/api
 
 # Jalankan semua test
 test:

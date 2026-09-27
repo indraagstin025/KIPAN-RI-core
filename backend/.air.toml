@@ -1,0 +1,19 @@
+# .air.toml — konfigurasi hot reload untuk pengembangan lokal.
+# Dipakai oleh `make run` (butuh: go install github.com/air-verse/air@latest).
+# SATU entrypoint: ./cmd/api (jangan arahkan ke main.go root — file itu sudah dihapus).
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/kipan-api ./cmd/api"
+  bin = "./tmp/kipan-api"
+  full_bin = "./tmp/kipan-api"
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  exclude_dir = ["tmp", "vendor", "bin", "uploads", "migrations"]
+  delay = 1000
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

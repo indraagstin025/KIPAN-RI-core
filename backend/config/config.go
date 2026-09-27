@@ -288,6 +288,15 @@ func validateAuth(a AuthConfig) error {
 	if a.AccessTokenTTL <= 0 {
 		return fmt.Errorf("AUTH_ACCESS_TOKEN_TTL harus > 0")
 	}
+	// Batas atas fail-fast (M-2): access token wajib berumur pendek agar
+	// jendela penyalahgunaan token curian tetap kecil dan blacklist Redis
+	// tidak membengkak. Default proyek 15 menit; toleransi maks 30 menit.
+	if a.AccessTokenTTL > 30*time.Minute {
+		return fmt.Errorf(
+			"AUTH_ACCESS_TOKEN_TTL terlalu lama: %s, maksimum 30m "+
+				"(gunakan refresh token rotation untuk sesi panjang)",
+			a.AccessTokenTTL)
+	}
 	if a.RefreshTokenTTL <= 0 {
 		return fmt.Errorf("AUTH_REFRESH_TOKEN_TTL harus > 0")
 	}

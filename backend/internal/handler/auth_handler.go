@@ -6,30 +6,52 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
+// auditContextOf membangun konteks forensik transport untuk audit trail
+// (RULES 21): IP client (menghormati TrustedProxies), user agent, dan
+// request ID. Murni baca request — bukan keputusan bisnis.
+func auditContextOf(c *fiber.Ctx) domain.AuditContext {
+	return domain.AuditContext{
+		IP:        c.IP(),
+		UserAgent: c.Get("User-Agent"),
+		RequestID: requestIDOf(c),
+	}
+}
+
+func requestIDOf(c *fiber.Ctx) string {
+	if id, ok := c.Locals("requestid").(string); ok && id != "" {
+		return id
+	}
+	return c.GetRespHeader("X-Request-ID")
+}
+
 type AuthHandler struct {
-	authService service.AuthService
-	validator   *validator.CustomValidator
-	refreshTTL  time.Duration
+	authService  service.AuthService
+	validator    *validator.CustomValidator
+	refreshTTL   time.Duration
+	secureCookie bool
 }
 
 func NewAuthHandler(
 	authService service.AuthService,
 	validator *validator.CustomValidator,
 	refreshTTL time.Duration,
+	secureCookie bool,
 ) *AuthHandler {
 	if refreshTTL <= 0 {
 		refreshTTL = 7 * 24 * time.Hour
 	}
 	return &AuthHandler{
-		authService: authService,
-		validator:   validator,
-		refreshTTL:  refreshTTL,
+		authService:  authService,
+		validator:    validator,
+		refreshTTL:   refreshTTL,
+		secureCookie: secureCookie,
 	}
 }
 
@@ -45,12 +67,12 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		return response.ValidationError(c, "Validasi gagal", errs)
 	}
 
-	refreshToken, resp, err := h.authService.Login(c.Context(), req)
+	refreshToken, resp, err := h.authService.Login(c.Context(), req, auditContextOf(c))
 	if err != nil {
 		return response.FromError(c, err)
 	}
 
-	setRefreshTokenCookie(c, refreshToken, h.refreshTTL)
+	h.setRefreshTokenCookie(c, refreshToken, h.refreshTTL)
 	return response.Success(c, "Login berhasil", resp)
 }
 
@@ -64,17 +86,21 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 		return response.Unauthorized(c, "Refresh token tidak ditemukan. Silakan login kembali")
 	}
 
-	newRefreshToken, resp, err := h.authService.RefreshToken(c.Context(), tokenStr)
+	newRefreshToken, resp, err := h.authService.RefreshToken(c.Context(), tokenStr, auditContextOf(c))
 	if err != nil {
-		clearRefreshTokenCookie(c)
+		h.clearRefreshTokenCookie(c)
 		return response.FromError(c, err)
 	}
 
-	setRefreshTokenCookie(c, newRefreshToken, h.refreshTTL)
+	h.setRefreshTokenCookie(c, newRefreshToken, h.refreshTTL)
 	return response.Success(c, "Token berhasil diperbarui", resp)
 }
 
 // Logout mencabut sesi dan membersihkan refresh cookie.
+//
+// SENGAJA tanpa middleware Authenticate(): route didaftarkan publik agar
+// pencabutan via refresh cookie tetap jalan saat access token kedaluwarsa.
+// Selalu kembalikan sukses (idempoten) agar tidak menjadi oracle sesi.
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	tokenStr := c.Cookies("refresh_token")
 
@@ -85,8 +111,8 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 		rawAccess = strings.TrimSpace(parts[1])
 	}
 
-	_ = h.authService.Logout(c.Context(), rawAccess, tokenStr)
-	clearRefreshTokenCookie(c)
+	_ = h.authService.Logout(c.Context(), rawAccess, tokenStr, auditContextOf(c))
+	h.clearRefreshTokenCookie(c)
 
 	return response.Success(c, "Logout berhasil", nil)
 }
@@ -122,13 +148,13 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 		return response.ValidationError(c, "Validasi gagal", errs)
 	}
 
-	if err := h.authService.ChangePassword(c.Context(), claims.UserID, req); err != nil {
+	if err := h.authService.ChangePassword(c.Context(), claims.UserID, req, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
 
 	// Password berubah → seluruh sesi lain dicabut oleh service.
 	// Hapus juga cookie di browser ini agar user login ulang segar.
-	clearRefreshTokenCookie(c)
+	h.clearRefreshTokenCookie(c)
 
 	return response.Success(c,
 		"Kata sandi berhasil diperbarui. Seluruh sesi lain telah dihentikan, silakan login kembali.", nil)
@@ -140,15 +166,17 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 
 // setRefreshTokenCookie menyimpan refresh token di HttpOnly cookie.
 // Path dibatasi ke endpoint /auth agar cookie tidak dikirim ke request lain.
-func setRefreshTokenCookie(c *fiber.Ctx, token string, ttl time.Duration) {
+//
+// KEAMANAN (flag Secure — RULES #8):
+// Nilai flag Secure diambil dari konfigurasi server (APP_ENV != development),
+// BUKAN dari header request (X-Forwarded-Proto) yang bisa dipalsukan klien.
+// Di belakang reverse proxy (Caddy/Nginx), c.Protocol() selalu "http" karena
+// TLS di-terminate di proxy — sehingga keputusan berbasis header tidak bisa
+// dipercaya dan cookie berisiko terbit tanpa Secure (kirim via HTTP polos).
+func (h *AuthHandler) setRefreshTokenCookie(c *fiber.Ctx, token string, ttl time.Duration) {
 	if ttl <= 0 {
 		ttl = 7 * 24 * time.Hour
 	}
-
-	// Deteksi HTTPS di belakang reverse proxy (Caddy/Nginx).
-	// X-Forwarded-Proto di-set oleh proxy yang terminate TLS.
-	isHTTPS := c.Protocol() == "https" ||
-		strings.EqualFold(c.Get("X-Forwarded-Proto"), "https")
 
 	c.Cookie(&fiber.Cookie{
 		Name:     "refresh_token",
@@ -156,20 +184,20 @@ func setRefreshTokenCookie(c *fiber.Ctx, token string, ttl time.Duration) {
 		Expires:  time.Now().Add(ttl),
 		MaxAge:   int(ttl.Seconds()),
 		HTTPOnly: true,
-		Secure:   isHTTPS,
+		Secure:   h.secureCookie,
 		SameSite: "Strict",
 		Path:     "/api/v1/auth",
 	})
 }
 
-func clearRefreshTokenCookie(c *fiber.Ctx) {
+func (h *AuthHandler) clearRefreshTokenCookie(c *fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{
 		Name:     "refresh_token",
 		Value:    "",
 		Expires:  time.Now().Add(-1 * time.Hour),
 		MaxAge:   -1,
 		HTTPOnly: true,
-		Secure:   c.Protocol() == "https",
+		Secure:   h.secureCookie,
 		SameSite: "Strict",
 		Path:     "/api/v1/auth",
 	})

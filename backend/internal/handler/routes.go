@@ -40,10 +40,14 @@ func RegisterRoutes(
 	// Dependency wiring (Simple DI manual)
 	// ============================================================
 	userRepo := repository.NewUserRepository(db)
+	auditRepo := repository.NewAuditLogRepository(db)
 	pendaftaranRepo := repository.NewPendaftaranRepository(db)
-	authService := service.NewAuthService(cfg, userRepo, rdb)
+	authService := service.NewAuthService(cfg, userRepo, rdb, auditRepo)
 	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo)
-	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL)
+	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
+	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
+	secureCookie := cfg.App.Env != "development"
+	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL, secureCookie)
 	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, pendaftaranRepo, val)
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.AccessTokenSecret, rdb)
 
@@ -76,7 +80,11 @@ func registerAuthRoutes(
 
 	auth.Post("/login", authLimiter, loginAttemptLimiter, authHandler.Login)
 	auth.Post("/refresh", authLimiter, authHandler.RefreshToken)
-	auth.Post("/logout", authMiddleware.Authenticate(), authHandler.Logout)
+	// Logout SENGAJA tanpa Authenticate(): sesi harus bisa dicabut via refresh
+	// cookie bahkan saat access token sudah kedaluwarsa/invalid. Service
+	// mencabut refresh family + blacklist access secara best-effort dan handler
+	// selalu mengembalikan sukses (idempoten, anti-oracle).
+	auth.Post("/logout", authLimiter, authHandler.Logout)
 	auth.Get("/me", authMiddleware.Authenticate(), authHandler.Me)
 	auth.Put("/password", authMiddleware.Authenticate(), authHandler.ChangePassword)
 }

@@ -21,28 +21,22 @@ SELECT p.id, k.kode, k.nama FROM wilayah_provinsi p,
 WHERE p.kode = k.prov_kode
 ON CONFLICT (kode) DO NOTHING;
 
--- 2. SEED AKUN PENGUJIAN 4 LEVEL RBAC
--- Password default semua akun pengujian: AdminKipan2026!
--- Hash Argon2id: $argon2id$v=19$m=65536,t=1,p=12$0FOIel2hzFOFaiWLOKQ0Gg$OM4fW0400Z1hvOX7A/c7PiuqmNhywirXBfj55NPoDNE
-
--- Level 1: SUPER_ADMIN
-INSERT INTO users (email, password_hash, name, role, status) VALUES
-('superadmin@kipan.id', '$argon2id$v=19$m=65536,t=1,p=12$0FOIel2hzFOFaiWLOKQ0Gg$OM4fW0400Z1hvOX7A/c7PiuqmNhywirXBfj55NPoDNE', 'Super Administrator Pusat', 'SUPER_ADMIN', 'Aktif')
-ON CONFLICT DO NOTHING;
-
--- Level 2: ADMIN_NASIONAL
-INSERT INTO users (email, password_hash, name, role, status) VALUES
-('adminnasional@kipan.id', '$argon2id$v=19$m=65536,t=1,p=12$0FOIel2hzFOFaiWLOKQ0Gg$OM4fW0400Z1hvOX7A/c7PiuqmNhywirXBfj55NPoDNE', 'Sekretariat DPP KIPAN Nasional', 'ADMIN_NASIONAL', 'Aktif')
-ON CONFLICT DO NOTHING;
-
--- Level 3: ADMIN_PROVINSI (Jawa Barat)
-INSERT INTO users (email, password_hash, name, role, status, provinsi_id)
-SELECT 'adminprov.jabar@kipan.id', '$argon2id$v=19$m=65536,t=1,p=12$0FOIel2hzFOFaiWLOKQ0Gg$OM4fW0400Z1hvOX7A/c7PiuqmNhywirXBfj55NPoDNE', 'Admin DPD KIPAN Jawa Barat', 'ADMIN_PROVINSI', 'Aktif', p.id
-FROM wilayah_provinsi p WHERE p.kode = '32'
-ON CONFLICT DO NOTHING;
-
--- Level 4: ADMIN_KABUPATEN (Kota Bandung)
-INSERT INTO users (email, password_hash, name, role, status, provinsi_id, kabupaten_id)
-SELECT 'adminkab.bandung@kipan.id', '$argon2id$v=19$m=65536,t=1,p=12$0FOIel2hzFOFaiWLOKQ0Gg$OM4fW0400Z1hvOX7A/c7PiuqmNhywirXBfj55NPoDNE', 'Admin DPC KIPAN Kota Bandung', 'ADMIN_KABUPATEN', 'Aktif', k.provinsi_id, k.id
-FROM wilayah_kabupaten k WHERE k.kode = '3273'
-ON CONFLICT DO NOTHING;
+-- 2. AKUN ADMIN - SENGAJA TIDAK DI-SEED LEWAT MIGRASI
+-- ------------------------------------------------------------
+-- SEBELUMNYA blok ini menyisipkan 4 akun admin dengan SATU password
+-- default yang tertulis terbuka di repository. Itu adalah backdoor
+-- kredensial produksi (temuan CRITICAL audit Fase 1, RULES #9), karena
+-- `make migrate-up` juga dijalankan di server produksi sehingga akun
+-- tersebut langsung aktif dan dapat diambil alih siapa pun.
+--
+-- MIGRASI BUKAN JALUR DISTRIBUSI KREDENSIAL. Akun admin sekarang dibuat
+-- lewat seeder terpisah yang WAJIB diberi password eksplisit dan hanya
+-- boleh berjalan di environment development/test/local:
+--
+--     cd backend
+--     $env:SEED_ADMIN_PASSWORD='<password-kuat>'    (PowerShell)
+--     export SEED_ADMIN_PASSWORD='<password-kuat>'  (bash)
+--     go run ./cmd/seed
+--
+-- Akun seed lama yang sudah terlanjur ada di database dinonaktifkan oleh
+-- migrasi 000004_harden_fase1_security.up.sql.

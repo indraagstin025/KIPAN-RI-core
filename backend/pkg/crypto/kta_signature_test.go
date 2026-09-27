@@ -17,11 +17,11 @@ func TestKTASignatureRoundTrip(t *testing.T) {
 		t.Fatal("signature should not be empty")
 	}
 
-	if !VerifyKTASignature(nia, tanggalAngkat, anggotaID, sig, secret) {
+	if err := VerifyKTASignature(nia, tanggalAngkat, anggotaID, sig, secret); err != nil {
 		t.Fatal("expected valid KTA signature to verify")
 	}
 
-	if VerifyKTASignature(nia, tanggalAngkat, anggotaID+1, sig, secret) {
+	if err := VerifyKTASignature(nia, tanggalAngkat, anggotaID+1, sig, secret); err == nil {
 		t.Fatal("signature should fail when payload changes")
 	}
 }
