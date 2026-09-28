@@ -93,6 +93,39 @@ type KTAVerificationResponse struct {
 	TanggalAngkat *time.Time `json:"tanggal_angkat,omitempty"`
 }
 
+// PendaftaranQueueItem adalah proyeksi antrean admin: tanpa PII kontak,
+// tanpa NIK, tanpa object key. Detail lengkap hanya di endpoint :id.
+type PendaftaranQueueItem struct {
+	ID               int       `db:"id" json:"id"`
+	NomorPendaftaran string    `db:"nomor_pendaftaran" json:"nomor_pendaftaran"`
+	NamaLengkap      string    `db:"nama_lengkap" json:"nama_lengkap"`
+	Status           string    `db:"status" json:"status"`
+	ProvinsiID       int       `db:"provinsi_id" json:"provinsi_id"`
+	KabupatenID      int       `db:"kabupaten_id" json:"kabupaten_id"`
+	CreatedAt        time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// RevisionSubmitRequest adalah payload revisi mandiri applicant: token
+// rahasia + dokumen pengganti. Nomor registrasi lewat path.
+type RevisionSubmitRequest struct {
+	Token              string `json:"token"`
+	FotoKey            string `json:"foto_key,omitempty"`
+	KTPKey             string `json:"ktp_key,omitempty"`
+	CVKey              string `json:"cv_key,omitempty"`
+	SKKey              string `json:"sk_key,omitempty"`
+	SuratPernyataanKey string `json:"surat_pernyataan_key,omitempty"`
+	SuratSehatKey      string `json:"surat_sehat_key,omitempty"`
+	Catatan            string `json:"catatan,omitempty"`
+}
+
+// RevisionTokenResponse mengembalikan token revisi mentah SEKALI (tidak
+// disimpan di mana pun selain hash-nya). Idealnya disalurkan via WA/email.
+type RevisionTokenResponse struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 // PendaftaranDetailResponse response detail pendaftaran untuk admin/public.
 type PendaftaranDetailResponse struct {
 	ID               int       `json:"id"`

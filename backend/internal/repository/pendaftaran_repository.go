@@ -28,7 +28,18 @@ type PendaftaranRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.Pendaftaran, error)
 	GetByNomorPendaftaran(ctx context.Context, nomor string) (*domain.Pendaftaran, error)
 	GetByNikHash(ctx context.Context, nikHash string) (*domain.Pendaftaran, error)
-	ListByWilayah(ctx context.Context, provinsiID, kabupatenID *int, limit, offset int) ([]domain.Pendaftaran, error)
+	// ListQueue mengambil antrean terfilter wilayah + status dengan
+	// proyeksi kolom non-PII. limit dibatasi 1-100 oleh implementasi.
+	ListQueue(ctx context.Context, provinsiID, kabupatenID *int, status string, limit, offset int) ([]domain.PendaftaranQueueItem, error)
+	// CountQueue menghitung total baris filter yang sama untuk meta pagination.
+	CountQueue(ctx context.Context, provinsiID, kabupatenID *int, status string) (int, error)
+	// SetRevisiToken menyimpan hash token revisi + expiry (token mentah
+	// tidak pernah disimpan).
+	SetRevisiToken(ctx context.Context, id int, tokenHash string, expiresAt time.Time) error
+	// SubmitRevisionTx mengganti dokumen + status DIAJUKAN + hapus token
+	// dalam satu transaksi. rows==0 berarti token salah/kedaluwarsa atau
+	// state bukan PERBAIKAN (tanpa oracle: satu error generik).
+	SubmitRevisionTx(ctx context.Context, id int, tokenHash string, keys map[string]string, catatan string) error
 	UpdateStatus(ctx context.Context, id int, status domain.PendaftaranStatus, catatan string) error
 	AppendHistory(ctx context.Context, pendaftaranID int, aksi string, actorID, actorName, actorRole *string, catatan string) error
 	// UpdateStatusWithHistory mengubah status + mencatat riwayat beraktor
@@ -295,48 +306,142 @@ func (r *pendaftaranRepo) GetByNikHash(ctx context.Context, nikHash string) (*do
 	return &p, nil
 }
 
-func (r *pendaftaranRepo) ListByWilayah(ctx context.Context, provinsiID, kabupatenID *int, limit, offset int) ([]domain.Pendaftaran, error) {
-	params := []interface{}{}
+// queueWhere membangun klausa WHERE + args dengan placeholder $n terindeks.
+// Filter wilayah berasal dari ActorContext server-side (bukan client).
+func queueWhere(provinsiID, kabupatenID *int, status string) (string, []interface{}) {
 	where := []string{"1 = 1"}
-
+	args := []interface{}{}
 	if provinsiID != nil {
-		where = append(where, "provinsi_id = ?")
-		params = append(params, *provinsiID)
+		args = append(args, *provinsiID)
+		where = append(where, fmt.Sprintf("provinsi_id = $%d", len(args)))
 	}
 	if kabupatenID != nil {
-		where = append(where, "kabupaten_id = ?")
-		params = append(params, *kabupatenID)
+		args = append(args, *kabupatenID)
+		where = append(where, fmt.Sprintf("kabupaten_id = $%d", len(args)))
 	}
+	if s := strings.TrimSpace(status); s != "" {
+		args = append(args, s)
+		where = append(where, fmt.Sprintf("status = $%d", len(args)))
+	}
+	return strings.Join(where, " AND "), args
+}
+
+const queueColumns = `id, nomor_pendaftaran, nama_lengkap, status,
+	provinsi_id, kabupaten_id, created_at, updated_at`
+
+func boundLimit(limit int) int {
 	if limit <= 0 {
-		limit = 25
+		return 25
 	}
 	if limit > 100 {
-		limit = 100
+		return 100
 	}
+	return limit
+}
+
+func (r *pendaftaranRepo) ListQueue(ctx context.Context, provinsiID, kabupatenID *int, status string, limit, offset int) ([]domain.PendaftaranQueueItem, error) {
+	limit = boundLimit(limit)
 	if offset < 0 {
 		offset = 0
 	}
+	where, args := queueWhere(provinsiID, kabupatenID, status)
+	args = append(args, limit, offset)
+	query := fmt.Sprintf(`SELECT %s FROM pendaftaran WHERE %s
+		ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
+		queueColumns, where, len(args)-1, len(args))
 
-	query := fmt.Sprintf(`SELECT * FROM pendaftaran WHERE %s ORDER BY created_at DESC LIMIT %d OFFSET %d`,
-		strings.Join(where, " AND "), limit, offset)
-	query = strings.ReplaceAll(query, "?", "$?")
-	_ = query
-
-	rows, err := r.db.QueryxContext(ctx, `SELECT * FROM pendaftaran WHERE 1 = 1 ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+	rows, err := r.db.QueryxContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	items := make([]domain.Pendaftaran, 0)
+	items := make([]domain.PendaftaranQueueItem, 0)
 	for rows.Next() {
-		var p domain.Pendaftaran
-		if err := rows.StructScan(&p); err != nil {
+		var item domain.PendaftaranQueueItem
+		if err := rows.StructScan(&item); err != nil {
 			return nil, err
 		}
-		items = append(items, p)
+		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (r *pendaftaranRepo) CountQueue(ctx context.Context, provinsiID, kabupatenID *int, status string) (int, error) {
+	where, args := queueWhere(provinsiID, kabupatenID, status)
+	var total int
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM pendaftaran WHERE %s`, where)
+	if err := r.db.GetContext(ctx, &total, query, args...); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (r *pendaftaranRepo) SetRevisiToken(ctx context.Context, id int, tokenHash string, expiresAt time.Time) error {
+	query := `UPDATE pendaftaran
+		SET revisi_token_hash = $1, revisi_token_expires_at = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3`
+	res, err := r.db.ExecContext(ctx, query, tokenHash, expiresAt, id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *pendaftaranRepo) SubmitRevisionTx(ctx context.Context, id int, tokenHash string, keys map[string]string, catatan string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("gagal memulai transaksi revisi: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Token cocok + belum kedaluwarsa + state PERBAIKAN dalam satu UPDATE
+	// atomik. Gagal cocok = 0 rows = satu error generik (tanpa oracle
+	// bedakan token salah vs kedaluwarsa vs state salah).
+	res, err := tx.ExecContext(ctx, `
+		UPDATE pendaftaran SET
+			foto_key = $1, ktp_key = $2, cv_key = $3, sk_key = $4,
+			surat_pernyataan_key = $5, surat_sehat_key = $6,
+			status = $7, catatan_perbaikan = $8,
+			revisi_token_hash = NULL, revisi_token_expires_at = NULL,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $9
+		  AND revisi_token_hash = $10
+		  AND revisi_token_expires_at > CURRENT_TIMESTAMP
+		  AND status = $11`,
+		keys["foto_key"], keys["ktp_key"], keys["cv_key"], keys["sk_key"],
+		keys["surat_pernyataan_key"], keys["surat_sehat_key"],
+		domain.PendaftaranStatusDiajukan, strings.TrimSpace(catatan),
+		id, tokenHash, domain.PendaftaranStatusPerbaikan)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.NewValidationError("Token revisi tidak valid, kedaluwarsa, atau status bukan PERBAIKAN")
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO pendaftaran_riwayat (pendaftaran_id, aksi, catatan, created_at)
+		 VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
+		id, "REVISI", "Dokumen revisi diunggah ulang oleh pendaftar"); err != nil {
+		return fmt.Errorf("gagal mencatat riwayat revisi: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("gagal menyelesaikan transaksi revisi: %w", err)
+	}
+	return nil
 }
 
 func (r *pendaftaranRepo) UpdateStatus(ctx context.Context, id int, status domain.PendaftaranStatus, catatan string) error {

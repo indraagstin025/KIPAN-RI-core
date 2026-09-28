@@ -90,7 +90,65 @@ func (h *PendaftaranHandler) Detail(c *fiber.Ctx) error {
 }
 
 func (h *PendaftaranHandler) ListQueue(c *fiber.Ctx) error {
-	return response.Success(c, "Daftar antrean pendaftaran", []string{})
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 25)
+	status := c.Query("status")
+	items, total, err := h.service.ListQueue(c.Context(), actor, status, page, limit)
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	pages := 0
+	if total > 0 {
+		pages = (total + limit - 1) / limit
+	}
+	return response.Paginated(c, "Daftar antrean pendaftaran", items, fiber.Map{
+		"page":        page,
+		"per_page":    limit,
+		"total":       total,
+		"total_pages": pages,
+	})
+}
+
+// RequestRevisionToken menerbitkan token revisi untuk status PERBAIKAN.
+func (h *PendaftaranHandler) RequestRevisionToken(c *fiber.Ctx) error {
+	var payload struct {
+		Nomor string `json:"nomor"`
+	}
+	_ = c.BodyParser(&payload)
+	res, err := h.service.RequestRevisionToken(c.Context(), payload.Nomor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Token revisi diterbitkan (berlaku 24 jam)", res)
+}
+
+// SubmitRevision memproses revisi mandiri applicant bertoken.
+func (h *PendaftaranHandler) SubmitRevision(c *fiber.Ctx) error {
+	nomor := strings.TrimSpace(c.Params("nomor"))
+	if nomor == "" {
+		return response.BadRequest(c, "Nomor pendaftaran wajib diisi")
+	}
+	var req domain.RevisionSubmitRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "Format data tidak valid")
+	}
+	if err := h.service.SubmitRevision(c.Context(), nomor, req, auditContextOf(c)); err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Revisi berhasil dikirim, status kembali DIAJUKAN", nil)
 }
 
 func (h *PendaftaranHandler) Verify(c *fiber.Ctx) error {
@@ -99,18 +157,6 @@ func (h *PendaftaranHandler) Verify(c *fiber.Ctx) error {
 
 func (h *PendaftaranHandler) RequestRevision(c *fiber.Ctx) error {
 	return h.processApproval(c, domain.PendaftaranActionPerbaikan, "Permintaan revisi dikirim")
-}
-
-// RequestRevisionPublic adalah endpoint applicant. Alur revisi mandiri
-// bertoken (magic-link + expiry) dibangun di batch berikutnya; endpoint ini
-// SENGAJA mengembalikan 501 agar tidak menjadi jalur bypass (dulu selalu
-// 400 karena membaca :id yang tidak ada di rute publik).
-func (h *PendaftaranHandler) RequestRevisionPublic(c *fiber.Ctx) error {
-	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
-		"success": false,
-		"code":    "NOT_IMPLEMENTED",
-		"message": "Revisi mandiri via token tersedia di tahap berikutnya",
-	})
 }
 
 func (h *PendaftaranHandler) Reject(c *fiber.Ctx) error {

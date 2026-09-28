@@ -49,7 +49,8 @@ func RegisterRoutes(
 	authService := service.NewAuthService(cfg, userRepo, rdb, auditRepo)
 	anggotaRepo := repository.NewAnggotaRepository(db)
 	storageService := wireStorageService(cfg, auditRepo)
-	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo, storageService)
+	wilayahRepo := repository.NewWilayahRepository(db)
+	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo, storageService, wilayahRepo)
 	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
 	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
 	secureCookie := cfg.App.Env != "development"
@@ -160,7 +161,8 @@ func registerMembershipRoutes(
 	public.Use(publicLimiter)
 	public.Post("", handler.Submit)
 	public.Get("/track/:nomor", handler.TrackStatus)
-	public.Post("/revisi", handler.RequestRevisionPublic)
+	public.Post("/revisi/request-token", handler.RequestRevisionToken)
+	public.Put("/revisi/:nomor", handler.SubmitRevision)
 	public.Get("/kta/:nia", handler.VerifyKTA)
 
 	adminPendaftaran := v1.Group("/admin/pendaftaran",

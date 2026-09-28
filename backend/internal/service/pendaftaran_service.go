@@ -35,6 +35,12 @@ type PendaftaranService interface {
 	// VerifyKTA memverifikasi keaslian KTA: selalu 200 + verdict (tanpa
 	// oracle bedakan NIA tak dikenal vs signature salah).
 	VerifyKTA(ctx context.Context, nia, sig string) (*domain.KTAVerificationResponse, error)
+	// ListQueue adalah antrean admin terfilter jurisdiction aktor.
+	ListQueue(ctx context.Context, actor domain.ActorContext, status string, page, limit int) ([]domain.PendaftaranQueueItem, int, error)
+	// RequestRevisionToken menerbitkan token revisi untuk status PERBAIKAN.
+	RequestRevisionToken(ctx context.Context, nomor string, audit domain.AuditContext) (*domain.RevisionTokenResponse, error)
+	// SubmitRevision memproses revisi mandiri applicant bertoken.
+	SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error
 	// GetDetail adalah jalur admin: tolak objek di luar wilayah aktor.
 	GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Pendaftaran, error)
 	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error
@@ -46,10 +52,11 @@ type pendaftaranService struct {
 	anggotaRepo repository.AnggotaRepository
 	auditRepo   repository.AuditLogRepository
 	storageSvc  ObjectVerifier
+	wilayahRepo repository.WilayahRepository
 }
 
-func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository, storageSvc ObjectVerifier) PendaftaranService {
-	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo, storageSvc: storageSvc}
+func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository, storageSvc ObjectVerifier, wilayahRepo repository.WilayahRepository) PendaftaranService {
+	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo, storageSvc: storageSvc, wilayahRepo: wilayahRepo}
 }
 
 var nipPattern = regexp.MustCompile(`^\d{16}$`)
@@ -304,6 +311,12 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 		return nil, err
 	}
 
+	// Validasi master wilayah server-side (RULES 6): provinsi ada + aktif,
+	// kabupaten milik provinsi tersebut + aktif.
+	if err := s.validateWilayah(ctx, req.ProvinsiID, req.KabupatenID); err != nil {
+		return nil, err
+	}
+
 	// Verifikasi keberadaan + integritas dokumen di storage SEBELUM nomor
 	// dialokasikan (RULES 14): jangan bakar sequence untuk submit cacat.
 	if err := s.verifySubmittedDocuments(ctx, req); err != nil {
@@ -542,17 +555,49 @@ func (s *pendaftaranService) verifySubmittedDocuments(ctx context.Context, req d
 		if k == "" {
 			continue // required sudah ditegakkan ValidateSubmitRequest
 		}
-		if s.storageSvc == nil || !s.storageSvc.Configured() {
-			if s.cfg != nil && s.cfg.App.Env == "production" {
-				return domain.NewUnavailableError("Verifikasi dokumen tidak tersedia")
-			}
-			log.Warn().Str("category", d.category).
-				Msg("Storage tidak dikonfigurasi — verifikasi dokumen dilewati (HANYA non-production)")
-			continue
-		}
-		if err := s.storageSvc.VerifySubmittedObject(ctx, k, d.category); err != nil {
+		if err := s.verifyOneDocument(ctx, k, d.category); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// verifyOneDocument memverifikasi satu object via storage. Storage mati:
+// 503 di production, lewati + warning di non-production.
+func (s *pendaftaranService) verifyOneDocument(ctx context.Context, key, category string) error {
+	if s.storageSvc == nil || !s.storageSvc.Configured() {
+		if s.cfg != nil && s.cfg.App.Env == "production" {
+			return domain.NewUnavailableError("Verifikasi dokumen tidak tersedia")
+		}
+		log.Warn().Str("category", category).
+			Msg("Storage tidak dikonfigurasi — verifikasi dokumen dilewati (HANYA non-production)")
+		return nil
+	}
+	return s.storageSvc.VerifySubmittedObject(ctx, key, category)
+}
+
+// validateWilayah memastikan provinsi/kabupaten ada, aktif, dan berelasi
+// benar di master. Tanpa wilayahRepo (hanya test): tolak di production.
+func (s *pendaftaranService) validateWilayah(ctx context.Context, provinsiID, kabupatenID int) error {
+	if s.wilayahRepo == nil {
+		if s.cfg != nil && s.cfg.App.Env == "production" {
+			return domain.NewUnavailableError("Validasi wilayah tidak tersedia")
+		}
+		return nil
+	}
+	ok, err := s.wilayahRepo.ExistsProvinsi(ctx, provinsiID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return domain.NewValidationError("Provinsi tidak valid atau tidak aktif")
+	}
+	ok, err = s.wilayahRepo.KabupatenInProvinsi(ctx, kabupatenID, provinsiID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return domain.NewValidationError("Kabupaten tidak valid untuk provinsi tersebut")
 	}
 	return nil
 }
@@ -571,6 +616,171 @@ func (s *pendaftaranService) ktaVerifyKeys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// ListQueue mengembalikan antrean sesuai jurisdiction aktor + filter
+// status allowlist + pagination bounded. Scope nasional = tanpa filter.
+func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorContext, status string, page, limit int) ([]domain.PendaftaranQueueItem, int, error) {
+	if s.repo == nil {
+		return nil, 0, domain.NewValidationError("Repository pendaftaran belum tersedia")
+	}
+	st := strings.TrimSpace(status)
+	if st != "" {
+		allowed := map[string]bool{
+			string(domain.PendaftaranStatusDiajukan):     true,
+			string(domain.PendaftaranStatusDiverifikasi): true,
+			string(domain.PendaftaranStatusPerbaikan):    true,
+			string(domain.PendaftaranStatusDisetujui):    true,
+			string(domain.PendaftaranStatusDitolak):      true,
+		}
+		if !allowed[st] {
+			return nil, 0, domain.NewValidationError("Filter status tidak valid")
+		}
+	}
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+
+	var provID, kabID *int
+	switch actor.Role {
+	case domain.RoleSuperAdmin, domain.RoleAdminNasional:
+		// tanpa filter
+	case domain.RoleAdminProvinsi:
+		if actor.ProvinsiID == nil {
+			return nil, 0, domain.NewForbiddenError("Akun Admin Provinsi belum terhubung ke wilayah")
+		}
+		provID = actor.ProvinsiID
+	case domain.RoleAdminKabupaten:
+		if actor.KabupatenID == nil {
+			return nil, 0, domain.NewForbiddenError("Akun Admin Kabupaten belum terhubung ke wilayah")
+		}
+		provID, kabID = actor.ProvinsiID, actor.KabupatenID
+	default:
+		return nil, 0, domain.NewForbiddenError("Role tidak diizinkan mengakses antrean")
+	}
+
+	items, err := s.repo.ListQueue(ctx, provID, kabID, st, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.repo.CountQueue(ctx, provID, kabID, st)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// RevisionTokenTTL adalah masa berlaku token revisi applicant.
+const RevisionTokenTTL = 24 * time.Hour
+
+// RequestRevisionToken menerbitkan token revisi satu-permintaan untuk
+// pendaftaran berstatus PERBAIKAN. Token mentah dikembalikan sekali;
+// yang disimpan hanya hash SHA-256 + expiry.
+//
+// CATATAN PENGIRIMAN: idealnya token dikirim via WA/email pendaftar
+// (notifikasi Fase 5). Sementara dikembalikan di respons (rate-limited).
+func (s *pendaftaranService) RequestRevisionToken(ctx context.Context, nomor string, audit domain.AuditContext) (*domain.RevisionTokenResponse, error) {
+	nr := strings.TrimSpace(nomor)
+	if nr == "" || len(nr) > 30 {
+		return nil, domain.NewValidationError("Nomor pendaftaran tidak valid")
+	}
+	if s.repo == nil {
+		return nil, domain.NewValidationError("Repository pendaftaran belum tersedia")
+	}
+	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
+	if err != nil {
+		return nil, err
+	}
+	if item.Status != domain.PendaftaranStatusPerbaikan {
+		return nil, domain.NewValidationError("Pendaftaran tidak dalam status revisi (PERBAIKAN)")
+	}
+
+	raw, err := crypto.GenerateSecureToken(32)
+	if err != nil {
+		return nil, fmt.Errorf("gagal menerbitkan token revisi: %w", err)
+	}
+	expiresAt := time.Now().Add(RevisionTokenTTL)
+	if err := s.repo.SetRevisiToken(ctx, item.ID, crypto.HashToken(raw), expiresAt); err != nil {
+		return nil, err
+	}
+	s.auditEvent(ctx, audit, nil, "Pendaftar "+nr, "PUBLIK",
+		"pendaftaran", strconv.Itoa(item.ID), "REVISI_TOKEN", nil)
+	return &domain.RevisionTokenResponse{Token: raw, ExpiresAt: expiresAt}, nil
+}
+
+// SubmitRevision memproses revisi mandiri applicant: token valid +
+// belum kedaluwarsa + state PERBAIKAN (satu UPDATE atomik, error generik
+// tanpa oracle), dokumen baru tervalidasi + terverifikasi storage,
+// status kembali DIAJUKAN, token hangus sekali pakai.
+func (s *pendaftaranService) SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error {
+	nr := strings.TrimSpace(nomor)
+	if nr == "" || len(nr) > 30 {
+		return domain.NewValidationError("Nomor pendaftaran tidak valid")
+	}
+	token := strings.TrimSpace(req.Token)
+	if token == "" || len(token) > 256 {
+		return domain.NewValidationError("Token revisi wajib diisi")
+	}
+	if s.repo == nil {
+		return domain.NewValidationError("Repository pendaftaran belum tersedia")
+	}
+	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
+	if err != nil {
+		return err
+	}
+
+	// Merge dokumen: field kosong = pertahankan yang lama. Field baru
+	// wajib lolos pola key + verifikasi storage (bila dikonfigurasi).
+	keys := map[string]string{}
+	inputs := map[string]struct {
+		val      string
+		category string
+		current  string
+	}{
+		"foto_key":             {req.FotoKey, "foto", item.FotoKey},
+		"ktp_key":              {req.KTPKey, "ktp", item.KTPKey},
+		"cv_key":               {req.CVKey, "cv", item.CVKey},
+		"sk_key":               {req.SKKey, "sk", item.SKKey},
+		"surat_pernyataan_key": {req.SuratPernyataanKey, "surat_pernyataan", item.SuratPernyataanKey},
+		"surat_sehat_key":      {req.SuratSehatKey, "surat_sehat", item.SuratSehatKey},
+	}
+	for name, in := range inputs {
+		k := strings.TrimSpace(in.val)
+		if k == "" {
+			k = in.current
+		} else {
+			if err := checkObjectKey(name, k, false); err != nil {
+				return err
+			}
+			if err := s.verifyOneDocument(ctx, k, in.category); err != nil {
+				return err
+			}
+		}
+		// Hanya foto + KTP yang wajib (selaras submit); dokumen opsional
+		// boleh tetap kosong bila tidak pernah diunggah.
+		if strings.TrimSpace(k) == "" && (name == "foto_key" || name == "ktp_key") {
+			return domain.NewValidationError("Dokumen " + name + " wajib ada")
+		}
+		keys[name] = k
+	}
+
+	// Perbandingan hash dilakukan di SQL dalam UPDATE atomik yang sama:
+	// token 256-bit + rate limit membuat brute force infeasible, sementara
+	// single-statement memberi satu error generik (tanpa oracle bedakan
+	// token salah vs kedaluwarsa vs state salah).
+	if err := s.repo.SubmitRevisionTx(ctx, item.ID, crypto.HashToken(token), keys, strings.TrimSpace(req.Catatan)); err != nil {
+		return err
+	}
+	s.auditEvent(ctx, audit, nil, "Pendaftar "+nr, "PUBLIK",
+		"pendaftaran", strconv.Itoa(item.ID), "REVISI", nil)
+	return nil
 }
 
 // auditEvent mencatat jejak audit best-effort (RULES 21): gagal tulis tidak
