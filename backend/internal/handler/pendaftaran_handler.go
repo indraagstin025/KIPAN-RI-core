@@ -89,6 +89,24 @@ func (h *PendaftaranHandler) Detail(c *fiber.Ctx) error {
 	return response.Success(c, "Detail pendaftaran", item)
 }
 
+// RevealNIK membuka NIK terdekripsi untuk verifikator (1.4.2).
+// Akses dicatat di audit trail oleh service.
+func (h *PendaftaranHandler) RevealNIK(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID pendaftaran tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	nik, err := h.service.RevealNIK(c.Context(), id, actor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "NIK berhasil dibuka (tercatat di audit)", fiber.Map{"nik": nik})
+}
+
 func (h *PendaftaranHandler) ListQueue(c *fiber.Ctx) error {
 	actor, ok := actorOf(c)
 	if !ok {

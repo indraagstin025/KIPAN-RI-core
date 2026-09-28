@@ -251,6 +251,47 @@ func (s *StorageService) RequestViewPresign(ctx context.Context, key string, act
 	return &PresignViewResult{ViewURL: url, ObjectKey: k, ExpiresIn: int64(ttl.Seconds())}, nil
 }
 
+// PutKTADocument mengunggah PDF KTA server-generated ke bucket private.
+// Key server-generated: kta/{NIA}.pdf. Bukan jalur upload user.
+func (s *StorageService) PutKTADocument(ctx context.Context, nia string, pdf []byte) (string, error) {
+	if s.client == nil {
+		return "", domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+	}
+	key := "kta/" + strings.TrimSpace(nia) + ".pdf"
+	if err := storage.ValidateObjectKey(key); err != nil {
+		return "", domain.NewValidationError("NIA tidak valid untuk key KTA")
+	}
+	bucket := s.privateBucket()
+	if err := s.client.Put(ctx, bucket, key, pdf, "application/pdf"); err != nil {
+		return "", fmt.Errorf("gagal menyimpan PDF KTA: %w", err)
+	}
+	return key, nil
+}
+
+// PresignKTADocument menerbitkan tiket baca sementara PDF KTA (5 menit).
+func (s *StorageService) PresignKTADocument(ctx context.Context, key string) (string, error) {
+	k := strings.TrimSpace(key)
+	if err := storage.ValidateObjectKey(k); err != nil {
+		return "", domain.NewValidationError("Object key KTA tidak valid")
+	}
+	if s.client == nil {
+		return "", domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+	}
+	const ttl = 5 * time.Minute
+	url, err := s.client.PresignGet(ctx, s.privateBucket(), k, ttl)
+	if err != nil {
+		return "", fmt.Errorf("gagal menerbitkan tiket baca KTA: %w", err)
+	}
+	return url, nil
+}
+
+func (s *StorageService) privateBucket() string {
+	if s.cfg != nil && s.cfg.Storage.BucketPrivate != "" {
+		return s.cfg.Storage.BucketPrivate
+	}
+	return "kipan-private"
+}
+
 // EnsureBuckets membuat bucket yang belum ada. Dipanggil sekali saat
 // startup non-production; kegagalan hanya warning (dev ergonomics).
 func (s *StorageService) EnsureBuckets(ctx context.Context) {
