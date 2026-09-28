@@ -141,13 +141,3 @@ func GetUser(c *fiber.Ctx) *JWTClaims {
 	}
 	return u
 }
-
-// MustGetUser panics jika tidak ada claims — hanya dipakai setelah Authenticate().
-// Panic akan ditangkap oleh recover middleware dan dikembalikan sebagai 500.
-func MustGetUser(c *fiber.Ctx) *JWTClaims {
-	u := GetUser(c)
-	if u == nil {
-		panic("MustGetUser dipanggil tanpa claims — pastikan Authenticate() sudah dipasang")
-	}
-	return u
-}

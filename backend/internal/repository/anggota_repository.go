@@ -43,9 +43,20 @@ func (r *anggotaRepo) ExistsByNikHash(ctx context.Context, nikHash string) (bool
 	return exists, nil
 }
 
+// anggotaColumns adalah proyeksi eksplisit (item 2: lanjutan BE-005 di
+// tabel anggota) — hindari SELECT * agar kolom sensitif baru tidak ikut
+// transit memori. NIK tetap aman di JSON via tag `json:"-"`.
+const anggotaColumns = `id, nia, nama_lengkap, nik_hash, nik_encrypted,
+	tempat_lahir, tanggal_lahir, jenis_kelamin, agama, pendidikan, pekerjaan,
+	alamat, provinsi_id, kabupaten_id, kecamatan, desa, kode_pos, email,
+	whatsapp, foto_key, ktp_key, cv_key, sk_key, surat_pernyataan_key,
+	surat_sehat_key, status, angkatan, kta_qr_hash, kta_pdf_key,
+	pendaftaran_id, user_id, tanggal_daftar, tanggal_angkat,
+	created_at, updated_at`
+
 func (r *anggotaRepo) GetByID(ctx context.Context, id int) (*domain.Anggota, error) {
 	var a domain.Anggota
-	query := `SELECT * FROM anggota WHERE id = $1`
+	query := `SELECT ` + anggotaColumns + ` FROM anggota WHERE id = $1`
 	if err := r.db.GetContext(ctx, &a, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -74,7 +85,7 @@ func (r *anggotaRepo) SetKTAPDFKey(ctx context.Context, id int, key string) erro
 
 func (r *anggotaRepo) GetByNIA(ctx context.Context, nia string) (*domain.Anggota, error) {
 	var a domain.Anggota
-	query := `SELECT * FROM anggota WHERE nia = $1`
+	query := `SELECT ` + anggotaColumns + ` FROM anggota WHERE nia = $1`
 	if err := r.db.GetContext(ctx, &a, query, strings.TrimSpace(nia)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound

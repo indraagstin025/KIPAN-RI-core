@@ -264,6 +264,8 @@ func errorCodeForStatus(status int) string {
 		return "PAYLOAD_TOO_LARGE"
 	case fiber.StatusTooManyRequests:
 		return "TOO_MANY_REQUESTS"
+	case fiber.StatusServiceUnavailable:
+		return "SERVICE_UNAVAILABLE"
 	case fiber.StatusInternalServerError:
 		return "INTERNAL_ERROR"
 	default:
