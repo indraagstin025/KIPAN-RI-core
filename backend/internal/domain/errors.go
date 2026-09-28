@@ -62,3 +62,9 @@ func NewForbiddenError(detail string) *AppError {
 func NewConflictError(detail string) *AppError {
 	return &AppError{Code: 409, Message: "Data sudah ada", Detail: detail}
 }
+
+// NewUnavailableError membuat AppError 503 untuk dependensi yang mati
+// (storage, dsb). Dipakai agar fail-closed terbaca sebagai 503, bukan 500.
+func NewUnavailableError(detail string) *AppError {
+	return &AppError{Code: 503, Message: "Layanan sedang tidak tersedia", Detail: detail}
+}

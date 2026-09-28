@@ -45,10 +45,11 @@ type pendaftaranService struct {
 	repo        repository.PendaftaranRepository
 	anggotaRepo repository.AnggotaRepository
 	auditRepo   repository.AuditLogRepository
+	storageSvc  ObjectVerifier
 }
 
-func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository) PendaftaranService {
-	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo}
+func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository, storageSvc ObjectVerifier) PendaftaranService {
+	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo, storageSvc: storageSvc}
 }
 
 var nipPattern = regexp.MustCompile(`^\d{16}$`)
@@ -303,6 +304,12 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 		return nil, err
 	}
 
+	// Verifikasi keberadaan + integritas dokumen di storage SEBELUM nomor
+	// dialokasikan (RULES 14): jangan bakar sequence untuk submit cacat.
+	if err := s.verifySubmittedDocuments(ctx, req); err != nil {
+		return nil, err
+	}
+
 	dob, err := time.Parse(time.RFC3339, strings.TrimSpace(req.TanggalLahir))
 	if err != nil {
 		return nil, domain.NewValidationError("Format tanggal lahir tidak valid")
@@ -511,6 +518,43 @@ func (s *pendaftaranService) VerifyKTA(ctx context.Context, nia, sig string) (*d
 		Status:        string(member.Status),
 		TanggalAngkat: &tgl,
 	}, nil
+}
+
+// verifySubmittedDocuments memverifikasi setiap dokumen yang diklaim sudah
+// di-upload. Bila storage tidak dikonfigurasi: tolak di production
+// (fail-closed), lewati dengan warning eksplisit di non-production agar dev
+// tanpa MinIO tetap bisa berjalan (pola yang sama dengan Redis degraded).
+func (s *pendaftaranService) verifySubmittedDocuments(ctx context.Context, req domain.PendaftaranSubmitRequest) error {
+	docs := []struct {
+		category string
+		key      string
+		required bool
+	}{
+		{"foto", req.FotoKey, true},
+		{"ktp", req.KTPKey, true},
+		{"cv", req.CVKey, false},
+		{"sk", req.SKKey, false},
+		{"surat_pernyataan", req.SuratPernyataanKey, false},
+		{"surat_sehat", req.SuratSehatKey, false},
+	}
+	for _, d := range docs {
+		k := strings.TrimSpace(d.key)
+		if k == "" {
+			continue // required sudah ditegakkan ValidateSubmitRequest
+		}
+		if s.storageSvc == nil || !s.storageSvc.Configured() {
+			if s.cfg != nil && s.cfg.App.Env == "production" {
+				return domain.NewUnavailableError("Verifikasi dokumen tidak tersedia")
+			}
+			log.Warn().Str("category", d.category).
+				Msg("Storage tidak dikonfigurasi — verifikasi dokumen dilewati (HANYA non-production)")
+			continue
+		}
+		if err := s.storageSvc.VerifySubmittedObject(ctx, k, d.category); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ktaVerifyKeys mengembalikan kunci verifikasi KTA: aktif dulu, lalu kunci

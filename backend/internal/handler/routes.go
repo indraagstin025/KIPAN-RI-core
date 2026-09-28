@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"context"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
@@ -13,6 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
+	storagepkg "github.com/kipan-indonesia/sim-kipan-core/pkg/storage"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
@@ -44,12 +48,14 @@ func RegisterRoutes(
 	pendaftaranRepo := repository.NewPendaftaranRepository(db)
 	authService := service.NewAuthService(cfg, userRepo, rdb, auditRepo)
 	anggotaRepo := repository.NewAnggotaRepository(db)
-	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo)
+	storageService := wireStorageService(cfg, auditRepo)
+	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo, storageService)
 	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
 	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
 	secureCookie := cfg.App.Env != "development"
 	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL, secureCookie)
 	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, val)
+	storageHandler := NewStorageHandler(storageService, val)
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.AccessTokenSecret, rdb)
 
 	// ============================================================
@@ -59,7 +65,41 @@ func RegisterRoutes(
 
 	registerAuthRoutes(v1, rdb, authHandler, authMiddleware)
 	registerMembershipRoutes(v1, rdb, authMiddleware, pendaftaranHandler)
+	registerStorageRoutes(v1, rdb, authMiddleware, storageHandler)
 	registerAdminRoutes(v1, authMiddleware)
+}
+
+// wireStorageService membangun S3 client + StorageService.
+//
+// Fail-closed: bila endpoint/kredensial tidak dikonfigurasi, service tetap
+// dibangun dengan client nil sehingga RequestUploadPresign/RequestViewPresign
+// mengembalikan 503 (bukan bypass diam-diam). Bucket disiapkan otomatis
+// hanya di non-production.
+func wireStorageService(cfg *config.Config, auditRepo repository.AuditLogRepository) *service.StorageService {
+	var client *storagepkg.Client
+	if strings.TrimSpace(cfg.Storage.Endpoint) != "" {
+		c, err := storagepkg.NewClient(
+			cfg.Storage.Endpoint,
+			cfg.Storage.Region,
+			cfg.Storage.AccessKeyID,
+			cfg.Storage.SecretAccessKey,
+		)
+		if err != nil {
+			log.Warn().Err(err).Msg("Storage tidak aktif (konfigurasi tidak lengkap) — presign fail-closed 503")
+		} else {
+			client = c
+		}
+	} else {
+		log.Warn().Msg("STORAGE_ENDPOINT kosong — presign upload/view nonaktif (fail-closed 503)")
+	}
+
+	svc := service.NewStorageService(cfg, client, auditRepo)
+	if client != nil && cfg.App.Env != "production" {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		svc.EnsureBuckets(ctx)
+	}
+	return svc
 }
 
 // registerAuthRoutes mendaftarkan endpoint autentikasi.
@@ -139,6 +179,23 @@ func registerMembershipRoutes(
 	adminPendaftaran.Post("/:id/perbaikan", middleware.ScopeWilayah(), handler.RequestRevision)
 	adminPendaftaran.Post("/:id/tolak", middleware.ScopeWilayah(), handler.Reject)
 	adminPendaftaran.Post("/:id/setujui", middleware.ScopeWilayah(), handler.Approve)
+}
+
+// registerStorageRoutes mendaftarkan endpoint tiket presigned S3.
+//
+// POST /storage/presign-upload publik (pendaftar belum punya akun) tetapi
+// di-rate-limit ketat; GET /storage/presign-view wajib auth + tercatat audit.
+func registerStorageRoutes(
+	v1 fiber.Router,
+	rdb *redis.Client,
+	authMiddleware *middleware.AuthMiddleware,
+	handler *StorageHandler,
+) {
+	uploadLimiter := middleware.AuthRateLimiter(rdb, 30, 1*time.Minute)
+
+	public := v1.Group("/storage")
+	public.Post("/presign-upload", uploadLimiter, handler.PresignUpload)
+	public.Get("/presign-view", authMiddleware.Authenticate(), handler.PresignView)
 }
 
 // ============================================================
