@@ -89,6 +89,83 @@ func TestVerifyKTASignatureMalformed(t *testing.T) {
 	}
 }
 
+func TestAESGCMRoundtrip(t *testing.T) {
+	keyHex := mustTestKey(t)
+	plain := "3201010101010001"
+	enc, err := EncryptAESGCM(plain, keyHex)
+	if err != nil {
+		t.Fatalf("EncryptAESGCM gagal: %v", err)
+	}
+	if enc == plain {
+		t.Fatal("ciphertext sama dengan plaintext")
+	}
+	dec, err := DecryptAESGCM(enc, keyHex)
+	if err != nil {
+		t.Fatalf("DecryptAESGCM gagal: %v", err)
+	}
+	if dec != plain {
+		t.Fatalf("roundtrip gagal: %q != %q", dec, plain)
+	}
+}
+
+func TestAESGCMNonceUnique(t *testing.T) {
+	keyHex := mustTestKey(t)
+	e1, _ := EncryptAESGCM("3201010101010001", keyHex)
+	e2, _ := EncryptAESGCM("3201010101010001", keyHex)
+	if e1 == e2 {
+		t.Fatal("nonce dipakai ulang: plaintext sama menghasilkan ciphertext sama")
+	}
+}
+
+func TestAESGCMRejectsTampered(t *testing.T) {
+	keyHex := mustTestKey(t)
+	enc, err := EncryptAESGCM("3201010101010001", keyHex)
+	if err != nil {
+		t.Fatalf("EncryptAESGCM gagal: %v", err)
+	}
+	// Ubah 1 char base64 bagian sealed.
+	parts := enc
+	if len(parts) < 4 {
+		t.Fatal("format ciphertext tak terduga")
+	}
+	tampered := parts[:len(parts)-1] + "A"
+	if tampered == enc {
+		tampered = parts[:len(parts)-1] + "B"
+	}
+	if _, err := DecryptAESGCM(tampered, keyHex); err == nil {
+		t.Fatal("ciphertext korup DITERIMA — integritas GCM bocor")
+	}
+}
+
+func TestAESGCMRejectsWrongKey(t *testing.T) {
+	enc, err := EncryptAESGCM("3201010101010001", mustTestKey(t))
+	if err != nil {
+		t.Fatalf("EncryptAESGCM gagal: %v", err)
+	}
+	if _, err := DecryptAESGCM(enc, mustTestKey(t)); err == nil {
+		t.Fatal("dekripsi kunci salah DITERIMA")
+	}
+}
+
+func TestBlindIndexDeterministic(t *testing.T) {
+	keyHex := mustTestKey(t)
+	h1, err := BlindIndex("3201010101010001", keyHex)
+	if err != nil {
+		t.Fatalf("BlindIndex gagal: %v", err)
+	}
+	h2, err := BlindIndex("3201010101010001", keyHex)
+	if err != nil {
+		t.Fatalf("BlindIndex gagal: %v", err)
+	}
+	if len(h1) != 64 || h1 != h2 {
+		t.Fatalf("blind index harus 64-hex deterministik: %q vs %q", h1, h2)
+	}
+	h3, _ := BlindIndex("3201010101010002", keyHex)
+	if h1 == h3 {
+		t.Fatal("NIK beda menghasilkan blind index sama")
+	}
+}
+
 func TestMaskNIK(t *testing.T) {
 	nik := "3204123456780001"
 	masked := MaskNIK(nik)

@@ -115,7 +115,7 @@ func registerAuthRoutes(
 	auth := v1.Group("/auth")
 
 	// Layer 1: Rate limit per IP (semua endpoint auth)
-	authLimiter := middleware.AuthRateLimiter(rdb, 20, 1*time.Minute)
+	authLimiter := middleware.AuthRateLimiter(rdb, "auth_rate:ip:", 20, 1*time.Minute)
 
 	// Layer 2: Rate limit per email (khusus login)
 	loginAttemptLimiter := middleware.LoginAttemptLimiter(rdb, 5, 15*time.Minute)
@@ -154,8 +154,9 @@ func registerMembershipRoutes(
 ) {
 	// Limiter publik (anti enumerasi/spam) + limiter mutasi sensitif.
 	// Redis-backed agar konsisten multi-instance (seperti auth).
-	publicLimiter := middleware.AuthRateLimiter(rdb, 30, 1*time.Minute)
-	adminMutasiLimiter := middleware.AuthRateLimiter(rdb, 20, 1*time.Minute)
+	// Prefix berbeda: berbagi prefix = berbagi kuota (429 prematur).
+	publicLimiter := middleware.AuthRateLimiter(rdb, "mem_pub:ip:", 30, 1*time.Minute)
+	adminMutasiLimiter := middleware.AuthRateLimiter(rdb, "mem_mut:ip:", 20, 1*time.Minute)
 
 	public := v1.Group("/pendaftaran")
 	public.Use(publicLimiter)
@@ -193,7 +194,7 @@ func registerStorageRoutes(
 	authMiddleware *middleware.AuthMiddleware,
 	handler *StorageHandler,
 ) {
-	uploadLimiter := middleware.AuthRateLimiter(rdb, 30, 1*time.Minute)
+	uploadLimiter := middleware.AuthRateLimiter(rdb, "stor_up:ip:", 30, 1*time.Minute)
 
 	public := v1.Group("/storage")
 	public.Post("/presign-upload", uploadLimiter, handler.PresignUpload)

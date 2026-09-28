@@ -55,18 +55,19 @@ func SecurityHeaders() fiber.Handler {
 	}
 }
 
-// AuthRateLimiter membatasi frekuensi request per IP ke endpoint auth sensitif.
+// AuthRateLimiter membatasi frekuensi request per IP ke endpoint sensitif.
 // Menggunakan Redis sebagai backing store agar konsisten di multi-instance.
 //
-// Catatan: OPTIONS preflight di-skip dari perhitungan agar tidak menghabiskan
-// kuota untuk CORS check.
-func AuthRateLimiter(rdb *redis.Client, maxRequests int, window time.Duration) fiber.Handler {
+// keyPrefix WAJIB unik per limiter: dua limiter dengan prefix sama berbagi
+// counter Redis yang sama sehingga kuota tercampur dan 429 prematur.
+// Catatan: OPTIONS preflight di-skip agar tidak menghabiskan kuota CORS.
+func AuthRateLimiter(rdb *redis.Client, keyPrefix string, maxRequests int, window time.Duration) fiber.Handler {
 	cfg := limiter.Config{
 		Max:        maxRequests,
 		Expiration: window,
 		KeyGenerator: func(c *fiber.Ctx) string {
 			// c.IP() menghormati TrustedProxies di main.go.
-			return "auth_rate:ip:" + c.IP()
+			return keyPrefix + c.IP()
 		},
 		Next: func(c *fiber.Ctx) bool {
 			// Skip CORS preflight
