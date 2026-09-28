@@ -120,9 +120,13 @@ func RevisionTokenLimiter(rdb *redis.Client, maxAttempts int, window time.Durati
 	return limiter.New(cfg)
 }
 
-// LoginAttemptLimiter membatasi percobaan login PER EMAIL (bukan hanya per IP).
-// Layer kedua setelah AuthRateLimiter — melindungi dari botnet spray attack
-// di mana penyerang pakai banyak IP untuk mencoba password satu akun target.
+// LoginAttemptLimiter membatasi percobaan login PER PASANGAN email+IP
+// (BE-003): kunci email saja memungkinkan lockout akun oleh pihak ketiga
+// (kirim 5 gagal memakai email korban). Kunci gabungan menutup lockout;
+// proteksi spray botnet ditopang limiter per-IP (authLimiter 20/mnt).
+// Backoff progresif + CAPTCHA + notifikasi pemilik ditunda ke Fase 5/6
+// (butuh frontend), dengan pesan LimitReached yang tetap tidak membocorkan
+// keterdaftaran email.
 func LoginAttemptLimiter(rdb *redis.Client, maxAttempts int, window time.Duration) fiber.Handler {
 	cfg := limiter.Config{
 		Max:        maxAttempts,
@@ -133,7 +137,7 @@ func LoginAttemptLimiter(rdb *redis.Client, maxAttempts int, window time.Duratio
 			}
 			_ = c.BodyParser(&body)
 			if body.Email != "" {
-				return "login_attempt:email:" + strings.ToLower(body.Email)
+				return "login_attempt:" + strings.ToLower(strings.TrimSpace(body.Email)) + ":" + c.IP()
 			}
 			return "login_attempt:ip:" + c.IP()
 		},

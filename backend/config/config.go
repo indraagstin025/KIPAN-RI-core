@@ -218,8 +218,35 @@ func Load() (*Config, error) {
 			cfg.App.Env,
 		)
 	}
+	// L-5: validasi khusus production (fail-fast sebelum listen).
+	if cfg.App.Env == "production" {
+		if err := validateProduction(cfg); err != nil {
+			return nil, err
+		}
+	}
 
 	return cfg, nil
+}
+
+// validateProduction menolak konfigurasi berbahaya di production (L-5).
+// Dev/test/local tidak terpengaruh agar ergonomi lokal tetap jalan.
+func validateProduction(cfg *Config) error {
+	if cfg.Database.SSLMode != "require" {
+		return fmt.Errorf("production menolak DB_SSLMODE=%q (wajib require/TLS)", cfg.Database.SSLMode)
+	}
+	if cfg.App.Debug {
+		return fmt.Errorf("production menolak APP_DEBUG=true (cetak route + stack trace)")
+	}
+	if strings.TrimSpace(cfg.Redis.Password) == "" {
+		return fmt.Errorf("production menolak REDIS_PASSWORD kosong")
+	}
+	if strings.Contains(cfg.App.AllowOrigin, "*") {
+		return fmt.Errorf("production menolak APP_ALLOW_ORIGIN=%q (wildcard + credentials rawan CSRF)", cfg.App.AllowOrigin)
+	}
+	if strings.TrimSpace(cfg.Storage.Endpoint) == "" {
+		return fmt.Errorf("production menolak STORAGE_ENDPOINT kosong (verifikasi dokumen wajib)")
+	}
+	return nil
 }
 
 // mustParseDuration parse durasi; fallback ke default jika gagal.

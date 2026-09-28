@@ -39,6 +39,12 @@ func ConnectPostgres(cfg *config.Config) (*sqlx.DB, error) {
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {
+		// L-1: fail-closed di production (server menolak start), warn
+		// saja di dev/test agar ergonomi lokal tetap jalan.
+		if cfg.App.Env == "production" {
+			_ = db.Close()
+			return nil, fmt.Errorf("gagal ping PostgreSQL di production, server menolak start: %w", err)
+		}
 		log.Warn().
 			Str("host", connConfig.Host).
 			Uint16("port", connConfig.Port).

@@ -118,7 +118,9 @@ func registerAuthRoutes(
 	authLimiter := middleware.AuthRateLimiter(rdb, "auth_rate:ip:", 20, 1*time.Minute)
 
 	// Layer 2: Rate limit per email (khusus login)
-	loginAttemptLimiter := middleware.LoginAttemptLimiter(rdb, 5, 15*time.Minute)
+	// 20/15 mnt per pasangan email+IP (BE-003): longgar per akun agar
+	// lockout pihak ketiga tidak mungkin, ketat per IP via authLimiter.
+	loginAttemptLimiter := middleware.LoginAttemptLimiter(rdb, 20, 15*time.Minute)
 
 	auth.Post("/login", authLimiter, loginAttemptLimiter, authHandler.Login)
 	auth.Post("/refresh", authLimiter, authHandler.RefreshToken)

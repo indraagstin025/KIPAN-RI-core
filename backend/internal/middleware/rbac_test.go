@@ -55,6 +55,24 @@ func TestRequireRoles(t *testing.T) {
 	}
 }
 
+func TestScopeWilayahTanpaClaimsDitolak(t *testing.T) {
+	// L-2: ScopeWilayah tanpa claims (lupa Authenticate) wajib 401,
+	// bukan Next() dengan scope nasional diam-diam.
+	app := fiber.New()
+	app.Get("/scope", ScopeWilayah(), func(c *fiber.Ctx) error {
+		return c.SendString("SUCCESS")
+	})
+
+	req := httptest.NewRequest("GET", "/scope", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Errorf("Expected 401 Unauthorized, got %d", resp.StatusCode)
+	}
+}
+
 func TestScopeWilayah(t *testing.T) {
 	app := fiber.New()
 

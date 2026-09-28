@@ -140,6 +140,15 @@ func (s *StorageService) RequestUploadPresign(_ context.Context, category, fileN
 	if err != nil {
 		return nil, fmt.Errorf("gagal menerbitkan tiket upload: %w", err)
 	}
+	// BE-002: catat penerbitan untuk deteksi abuse (banjir tiket tanpa
+	// submit). Penegakan ukuran keras TIDAK mungkin di presigned PUT
+	// (SigV4 tak punya kondisi content-length — hanya POST policy yang
+	// punya); ukuran ditegakkan saat submit via HeadObject + magic bytes.
+	// Objek yatim (upload tanpa submit) dibersihkan lifecycle rule bucket:
+	// hapus objek uploads/ berumur > 7 hari tanpa referensi DB (infra,
+	// mis. `mc ilm rule add --expire-days 7`). ClamAV pra-approval Fase 6.
+	log.Info().Str("category", category).Str("bucket", s.uploadsBucket()).
+		Msg("Tiket upload diterbitkan")
 	_ = fileName // nama file client tidak dipakai (key server-generated)
 	return &PresignUploadResult{
 		UploadURL: url,

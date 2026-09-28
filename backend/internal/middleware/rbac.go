@@ -62,15 +62,16 @@ func RequireRoles(allowedRoles ...domain.Role) fiber.Handler {
 func ScopeWilayah() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		claims := GetUser(c)
+		// L-2: tanpa claims = tolak. Versi lama memanggil Next() sehingga
+		// route yang lupa dipasang setelah Authenticate() mendapat scope
+		// nasional diam-diam (fail-open).
 		if claims == nil {
-			// Tidak ada claims → tidak bisa menentukan scope, lanjutkan saja.
-			// Route yang membutuhkan scope harus dipasang setelah Authenticate().
-			return c.Next()
+			return response.Unauthorized(c, "Akses ditolak: otentikasi diperlukan")
 		}
 
-		var scope WilayahScope
+	var scope WilayahScope
 
-		switch claims.Role {
+	switch claims.Role {
 		case domain.RoleSuperAdmin, domain.RoleAdminNasional:
 			// Scope nasional — kedua field nil
 			scope = WilayahScope{}
