@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -36,6 +35,10 @@ type AuthHandler struct {
 	validator    *validator.CustomValidator
 	refreshTTL   time.Duration
 	secureCookie bool
+	// L-6: atribut cookie configurable (default aman dari config).
+	cookieSameSite string
+	cookiePath     string
+	cookieDomain   string
 }
 
 func NewAuthHandler(
@@ -43,15 +46,25 @@ func NewAuthHandler(
 	validator *validator.CustomValidator,
 	refreshTTL time.Duration,
 	secureCookie bool,
+	cookieSameSite, cookiePath, cookieDomain string,
 ) *AuthHandler {
 	if refreshTTL <= 0 {
 		refreshTTL = 7 * 24 * time.Hour
 	}
+	if cookieSameSite == "" {
+		cookieSameSite = "Strict"
+	}
+	if cookiePath == "" {
+		cookiePath = "/api/v1/auth"
+	}
 	return &AuthHandler{
-		authService:  authService,
-		validator:    validator,
-		refreshTTL:   refreshTTL,
-		secureCookie: secureCookie,
+		authService:    authService,
+		validator:      validator,
+		refreshTTL:     refreshTTL,
+		secureCookie:   secureCookie,
+		cookieSameSite: cookieSameSite,
+		cookiePath:     cookiePath,
+		cookieDomain:   cookieDomain,
 	}
 }
 
@@ -104,12 +117,9 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	tokenStr := c.Cookies("refresh_token")
 
-	authHeader := c.Get("Authorization")
-	parts := strings.SplitN(authHeader, " ", 2)
-	rawAccess := ""
-	if len(parts) == 2 {
-		rawAccess = strings.TrimSpace(parts[1])
-	}
+	// L-3: pakai helper Bearer tunggal dari middleware (best-effort;
+	// header boleh kosong di jalur logout publik).
+	rawAccess, _ := middleware.ExtractBearerToken(c.Get("Authorization"))
 
 	_ = h.authService.Logout(c.Context(), rawAccess, tokenStr, auditContextOf(c))
 	h.clearRefreshTokenCookie(c)
@@ -148,7 +158,11 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 		return response.ValidationError(c, "Validasi gagal", errs)
 	}
 
-	if err := h.authService.ChangePassword(c.Context(), claims.UserID, req, auditContextOf(c)); err != nil {
+	// L-4: teruskan access token pemanggil agar service mem-blacklist-nya
+	// (best-effort; header selalu ada karena route ini butuh Authenticate).
+	rawAccess, _ := middleware.ExtractBearerToken(c.Get("Authorization"))
+
+	if err := h.authService.ChangePassword(c.Context(), claims.UserID, req, rawAccess, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
 
@@ -185,8 +199,9 @@ func (h *AuthHandler) setRefreshTokenCookie(c *fiber.Ctx, token string, ttl time
 		MaxAge:   int(ttl.Seconds()),
 		HTTPOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: "Strict",
-		Path:     "/api/v1/auth",
+		SameSite: h.cookieSameSite,
+		Path:     h.cookiePath,
+		Domain:   h.cookieDomain,
 	})
 }
 
@@ -198,7 +213,8 @@ func (h *AuthHandler) clearRefreshTokenCookie(c *fiber.Ctx) {
 		MaxAge:   -1,
 		HTTPOnly: true,
 		Secure:   h.secureCookie,
-		SameSite: "Strict",
-		Path:     "/api/v1/auth",
+		SameSite: h.cookieSameSite,
+		Path:     h.cookiePath,
+		Domain:   h.cookieDomain,
 	})
 }

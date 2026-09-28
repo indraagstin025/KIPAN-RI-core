@@ -438,7 +438,7 @@ func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action
 		return domain.NewValidationError("ID pendaftaran tidak valid")
 	}
 	if s.repo == nil {
-		return domain.NewValidationError("Repository pendaftaran belum tersedia")
+		return domain.NewUnavailableError("Layanan pendaftaran sedang tidak tersedia")
 	}
 	if action == "" {
 		return domain.NewValidationError("Aksi verifikasi wajib dipilih")
@@ -494,7 +494,7 @@ func (s *pendaftaranService) VerifyKTA(ctx context.Context, nia, sig string) (*d
 		return nil, domain.NewValidationError("Parameter verifikasi KTA tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, domain.NewValidationError("Repository anggota belum tersedia")
+		return nil, domain.NewUnavailableError("Layanan anggota sedang tidak tersedia")
 	}
 	member, err := s.anggotaRepo.GetByNIA(ctx, code)
 	if err != nil {
@@ -772,7 +772,7 @@ func (s *pendaftaranService) SubmitRevision(ctx context.Context, nomor string, r
 		return domain.NewValidationError("Token revisi wajib diisi")
 	}
 	if s.repo == nil {
-		return domain.NewValidationError("Repository pendaftaran belum tersedia")
+		return domain.NewUnavailableError("Layanan pendaftaran sedang tidak tersedia")
 	}
 	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
 	if err != nil {

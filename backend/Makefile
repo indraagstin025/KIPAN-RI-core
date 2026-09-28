@@ -21,12 +21,18 @@ tidy:
 	go mod tidy
 
 # Migrate UP (butuh: DATABASE_URL di environment)
+# BE-009: -tags 'postgres file' wajib — tanpa itu CLI error
+# `unknown driver postgres (forgotten import?)`.
 migrate-up:
-	go run -mod=mod github.com/golang-migrate/migrate/v4/cmd/migrate -path migrations -database "$${DATABASE_URL}" up
+	go run -tags 'postgres file' -mod=mod github.com/golang-migrate/migrate/v4/cmd/migrate -path migrations -database "$${DATABASE_URL}" up
 
 # Migrate DOWN 1 step
 migrate-down:
-	go run -mod=mod github.com/golang-migrate/migrate/v4/cmd/migrate -path migrations -database "$${DATABASE_URL}" down 1
+	go run -tags 'postgres file' -mod=mod github.com/golang-migrate/migrate/v4/cmd/migrate -path migrations -database "$${DATABASE_URL}" down 1
+
+# Versi migrasi saat ini (diagnostik)
+migrate-version:
+	go run -tags 'postgres file' -mod=mod github.com/golang-migrate/migrate/v4/cmd/migrate -path migrations -database "$${DATABASE_URL}" version
 
 # Generate 3 kunci kriptografi secara aman
 keys:

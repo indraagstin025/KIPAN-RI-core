@@ -59,6 +59,23 @@ func TestValidateProductionRejectsDangerous(t *testing.T) {
 	}
 }
 
+func TestValidateAuthCookieSameSite(t *testing.T) {
+	base := AuthConfig{
+		AccessTokenSecret: "0123456789abcdef0123456789abcdef",
+		AccessTokenTTL:    15 * time.Minute,
+		RefreshTokenTTL:   168 * time.Hour,
+		CookieSameSite:    "Strict",
+	}
+	if err := validateAuth(base); err != nil {
+		t.Fatalf("Strict ditolak: %v", err)
+	}
+	bad := base
+	bad.CookieSameSite = "Sometimes"
+	if err := validateAuth(bad); err == nil {
+		t.Error("SameSite invalid DITERIMA")
+	}
+}
+
 func TestValidateAuthRejectsLongTTL(t *testing.T) {
 	a := AuthConfig{
 		AccessTokenSecret: "0123456789abcdef0123456789abcdef",

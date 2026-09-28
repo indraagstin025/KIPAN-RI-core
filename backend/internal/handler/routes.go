@@ -34,6 +34,10 @@ func RegisterRoutes(
 	// Health check endpoint (tidak butuh DB)
 	healthHandler := NewHealthHandler(cfg.App.Name, cfg.App.Env, db, rdb)
 	app.Get("/health", healthHandler.Check)
+	// BE-004: detail internal (env + status dependensi). WAJIB dibatasi
+	// di Caddy hanya untuk jaringan internal — jangan expose ke internet.
+	internal := app.Group("/internal")
+	internal.Get("/health", healthHandler.Detail)
 
 	// Jika DB tidak aktif (mode dev tanpa DB), hentikan di sini
 	if db == nil {
@@ -54,7 +58,8 @@ func RegisterRoutes(
 	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
 	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
 	secureCookie := cfg.App.Env != "development"
-	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL, secureCookie)
+	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL, secureCookie,
+		cfg.Auth.CookieSameSite, cfg.Auth.CookiePath, cfg.Auth.CookieDomain)
 	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, val)
 	storageHandler := NewStorageHandler(storageService, val)
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.AccessTokenSecret, rdb)

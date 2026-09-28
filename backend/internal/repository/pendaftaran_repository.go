@@ -270,9 +270,20 @@ func (r *pendaftaranRepo) NextRegistrationSequence(ctx context.Context, year, mo
 	return seq, nil
 }
 
+// pendaftaranColumns adalah proyeksi eksplisit (BE-005): hindari SELECT *
+// agar kolom sensitif baru tidak ikut transit memori jalur publik.
+// Catatan: NIK tetap aman di JSON via tag `json:"-"` (defense in depth).
+const pendaftaranColumns = `id, nomor_pendaftaran, nama_lengkap, nik_hash,
+	nik_encrypted, tempat_lahir, tanggal_lahir, jenis_kelamin, agama,
+	pendidikan, pekerjaan, status_pribadi, alamat, provinsi_id, kabupaten_id,
+	kecamatan, desa, kode_pos, email, whatsapp, motivasi, foto_key, ktp_key,
+	cv_key, sk_key, surat_pernyataan_key, surat_sehat_key, status,
+	catatan_perbaikan, revisi_token_hash, revisi_token_expires_at,
+	anggota_id, created_at, updated_at`
+
 func (r *pendaftaranRepo) GetByID(ctx context.Context, id int) (*domain.Pendaftaran, error) {
 	var p domain.Pendaftaran
-	query := `SELECT * FROM pendaftaran WHERE id = $1`
+	query := `SELECT ` + pendaftaranColumns + ` FROM pendaftaran WHERE id = $1`
 	if err := r.db.GetContext(ctx, &p, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -284,7 +295,7 @@ func (r *pendaftaranRepo) GetByID(ctx context.Context, id int) (*domain.Pendafta
 
 func (r *pendaftaranRepo) GetByNomorPendaftaran(ctx context.Context, nomor string) (*domain.Pendaftaran, error) {
 	var p domain.Pendaftaran
-	query := `SELECT * FROM pendaftaran WHERE nomor_pendaftaran = $1`
+	query := `SELECT ` + pendaftaranColumns + ` FROM pendaftaran WHERE nomor_pendaftaran = $1`
 	if err := r.db.GetContext(ctx, &p, query, strings.TrimSpace(nomor)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -296,7 +307,7 @@ func (r *pendaftaranRepo) GetByNomorPendaftaran(ctx context.Context, nomor strin
 
 func (r *pendaftaranRepo) GetByNikHash(ctx context.Context, nikHash string) (*domain.Pendaftaran, error) {
 	var p domain.Pendaftaran
-	query := `SELECT * FROM pendaftaran WHERE nik_hash = $1 LIMIT 1`
+	query := `SELECT ` + pendaftaranColumns + ` FROM pendaftaran WHERE nik_hash = $1 LIMIT 1`
 	if err := r.db.GetContext(ctx, &p, query, strings.TrimSpace(nikHash)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -383,7 +394,7 @@ func (r *pendaftaranRepo) SetRevisiToken(ctx context.Context, id int, tokenHash 
 		WHERE id = $3`
 	res, err := r.db.ExecContext(ctx, query, tokenHash, expiresAt, id)
 	if err != nil {
-		return err
+		return mapDBError(fmt.Errorf("gagal menyimpan token revisi: %w", err), "Konflik data pendaftaran")
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
@@ -448,7 +459,7 @@ func (r *pendaftaranRepo) UpdateStatus(ctx context.Context, id int, status domai
 	query := `UPDATE pendaftaran SET status = $1, catatan_perbaikan = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`
 	result, err := r.db.ExecContext(ctx, query, status, catatan, id)
 	if err != nil {
-		return err
+		return mapDBError(fmt.Errorf("gagal mengubah status pendaftaran: %w", err), "Konflik data pendaftaran")
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
@@ -490,7 +501,7 @@ func (r *pendaftaranRepo) UpdateStatusWithHistory(ctx context.Context, id int, s
 		`UPDATE pendaftaran SET status = $1, catatan_perbaikan = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
 		status, catatan, id)
 	if err != nil {
-		return err
+		return mapDBError(fmt.Errorf("gagal mengubah status pendaftaran: %w", err), "Konflik data pendaftaran")
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
@@ -524,7 +535,7 @@ func (r *pendaftaranRepo) IssueMember(ctx context.Context, pendaftaranID int, ye
 	defer func() { _ = tx.Rollback() }()
 
 	var p domain.Pendaftaran
-	if err := tx.GetContext(ctx, &p, `SELECT * FROM pendaftaran WHERE id = $1 FOR UPDATE`, pendaftaranID); err != nil {
+	if err := tx.GetContext(ctx, &p, `SELECT `+pendaftaranColumns+` FROM pendaftaran WHERE id = $1 FOR UPDATE`, pendaftaranID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}

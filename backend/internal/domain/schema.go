@@ -1,6 +1,24 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// JWTClaims adalah payload standar access token SIM-KIPAN.
+// Didefinisikan di domain (L-3) agar service/handler tidak bergantung pada
+// paket middleware (dependency direction: ke dalam).
+// Field ProvinsiID/KabupatenID menggunakan *int agar konsisten dengan
+// domain.User dan bisa langsung dikonsumsi repository tanpa konversi.
+type JWTClaims struct {
+	UserID      string `json:"user_id"`
+	Email       string `json:"email"`
+	Role        Role   `json:"role"`
+	ProvinsiID  *int   `json:"provinsi_id,omitempty"`
+	KabupatenID *int   `json:"kabupaten_id,omitempty"`
+	jwt.RegisteredClaims
+}
 
 // ============================================================
 // ENUMERASI & TIPE DATA KHUSUS (DOMAIN ENUMS)

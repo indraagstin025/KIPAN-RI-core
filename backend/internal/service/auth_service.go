@@ -68,7 +68,7 @@ type AuthService interface {
 	RefreshToken(ctx context.Context, rawRefreshToken string, audit domain.AuditContext) (newRefreshToken string, resp *AuthResponse, err error)
 	Logout(ctx context.Context, rawAccessToken, rawRefreshToken string, audit domain.AuditContext) error
 	GetProfile(ctx context.Context, userID string) (*UserResponse, error)
-	ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest, audit domain.AuditContext) error
+	ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest, rawAccessToken string, audit domain.AuditContext) error
 }
 
 // ============================================================
@@ -278,7 +278,7 @@ func (s *authService) GetProfile(ctx context.Context, userID string) (*UserRespo
 // CHANGE PASSWORD
 // ============================================================
 
-func (s *authService) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest, audit domain.AuditContext) error {
+func (s *authService) ChangePassword(ctx context.Context, userID string, req ChangePasswordRequest, rawAccessToken string, audit domain.AuditContext) error {
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return domain.ErrUserNotFound
@@ -303,8 +303,10 @@ func (s *authService) ChangePassword(ctx context.Context, userID string, req Cha
 		return fmt.Errorf("gagal menyimpan password baru: %w", err)
 	}
 
-	// Fix C-5: cabut SEMUA sesi (semua family) setelah password berubah.
-	// Ini mencegah attacker yang sudah mencuri refresh token tetap punya akses.
+	// L-4: blacklist access token pemanggil (best-effort) + cabut SEMUA
+	// sesi refresh (semua family). Tanpa blacklist, token penyerang tetap
+	// valid hingga kedaluwarsa walau password sudah diganti korban.
+	s.blacklistAccessToken(ctx, rawAccessToken)
 	if err := s.userRepo.RevokeAllUserTokens(ctx, userID); err != nil {
 		log.Warn().Err(err).Str("user_id", userID).
 			Msg("Gagal mencabut seluruh sesi setelah ganti password")

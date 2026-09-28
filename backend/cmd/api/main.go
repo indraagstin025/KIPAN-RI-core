@@ -118,7 +118,7 @@ func setupFiberApp(cfg *config.Config) *fiber.App {
 		// Request dari IP lain yang mengirim header ini akan diabaikan.
 		// ============================================================
 		EnableTrustedProxyCheck: true,
-		TrustedProxies:          parseTrustedProxies(cfg.App.Env),
+		TrustedProxies:          parseTrustedProxies(cfg),
 		ProxyHeader:             fiber.HeaderXForwardedFor,
 	})
 
@@ -143,23 +143,20 @@ func setupFiberApp(cfg *config.Config) *fiber.App {
 
 // parseTrustedProxies mengembalikan daftar IP/CIDR proxy yang dipercaya.
 //
-// Development: localhost saja (aman untuk dev).
-// Production : termasuk private network untuk Caddy di VPS yang sama
-//              atau reverse proxy di VPC terpisah.
+// L-7: HANYA proxy yang didaftarkan eksplisit yang dipercaya. Versi lama
+// otomatis memercayai seluruh RFC1918 di production — bila Go terekspos
+// langsung atau ada host lain di VPC, X-Forwarded-For palsu dianggap sah
+// (bypass limiter per-IP + forensik IP rusak).
 //
-// Jika Caddy ada di server yang SAMA dengan Go (paling umum),
-// cukup 127.0.0.1 + ::1. Jika Caddy di server berbeda,
-// tambahkan IP private-nya (mis. 10.0.0.5).
-func parseTrustedProxies(env string) []string {
+// Default: localhost saja. Tambahan via APP_TRUSTED_PROXIES (koma, mis.
+// "10.0.0.5, 172.16.0.0/12") — isi dengan IP Caddy yang sebenarnya.
+func parseTrustedProxies(cfg *config.Config) []string {
 	base := []string{"127.0.0.1", "::1"}
 
-	if env == "production" {
-		// CIDR private networks — aman untuk infrastruktur internal
-		base = append(base,
-			"10.0.0.0/8",
-			"172.16.0.0/12",
-			"192.168.0.0/16",
-		)
+	for _, p := range strings.Split(cfg.App.TrustedProxies, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			base = append(base, p)
+		}
 	}
 
 	return base

@@ -64,3 +64,7 @@ minio_data/
 coverage/
 *.out
 *.test
+
+# BE-008: dump transkrip sesi agent — tidak pernah di-commit
+# (berisiko memuat kredensial/pesan sensitif dari terminal)
+session-*.md

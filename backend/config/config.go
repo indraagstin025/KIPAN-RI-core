@@ -25,6 +25,8 @@ type AppConfig struct {
 	Port        string
 	AllowOrigin string
 	Debug       bool
+	// L-7: proxy tambahan yang dipercaya (koma, IP/CIDR).
+	TrustedProxies string
 }
 
 type DatabaseConfig struct {
@@ -50,6 +52,12 @@ type AuthConfig struct {
 	AccessTokenSecret string
 	AccessTokenTTL    time.Duration
 	RefreshTokenTTL   time.Duration
+	// L-6: atribut cookie refresh configurable dengan default aman.
+	// Longgarkan (Lax / path /) hanya bila frontend beda-site, dengan
+	// memahami risiko CSRF yang meningkat (SameSite=None wajib Secure).
+	CookieSameSite string
+	CookiePath     string
+	CookieDomain   string
 }
 
 type StorageConfig struct {
@@ -94,6 +102,7 @@ func Load() (*Config, error) {
 	v.SetDefault("APP_PORT", "8080")
 	v.SetDefault("APP_DEBUG", false)
 	v.SetDefault("APP_ALLOW_ORIGIN", "http://localhost:5173")
+	v.SetDefault("APP_TRUSTED_PROXIES", "")
 
 	v.SetDefault("DB_HOST", "127.0.0.1")
 	v.SetDefault("DB_PORT", "5432")
@@ -110,6 +119,9 @@ func Load() (*Config, error) {
 
 	v.SetDefault("AUTH_ACCESS_TOKEN_TTL", "15m")
 	v.SetDefault("AUTH_REFRESH_TOKEN_TTL", "168h")
+	v.SetDefault("AUTH_COOKIE_SAMESITE", "Strict")
+	v.SetDefault("AUTH_COOKIE_PATH", "/api/v1/auth")
+	v.SetDefault("AUTH_COOKIE_DOMAIN", "")
 
 	v.SetDefault("STORAGE_REGION", "auto")
 	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
@@ -157,11 +169,12 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:        v.GetString("APP_NAME"),
-			Env:         v.GetString("APP_ENV"),
-			Port:        v.GetString("APP_PORT"),
-			AllowOrigin: v.GetString("APP_ALLOW_ORIGIN"),
-			Debug:       v.GetBool("APP_DEBUG"),
+			Name:           v.GetString("APP_NAME"),
+			Env:            v.GetString("APP_ENV"),
+			Port:           v.GetString("APP_PORT"),
+			AllowOrigin:    v.GetString("APP_ALLOW_ORIGIN"),
+			Debug:          v.GetBool("APP_DEBUG"),
+			TrustedProxies: v.GetString("APP_TRUSTED_PROXIES"),
 		},
 		Database: DatabaseConfig{
 			DSN:             dsn,
@@ -182,6 +195,9 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			AccessTokenSecret: v.GetString("AUTH_ACCESS_TOKEN_SECRET"),
+			CookieSameSite:    v.GetString("AUTH_COOKIE_SAMESITE"),
+			CookiePath:        v.GetString("AUTH_COOKIE_PATH"),
+			CookieDomain:      v.GetString("AUTH_COOKIE_DOMAIN"),
 			AccessTokenTTL:    accessTTL,
 			RefreshTokenTTL:   refreshTTL,
 		},
@@ -353,6 +369,15 @@ func validateAuth(a AuthConfig) error {
 	}
 	if a.RefreshTokenTTL <= 0 {
 		return fmt.Errorf("AUTH_REFRESH_TOKEN_TTL harus > 0")
+	}
+	// L-6: SameSite hanya boleh Strict/Lax/None. None membutuhkan Secure
+	// (browser modern menolak None tanpa Secure); di production flag Secure
+	// selalu true sehingga None valid untuk frontend beda-site via HTTPS.
+	switch a.CookieSameSite {
+	case "Strict", "Lax", "None", "":
+		// "" diperlakukan sebagai Strict oleh handler.
+	default:
+		return fmt.Errorf("AUTH_COOKIE_SAMESITE harus Strict, Lax, atau None (dapat %q)", a.CookieSameSite)
 	}
 	return nil
 }

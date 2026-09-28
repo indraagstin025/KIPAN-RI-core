@@ -15,17 +15,9 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
-// JWTClaims adalah payload standar access token SIM-KIPAN.
-// Field ProvinsiID/KabupatenID menggunakan *int agar konsisten dengan domain.User
-// dan bisa langsung dikonsumsi repository tanpa konversi.
-type JWTClaims struct {
-	UserID      string      `json:"user_id"`
-	Email       string      `json:"email"`
-	Role        domain.Role `json:"role"`
-	ProvinsiID  *int        `json:"provinsi_id,omitempty"`
-	KabupatenID *int        `json:"kabupaten_id,omitempty"`
-	jwt.RegisteredClaims
-}
+// JWTClaims adalah alias ke domain.JWTClaims (L-3: definisi tunggal di
+// domain). Alias menjaga kompatibilitas pemanggil lama.
+type JWTClaims = domain.JWTClaims
 
 type AuthMiddleware struct {
 	secret string
@@ -52,7 +44,7 @@ func NewAuthMiddleware(secret string, rdb *redis.Client) *AuthMiddleware {
 //   - Cek blacklist SETELAH parse → tidak perlu query Redis untuk token invalid
 func (m *AuthMiddleware) Authenticate() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		tokenStr, err := extractBearerToken(c.Get("Authorization"))
+		tokenStr, err := ExtractBearerToken(c.Get("Authorization"))
 		if err != nil {
 			return response.Unauthorized(c, err.Error())
 		}
@@ -72,8 +64,9 @@ func (m *AuthMiddleware) Authenticate() fiber.Handler {
 	}
 }
 
-// extractBearerToken memvalidasi format header Authorization: Bearer <token>
-func extractBearerToken(authHeader string) (string, error) {
+// ExtractBearerToken memvalidasi format header Authorization: Bearer <token>.
+// Diekspor (L-3) agar handler memakai satu helper yang sama, bukan duplikat.
+func ExtractBearerToken(authHeader string) (string, error) {
 	if authHeader == "" {
 		return "", errors.New("Header Authorization diperlukan")
 	}

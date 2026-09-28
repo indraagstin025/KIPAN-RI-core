@@ -27,11 +27,21 @@ func NewHealthHandler(appName, env string, db *sqlx.DB, rdb *redis.Client) *Heal
 	}
 }
 
-// Check mengembalikan status konektivitas database dan cache
+// Check adalah endpoint PUBLIK minimal (BE-004): hanya status, tanpa env,
+// tanpa status dependensi (itu oracle kesiapan infra untuk penyerang).
 func (h *HealthHandler) Check(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
+		"status": "ok",
+		"time":   time.Now().Format(time.RFC3339),
+	})
+}
+
+// Detail adalah endpoint INTERNAL untuk monitoring: wajib dibatasi di
+// reverse proxy (Caddy: hanya dari jaringan internal/VPN, JANGAN expose
+// /internal/* ke internet). Lihat registerStorageRoutes → internal group.
+func (h *HealthHandler) Detail(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
 		"status":   "ok",
-		"module":   "auth_and_authorization",
 		"service":  h.appName,
 		"env":      h.env,
 		"time":     time.Now().Format(time.RFC3339),

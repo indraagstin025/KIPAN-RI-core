@@ -26,7 +26,8 @@ func BlindIndex(nik, keyHex string) (string, error) {
 }
 
 // EncryptAESGCM mengenkripsi plaintext menggunakan AES-256-GCM.
-// Format output: base64(nonce):base64(ciphertext):base64(tag)
+// Format output: base64(nonce):base64(sealed) dengan sealed = ciphertext+tag
+// GCM (L-8: komentar lama keliru menulis 3 segmen terpisah).
 func EncryptAESGCM(plaintext, keyHex string) (string, error) {
 	key, err := hex.DecodeString(keyHex)
 	if err != nil {
