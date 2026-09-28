@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
-
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
@@ -489,7 +487,7 @@ func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action
 		return domain.NewValidationError("ID pendaftaran tidak valid")
 	}
 	if s.repo == nil {
-		return domain.NewUnavailableError("Layanan pendaftaran sedang tidak tersedia")
+		return unavailable("pendaftaran")
 	}
 	if action == "" {
 		return domain.NewValidationError("Aksi verifikasi wajib dipilih")
@@ -560,7 +558,7 @@ func (s *pendaftaranService) VerifyKTA(ctx context.Context, nia, sig string) (*d
 		return nil, domain.NewValidationError("Parameter verifikasi KTA tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, domain.NewUnavailableError("Layanan anggota sedang tidak tersedia")
+		return nil, unavailable("anggota")
 	}
 	member, err := s.anggotaRepo.GetByNIA(ctx, code)
 	if err != nil {
@@ -628,28 +626,25 @@ func (s *pendaftaranService) verifySubmittedDocuments(ctx context.Context, req d
 	return nil
 }
 
-// verifyOneDocument memverifikasi satu object via storage. Storage mati:
-// 503 di production, lewati + warning di non-production.
+// verifyOneDocument memverifikasi satu object via storage (R2: degradedSkip).
 func (s *pendaftaranService) verifyOneDocument(ctx context.Context, key, category string) error {
 	if s.storageSvc == nil || !s.storageSvc.Configured() {
-		if s.cfg != nil && s.cfg.App.Env == "production" {
-			return domain.NewUnavailableError("Verifikasi dokumen tidak tersedia")
+		if degradedSkip(s.cfg, "storage(verifikasi-dokumen:"+category+")") {
+			return nil
 		}
-		log.Warn().Str("category", category).
-			Msg("Storage tidak dikonfigurasi — verifikasi dokumen dilewati (HANYA non-production)")
-		return nil
+		return unavailable("verifikasi dokumen")
 	}
 	return s.storageSvc.VerifySubmittedObject(ctx, key, category)
 }
 
 // validateWilayah memastikan provinsi/kabupaten ada, aktif, dan berelasi
-// benar di master. Tanpa wilayahRepo (hanya test): tolak di production.
+// benar di master (R2: degradedSkip bila repo tak di-wire).
 func (s *pendaftaranService) validateWilayah(ctx context.Context, provinsiID, kabupatenID int) error {
 	if s.wilayahRepo == nil {
-		if s.cfg != nil && s.cfg.App.Env == "production" {
-			return domain.NewUnavailableError("Validasi wilayah tidak tersedia")
+		if degradedSkip(s.cfg, "wilayahRepo") {
+			return nil
 		}
-		return nil
+		return unavailable("validasi wilayah")
 	}
 	ok, err := s.wilayahRepo.ExistsProvinsi(ctx, provinsiID)
 	if err != nil {
@@ -860,7 +855,7 @@ func (s *pendaftaranService) SubmitRevision(ctx context.Context, nomor string, r
 		return domain.NewValidationError("Token revisi wajib diisi")
 	}
 	if s.repo == nil {
-		return domain.NewUnavailableError("Layanan pendaftaran sedang tidak tersedia")
+		return unavailable("pendaftaran")
 	}
 	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
 	if err != nil {
@@ -914,8 +909,7 @@ func (s *pendaftaranService) SubmitRevision(ctx context.Context, nomor string, r
 	return nil
 }
 
-// auditEvent mencatat jejak audit best-effort (RULES 21): gagal tulis tidak
-// menggagalkan operasi utama. PII tidak pernah masuk metadata.
+// auditEvent mendelegasikan ke writeAudit terpusat (R2).
 func (s *pendaftaranService) auditEvent(
 	ctx context.Context,
 	audit domain.AuditContext,
@@ -923,28 +917,7 @@ func (s *pendaftaranService) auditEvent(
 	actorName, actorRole, entity, entityID, action string,
 	metadata *string,
 ) {
-	if s.auditRepo == nil {
-		return
-	}
-	e := &domain.ActivityLog{
-		ActorID:    actorID,
-		ActorName:  actorName,
-		ActorRole:  actorRole,
-		IPAddress:  audit.IP,
-		UserAgent:  audit.UserAgent,
-		EntityName: entity,
-		EntityID:   entityID,
-		Action:     action,
-		Metadata:   metadata,
-		RequestID:  audit.RequestID,
-	}
-	if err := s.auditRepo.Create(ctx, e); err != nil {
-		log.Warn().
-			Err(err).
-			Str("action", action).
-			Str("entity_id", entityID).
-			Msg("Gagal mencatat audit trail pendaftaran")
-	}
+	writeAudit(ctx, s.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
 }
 
 func mapStatusForAction(action domain.PendaftaranApprovalAction) (domain.PendaftaranStatus, bool) {

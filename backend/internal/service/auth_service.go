@@ -326,38 +326,14 @@ func (s *authService) ChangePassword(ctx context.Context, userID string, req Cha
 	return nil
 }
 
-// auditEvent mencatat jejak audit secara best-effort (RULES 21).
-// Kegagalan tulis TIDAK menggagalkan operasi utama (availability) —
-// hanya diperingatkan di log server. PII tidak pernah masuk metadata;
-// pemanggil wajib memasking sebelum memanggil helper ini.
+// auditEvent mendelegasikan ke writeAudit terpusat (R2).
 func (s *authService) auditEvent(
 	ctx context.Context,
 	audit domain.AuditContext,
 	userID, actorName, actorRole, entity, entityID, action string,
 	metadata *string,
 ) {
-	if s.auditRepo == nil {
-		return
-	}
-	e := &domain.ActivityLog{
-		ActorID:    &userID,
-		ActorName:  actorName,
-		ActorRole:  actorRole,
-		IPAddress:  audit.IP,
-		UserAgent:  audit.UserAgent,
-		EntityName: entity,
-		EntityID:   entityID,
-		Action:     action,
-		Metadata:   metadata,
-		RequestID:  audit.RequestID,
-	}
-	if err := s.auditRepo.Create(ctx, e); err != nil {
-		log.Warn().
-			Err(err).
-			Str("action", action).
-			Str("entity_id", entityID).
-			Msg("Gagal mencatat audit trail")
-	}
+	writeAudit(ctx, s.auditRepo, audit, &userID, actorName, actorRole, entity, entityID, action, metadata)
 }
 
 // resolveActor mengambil nama/role aktor secara best-effort untuk audit.

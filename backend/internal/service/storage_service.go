@@ -128,7 +128,7 @@ func (s *StorageService) RequestUploadPresign(_ context.Context, category, fileN
 			fmt.Sprintf("Ukuran file harus 1-%d byte untuk kategori %s", policy.MaxSize, category))
 	}
 	if s.client == nil {
-		return nil, domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+		return nil, unavailable("storage")
 	}
 
 	ext := mimeToExt[mime]
@@ -174,7 +174,7 @@ func (s *StorageService) VerifySubmittedObject(ctx context.Context, key, categor
 		return domain.NewValidationError("Object key dokumen tidak valid")
 	}
 	if s.client == nil {
-		return domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+		return unavailable("storage")
 	}
 
 	info, err := s.client.Stat(ctx, s.uploadsBucket(), k)
@@ -221,7 +221,7 @@ func (s *StorageService) RequestViewPresign(ctx context.Context, key string, act
 		return nil, domain.NewValidationError("Object key dokumen tidak valid")
 	}
 	if s.client == nil {
-		return nil, domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+		return nil, unavailable("storage")
 	}
 
 	const ttl = 5 * time.Minute
@@ -255,7 +255,7 @@ func (s *StorageService) RequestViewPresign(ctx context.Context, key string, act
 // Key server-generated: kta/{NIA}.pdf. Bukan jalur upload user.
 func (s *StorageService) PutKTADocument(ctx context.Context, nia string, pdf []byte) (string, error) {
 	if s.client == nil {
-		return "", domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+		return "", unavailable("storage")
 	}
 	key := "kta/" + strings.TrimSpace(nia) + ".pdf"
 	if err := storage.ValidateObjectKey(key); err != nil {
@@ -275,7 +275,7 @@ func (s *StorageService) PresignKTADocument(ctx context.Context, key string) (st
 		return "", domain.NewValidationError("Object key KTA tidak valid")
 	}
 	if s.client == nil {
-		return "", domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+		return "", unavailable("storage")
 	}
 	const ttl = 5 * time.Minute
 	url, err := s.client.PresignGet(ctx, s.privateBucket(), k, ttl)

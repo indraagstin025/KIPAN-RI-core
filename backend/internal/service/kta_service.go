@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rs/zerolog/log"
-
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
@@ -68,18 +66,14 @@ func (s *ktaService) IssueKTADocument(ctx context.Context, member *domain.Anggot
 		return *member.KTAPDFKey, nil
 	}
 	if s.anggotaRepo == nil {
-		return "", domain.NewUnavailableError("Layanan anggota sedang tidak tersedia")
+		return "", unavailable("anggota")
 	}
 	if s.docStore == nil || !s.docStore.Configured() {
-		if s.cfg != nil && s.cfg.App.Env == "production" {
-			return "", domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+		// Dev tanpa storage: lewati PDF (approve tetap sah). R2.
+		if degradedSkip(s.cfg, "storage(pdf-kta:"+member.NIA+")") {
+			return "", nil
 		}
-		// Dev tanpa storage: lewati PDF (approve tetap sah), dengan
-		// peringatan eksplisit — pola degraded yang sama dengan
-		// verifikasi dokumen submit.
-		log.Warn().Str("nia", member.NIA).
-			Msg("Storage tidak dikonfigurasi — PDF KTA dilewati (HANYA non-production)")
-		return "", nil
+		return "", unavailable("storage")
 	}
 
 	verifyURL := fmt.Sprintf("%s/v/%s?sig=%s", s.verifyBaseURL(), member.NIA, ktaSig)
@@ -113,7 +107,7 @@ func (s *ktaService) GetKTADocumentURL(ctx context.Context, anggotaID int, actor
 		return "", domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return "", domain.NewUnavailableError("Layanan anggota sedang tidak tersedia")
+		return "", unavailable("anggota")
 	}
 	member, err := s.anggotaRepo.GetByID(ctx, anggotaID)
 	if err != nil {
@@ -126,7 +120,7 @@ func (s *ktaService) GetKTADocumentURL(ctx context.Context, anggotaID int, actor
 		return "", domain.NewNotFoundError("Dokumen KTA")
 	}
 	if s.docStore == nil || !s.docStore.Configured() {
-		return "", domain.NewUnavailableError("Layanan storage belum dikonfigurasi")
+		return "", unavailable("storage")
 	}
 	url, err := s.docStore.PresignKTADocument(ctx, *member.KTAPDFKey)
 	if err != nil {
