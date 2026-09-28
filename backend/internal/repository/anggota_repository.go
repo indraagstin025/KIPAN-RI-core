@@ -20,6 +20,10 @@ type AnggotaRepository interface {
 	ExistsByNikHash(ctx context.Context, nikHash string) (bool, error)
 	// GetByNIA mengambil anggota berdasarkan NIA untuk verifikasi KTA.
 	GetByNIA(ctx context.Context, nia string) (*domain.Anggota, error)
+	// GetByID mengambil anggota berdasarkan ID.
+	GetByID(ctx context.Context, id int) (*domain.Anggota, error)
+	// SetKTAPDFKey menyimpan object key PDF KTA hasil render server.
+	SetKTAPDFKey(ctx context.Context, id int, key string) error
 }
 
 type anggotaRepo struct {
@@ -37,6 +41,35 @@ func (r *anggotaRepo) ExistsByNikHash(ctx context.Context, nikHash string) (bool
 		return false, err
 	}
 	return exists, nil
+}
+
+func (r *anggotaRepo) GetByID(ctx context.Context, id int) (*domain.Anggota, error) {
+	var a domain.Anggota
+	query := `SELECT * FROM anggota WHERE id = $1`
+	if err := r.db.GetContext(ctx, &a, query, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (r *anggotaRepo) SetKTAPDFKey(ctx context.Context, id int, key string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE anggota SET kta_pdf_key = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+		key, id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 func (r *anggotaRepo) GetByNIA(ctx context.Context, nia string) (*domain.Anggota, error) {

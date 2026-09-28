@@ -27,6 +27,8 @@ type AppConfig struct {
 	Debug       bool
 	// L-7: proxy tambahan yang dipercaya (koma, IP/CIDR).
 	TrustedProxies string
+	// Base URL publik verifikasi KTA yang tertanam di QR (tanpa trailing /).
+	KTAVerifyBaseURL string
 }
 
 type DatabaseConfig struct {
@@ -122,6 +124,7 @@ func Load() (*Config, error) {
 	v.SetDefault("AUTH_COOKIE_SAMESITE", "Strict")
 	v.SetDefault("AUTH_COOKIE_PATH", "/api/v1/auth")
 	v.SetDefault("AUTH_COOKIE_DOMAIN", "")
+	v.SetDefault("KTA_VERIFY_BASE_URL", "https://kipan.id")
 
 	v.SetDefault("STORAGE_REGION", "auto")
 	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
@@ -174,7 +177,8 @@ func Load() (*Config, error) {
 			Port:           v.GetString("APP_PORT"),
 			AllowOrigin:    v.GetString("APP_ALLOW_ORIGIN"),
 			Debug:          v.GetBool("APP_DEBUG"),
-			TrustedProxies: v.GetString("APP_TRUSTED_PROXIES"),
+			TrustedProxies:   v.GetString("APP_TRUSTED_PROXIES"),
+			KTAVerifyBaseURL: strings.TrimRight(strings.TrimSpace(v.GetString("KTA_VERIFY_BASE_URL")), "/"),
 		},
 		Database: DatabaseConfig{
 			DSN:             dsn,

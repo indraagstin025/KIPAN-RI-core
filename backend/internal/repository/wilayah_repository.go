@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/jmoiron/sqlx"
+
+	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 )
 
 // WilayahRepository menangani lookup master wilayah untuk validasi
@@ -15,6 +17,10 @@ type WilayahRepository interface {
 	// KabupatenInProvinsi true bila kabupaten ada, aktif, dan milik
 	// provinsi tersebut.
 	KabupatenInProvinsi(ctx context.Context, kabupatenID, provinsiID int) (bool, error)
+	// ListProvinsi mengembalikan provinsi aktif (untuk dropdown publik).
+	ListProvinsi(ctx context.Context) ([]domain.WilayahProvinsi, error)
+	// ListKabupaten mengembalikan kabupaten aktif dalam satu provinsi.
+	ListKabupaten(ctx context.Context, provinsiID int) ([]domain.WilayahKabupaten, error)
 }
 
 type wilayahRepo struct {
@@ -42,4 +48,25 @@ func (r *wilayahRepo) KabupatenInProvinsi(ctx context.Context, kabupatenID, prov
 		return false, err
 	}
 	return exists, nil
+}
+
+func (r *wilayahRepo) ListProvinsi(ctx context.Context) ([]domain.WilayahProvinsi, error) {
+	items := make([]domain.WilayahProvinsi, 0)
+	query := `SELECT id, kode, nama, is_active, created_at, updated_at
+		FROM wilayah_provinsi WHERE is_active = TRUE ORDER BY nama`
+	if err := r.db.SelectContext(ctx, &items, query); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *wilayahRepo) ListKabupaten(ctx context.Context, provinsiID int) ([]domain.WilayahKabupaten, error) {
+	items := make([]domain.WilayahKabupaten, 0)
+	query := `SELECT id, provinsi_id, kode, nama, is_active, created_at, updated_at
+		FROM wilayah_kabupaten
+		WHERE provinsi_id = $1 AND is_active = TRUE ORDER BY nama`
+	if err := r.db.SelectContext(ctx, &items, query, provinsiID); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

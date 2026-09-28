@@ -151,6 +151,24 @@ func (c *Client) SniffHead(ctx context.Context, bucket, key string, n int64) ([]
 	return io.ReadAll(io.LimitReader(out.Body, n))
 }
 
+// Put mengunggah object kecil (mis. PDF KTA) langsung dari backend.
+// Hanya untuk artefak server-generated; upload user tetap via presign.
+func (c *Client) Put(ctx context.Context, bucket, key string, data []byte, contentType string) error {
+	if len(data) == 0 {
+		return errors.New("data object kosong")
+	}
+	if err := ValidateObjectKey(key); err != nil {
+		return err
+	}
+	_, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(data),
+		ContentType: aws.String(contentType),
+	})
+	return err
+}
+
 // EnsureBucket membuat bucket bila belum ada. Dipakai saat startup di
 // non-production agar dev tidak perlu provisioning manual.
 func (c *Client) EnsureBucket(ctx context.Context, bucket string) error {

@@ -43,6 +43,10 @@ type PendaftaranService interface {
 	SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error
 	// GetDetail adalah jalur admin: tolak objek di luar wilayah aktor.
 	GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Pendaftaran, error)
+	// RevealNIK mendekripsi NIK untuk verifikator berwenang (1.4.2): scope
+	// dicek via GetDetail, akses dicatat di audit trail. NIK plaintext
+	// tidak pernah masuk log/metadata.
+	RevealNIK(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
 	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error
 }
 
@@ -53,10 +57,37 @@ type pendaftaranService struct {
 	auditRepo   repository.AuditLogRepository
 	storageSvc  ObjectVerifier
 	wilayahRepo repository.WilayahRepository
+	ktaSvc      KTAService
 }
 
-func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository, storageSvc ObjectVerifier, wilayahRepo repository.WilayahRepository) PendaftaranService {
-	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo, storageSvc: storageSvc, wilayahRepo: wilayahRepo}
+func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository, storageSvc ObjectVerifier, wilayahRepo repository.WilayahRepository, ktaSvc KTAService) PendaftaranService {
+	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo, storageSvc: storageSvc, wilayahRepo: wilayahRepo, ktaSvc: ktaSvc}
+}
+
+// healKTADocument menyelesaikan PDF KTA untuk approve yang sebelumnya gagal
+// di tengah jalan (anggota sudah terbit, PDF belum). Idempoten: bila PDF
+// sudah ada, IssueKTADocument mengembalikan key lama.
+func (s *pendaftaranService) healKTADocument(ctx context.Context, id int, actorID, actorName, actorRole string, audit domain.AuditContext, meta string) error {
+	if s.anggotaRepo == nil || s.ktaSvc == nil {
+		return domain.NewConflictError("Pendaftaran sudah memiliki anggota")
+	}
+	item, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if item.AnggotaID == nil {
+		return domain.NewConflictError("Pendaftaran sudah memiliki anggota")
+	}
+	member, err := s.anggotaRepo.GetByID(ctx, *item.AnggotaID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
+		return err
+	}
+	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
+		"pendaftaran", strconv.Itoa(id), string(domain.PendaftaranActionSetujui), &meta)
+	return nil
 }
 
 var nipPattern = regexp.MustCompile(`^\d{16}$`)
@@ -468,8 +499,23 @@ func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action
 		if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.KTASigningKey) == "" {
 			return domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
 		}
-		if _, err := s.repo.IssueMember(ctx, id, time.Now().Year(), s.cfg.Crypto.KTASigningKey); err != nil {
+		member, err := s.repo.IssueMember(ctx, id, time.Now().Year(), s.cfg.Crypto.KTASigningKey)
+		if err != nil {
+			// Jalur heal: approve sebelumnya berhasil terbitkan anggota
+			// tetapi gagal di PDF (fail-closed) — coba selesaikan PDF-nya
+			// alih-alih gagal dengan "sudah memiliki anggota".
+			var appErr *domain.AppError
+			if errors.As(err, &appErr) && appErr.Code == 409 && s.anggotaRepo != nil {
+				return s.healKTADocument(ctx, id, actorID, actorName, actorRole, audit, meta)
+			}
 			return err
+		}
+		// PDF KTA server-side, fail-closed: gagal render/upload = approve
+		// gagal, admin retry (idempoten via jalur heal di atas).
+		if s.ktaSvc != nil {
+			if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
+				return err
+			}
 		}
 		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 			"pendaftaran", strconv.Itoa(id), string(action), &meta)
@@ -616,6 +662,28 @@ func (s *pendaftaranService) ktaVerifyKeys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// RevealNIK mendekripsi NIK khusus untuk admin verifikator dalam yurisdiksinya.
+// Setiap pembukaan dicatat (actor, IP, request-ID) agar dapat diaudit (RULES 12, 21).
+func (s *pendaftaranService) RevealNIK(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) (string, error) {
+	item, err := s.GetDetail(ctx, id, actor)
+	if err != nil {
+		return "", err
+	}
+	key, err := s.getAESKey()
+	if err != nil {
+		return "", err
+	}
+	nik, err := crypto.DecryptAESGCM(item.NIKEncrypted, key)
+	if err != nil {
+		return "", domain.NewValidationError("Data NIK tidak dapat dibuka")
+	}
+	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
+	meta := `{"event":"nik_reveal"}`
+	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
+		"pendaftaran", strconv.Itoa(id), "NIK_REVEAL", &meta)
+	return nik, nil
 }
 
 // ListQueue mengembalikan antrean sesuai jurisdiction aktor + filter

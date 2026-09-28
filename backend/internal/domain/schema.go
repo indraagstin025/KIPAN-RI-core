@@ -292,6 +292,14 @@ type Anggota struct {
 	UpdatedAt          time.Time     `db:"updated_at" json:"updated_at"`
 }
 
+// KTAQRHashValue mengembalikan signature QR ("" bila belum terbit).
+func (a *Anggota) KTAQRHashValue() string {
+	if a == nil || a.KTAQRHash == nil {
+		return ""
+	}
+	return *a.KTAQRHash
+}
+
 // ============================================================
 // 5. SURAT KEPUTUSAN & KEPENGURUSAN
 // Tata Kelola Organisasi (DPP, DPD, DPC)

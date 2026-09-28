@@ -54,7 +54,8 @@ func RegisterRoutes(
 	anggotaRepo := repository.NewAnggotaRepository(db)
 	storageService := wireStorageService(cfg, auditRepo)
 	wilayahRepo := repository.NewWilayahRepository(db)
-	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo, storageService, wilayahRepo)
+	ktaSvc := service.NewKTAService(cfg, anggotaRepo, storageService, auditRepo)
+	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo, storageService, wilayahRepo, ktaSvc)
 	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
 	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
 	secureCookie := cfg.App.Env != "development"
@@ -62,6 +63,9 @@ func RegisterRoutes(
 		cfg.Auth.CookieSameSite, cfg.Auth.CookiePath, cfg.Auth.CookieDomain)
 	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, val)
 	storageHandler := NewStorageHandler(storageService, val)
+	wilayahService := service.NewWilayahService(wilayahRepo)
+	wilayahHandler := NewWilayahHandler(wilayahService)
+	ktaHandler := NewKTAHandler(ktaSvc)
 	authMiddleware := middleware.NewAuthMiddleware(cfg.Auth.AccessTokenSecret, rdb)
 
 	// ============================================================
@@ -72,7 +76,27 @@ func RegisterRoutes(
 	registerAuthRoutes(v1, rdb, authHandler, authMiddleware)
 	registerMembershipRoutes(v1, rdb, authMiddleware, pendaftaranHandler)
 	registerStorageRoutes(v1, rdb, authMiddleware, storageHandler)
+	registerWilayahRoutes(v1, rdb, wilayahHandler)
+	registerAnggotaRoutes(v1, authMiddleware, ktaHandler)
 	registerAdminRoutes(v1, authMiddleware)
+}
+
+// registerAnggotaRoutes mendaftarkan endpoint kader (admin, teraudit).
+func registerAnggotaRoutes(
+	v1 fiber.Router,
+	authMiddleware *middleware.AuthMiddleware,
+	handler *KTAHandler,
+) {
+	adminAnggota := v1.Group("/admin/anggota",
+		authMiddleware.Authenticate(),
+		middleware.RequireRoles(
+			domain.RoleSuperAdmin,
+			domain.RoleAdminNasional,
+			domain.RoleAdminProvinsi,
+			domain.RoleAdminKabupaten,
+		),
+	)
+	adminAnggota.Get("/:id/kta", middleware.ScopeWilayah(), handler.DownloadKTA)
 }
 
 // wireStorageService membangun S3 client + StorageService.
@@ -189,6 +213,7 @@ func registerMembershipRoutes(
 	)
 	adminPendaftaran.Get("", middleware.ScopeWilayah(), handler.ListQueue)
 	adminPendaftaran.Get("/:id", middleware.ScopeWilayah(), handler.Detail)
+	adminPendaftaran.Get("/:id/nik", middleware.ScopeWilayah(), handler.RevealNIK)
 	adminPendaftaran.Post("/:id/verifikasi", middleware.ScopeWilayah(), handler.Verify)
 	adminPendaftaran.Post("/:id/perbaikan", middleware.ScopeWilayah(), handler.RequestRevision)
 	adminPendaftaran.Post("/:id/tolak", middleware.ScopeWilayah(), handler.Reject)
@@ -210,6 +235,21 @@ func registerStorageRoutes(
 	public := v1.Group("/storage")
 	public.Post("/presign-upload", uploadLimiter, handler.PresignUpload)
 	public.Get("/presign-view", authMiddleware.Authenticate(), handler.PresignView)
+}
+
+// registerWilayahRoutes mendaftarkan daftar master wilayah (publik,
+// read-only, untuk dropdown form + test lintas-wilayah).
+func registerWilayahRoutes(
+	v1 fiber.Router,
+	rdb *redis.Client,
+	handler *WilayahHandler,
+) {
+	wilayahLimiter := middleware.AuthRateLimiter(rdb, "wil_pub:ip:", 60, 1*time.Minute)
+
+	public := v1.Group("/wilayah")
+	public.Use(wilayahLimiter)
+	public.Get("/provinsi", handler.ListProvinsi)
+	public.Get("/kabupaten/:provinsi_id", handler.ListKabupaten)
 }
 
 // ============================================================

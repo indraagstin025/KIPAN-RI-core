@@ -61,6 +61,9 @@ func (s *stubPendaftaranService) SubmitRevision(context.Context, string, domain.
 func (s *stubPendaftaranService) GetDetail(context.Context, int, domain.ActorContext) (*domain.Pendaftaran, error) {
 	return nil, domain.ErrNotFound
 }
+func (s *stubPendaftaranService) RevealNIK(context.Context, int, domain.ActorContext, domain.AuditContext) (string, error) {
+	return "3201010101010001", nil
+}
 func (s *stubPendaftaranService) ProcessApproval(context.Context, int, domain.PendaftaranApprovalAction, string, domain.ActorContext, domain.AuditContext) error {
 	return nil
 }
