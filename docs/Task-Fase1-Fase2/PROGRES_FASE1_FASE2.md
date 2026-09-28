@@ -98,8 +98,8 @@
 | 3.3 | 1.4.2 reveal NIK teraudit (role + scope + audit) | Ya | ⏳ Antre |
 | 3.4 | PDF KTA server-side (dep baru + render saat approve + download teraudit) | Ya | ⏳ Antre |
 | 3.5 | Suite: cross-wilayah 403 + wilayah + NIK + PDF; sync checklist TAHAPAN | Ya | ⏳ Antre |
-| 3.6 | **Pentest mendalam pra-Fase 3** (lihat §5) | Ya | ⏳ Antre |
-| 3.7 | Push + PR Fase 2 siap merge | Ya | ⏳ Antre |
+| 3.6 | **Pentest mendalam pra-Fase 3** (lihat §5) | Ya | ✅ SELESAI — `docs/LAPORAN_PENTEST_PRAFASE3.md`, LOLOS 9/9 area |
+| 3.7 | Push + PR Fase 2 siap merge | Ya | ✅ SELESAI |
 
 ---
 
