@@ -106,7 +106,13 @@ Catatan: `make migrate-up` rusak (CLI tanpa build tag postgres → `unknown driv
 
 ## 6. Yang SENGAJA belum dikerjakan (keputusan sadar)
 
-- **Pengiriman token revisi via WA/email** — endpoint mengembalikan token di respons (rate-limited). Notifikasi Fase 5.
+- **Pengiriman token revisi via WA/email** — endpoint mengembalikan token di respons.
+  **Penerimaan risiko sementara** (disetujui pemilik): token hanya terbit dengan
+  bukti pemilik ganda (email DAN whatsapp terdaftar), limiter 3/24 jam per nomor,
+  24 jam + sekali pakai, kegagalan 403 diaudit. Serangan massal tertutup; tersisa
+  serangan tertuju (penyerang tahu nomor+email+WA). Syarat produksi tetap:
+  kirim via kanal terverifikasi (Fase 5). Lihat branch `fix/fase-1-fase-2-hardening`
+  (BE-001) + test REV-01..04 di suite v2.5.
 - **Render PDF KTA** (`kta_pdf_key` belum diisi) — QR verify jalan; artefak kartu Fase 2 akhir / Fase 3 awal.
 - **Turnstile/CAPTCHA** di 4 endpoint publik — butuh frontend + domain; kriteria sudah ditetapkan.
 - **Dekripsi NIK untuk verifikator** (Task 1.4.2) — struktur siap (`nik_encrypted` + `MaskNIK`), endpoint detail khusus + re-autentikasi belum dibangun.
@@ -126,22 +132,29 @@ Catatan: `make migrate-up` rusak (CLI tanpa build tag postgres → `unknown driv
 
 ## 8. Sisa yang perlu dilakukan SEBELUM PR siap merge
 
-### A. LOW hardening warisan Fase 0/1A (kecil-kecil)
+### A. LOW hardening warisan Fase 0/1A — ✅ SELESAI di branch hardening
 
-- [ ] L-1 Postgres fail-open → fail-closed di production (`postgres.go:43-49`)
-- [ ] L-2 `ScopeWilayah` tanpa claims → 401, bukan `Next()` (`rbac.go:64-69`)
-- [ ] L-3 Layering: health tanpa DB langsung; `JWTClaims` pindah ke domain; dedup parse Bearer
-- [ ] L-4 Ganti password blacklist access token aktif
-- [ ] L-5 Validasi config prod (`DB_SSLMODE=require`, `APP_DEBUG=false`, `REDIS_PASSWORD`, tolak `ALLOW_ORIGIN="*"`)
-- [ ] L-6 Cookie Secure/SameSite configurable + dokumentasi
-- [ ] L-7 Logger request-id + sempitkan trusted proxy
-- [ ] L-8 Betulkan komentar format AES (`crypto.go:29`)
+- [x] L-1 Postgres fail-closed di production (+ test implisit via gates)
+- [x] L-2 `ScopeWilayah` tanpa claims → 401 (+ test `TestScopeWilayahTanpaClaimsDitolak`)
+- [x] L-3 `JWTClaims` → domain (alias kompatibel); `ExtractBearerToken` tunggal
+- [x] L-4 Ganti password blacklist access pemanggil (best-effort)
+- [x] L-5 `validateProduction` fail-fast (+ 6 test `config_test.go`)
+- [x] L-6 Cookie SameSite/Path/Domain configurable + validasi + `.env.example`
+- [x] L-7 `APP_TRUSTED_PROXIES` eksplisit (RFC1918 otomatis dihapus)
+- [x] L-8 Komentar format AES diluruskan
 
-### B. Sisa temuan Fase 2
+### B. Sisa temuan Fase 2 & audit
 
-- [ ] `mapDBError` di `UpdateStatus*`/`SetRevisiToken` (409/422, bukan 500)
-- [ ] Pesan "Repository … belum tersedia" → generik + log server (13 titik)
-- [ ] Proyeksi kolom eksplisit di `GetByID`/`GetByNomor` (NIK encrypted tak transit jalur publik)
+- [x] BE-001: bukti pemilik email+WA + limiter/nomor + audit gagal (suite REV-01..04)
+- [x] BE-002 realistis: log penerbitan + lifecycle objek yatim (ContentLength mustahil di presigned PUT; ukuran keras via HeadObject saat submit)
+- [x] BE-003: limiter login key email+IP 20/15 mnt
+- [x] BE-004: `/health` minimal; detail → `/internal/health` (batasi Caddy)
+- [x] BE-005: proyeksi kolom eksplisit (4 query)
+- [x] BE-006: pesan wiring → 503 generik (13 titik)
+- [x] BE-007: `mapDBError` di `UpdateStatus*`/`SetRevisiToken`
+- [x] BE-008: `session-*.md` di-ignore; `tmp_srv_*.exe` dihapus
+- [x] BE-009: Makefile migrate + tags + target version
+- [x] BE-010: test handler + validator + config (suite v2.5: 41/41 PASS)
 - [ ] Task 1.4.2: endpoint detail + dekripsi NIK teraudit untuk verifikator
 - [ ] Render PDF KTA server-side (`kta_pdf_key`)
 
@@ -155,6 +168,7 @@ Catatan: `make migrate-up` rusak (CLI tanpa build tag postgres → `unknown driv
 
 ### Definisi siap-merge
 
-- [ ] Seluruh A + B selesai, gates hijau, suite tetap 36/36 (atau lebih bila tambah test)
+- [x] Seluruh A + temuan audit selesai; gates hijau; suite v2.5 41/41 PASS
 - [ ] Reviewer menjalankan §5 dan mereproduksi gate PASSED
-- [ ] Tidak ada file stray (`session-*.md`, binary `tmp_*`, `.env`) di diff
+- [x] Tidak ada file stray (`session-*.md` di-ignore, `tmp_*` dihapus, `.env` tak ter-track)
+- [ ] Keputusan: 1.4.2 + PDF KTA ikut PR ini atau sprint susulan
