@@ -225,7 +225,7 @@ func TestVerifyKTAAcceptsActiveKey(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyActive
-	svc := NewPendaftaranService(cfg, PendaftaranDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
+	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {
@@ -255,7 +255,7 @@ func TestVerifyKTAAcceptsPreviousKeyAfterRotation(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyNew
 	cfg.Crypto.KTASigningKeyPrev = keyOld
-	svc := NewPendaftaranService(cfg, PendaftaranDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
+	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {
@@ -281,7 +281,7 @@ func TestVerifyKTARejectsUnknownKey(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyActive
-	svc := NewPendaftaranService(cfg, PendaftaranDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
+	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {

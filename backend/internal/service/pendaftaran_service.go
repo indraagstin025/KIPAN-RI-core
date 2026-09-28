@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/mail"
 	"regexp"
 	"strconv"
@@ -30,34 +29,22 @@ type PendaftaranService interface {
 	CreateRegistration(ctx context.Context, req domain.PendaftaranSubmitRequest, audit domain.AuditContext) (*domain.PendaftaranCreateResult, error)
 	// GetTracking adalah jalur publik: kembalikan DTO minimal tanpa PII.
 	GetTracking(ctx context.Context, nomor string) (*domain.PendaftaranTrackingResponse, error)
-	// VerifyKTA memverifikasi keaslian KTA: selalu 200 + verdict (tanpa
-	// oracle bedakan NIA tak dikenal vs signature salah).
-	VerifyKTA(ctx context.Context, nia, sig string) (*domain.KTAVerificationResponse, error)
 	// ListQueue adalah antrean admin terfilter jurisdiction aktor.
 	ListQueue(ctx context.Context, actor domain.ActorContext, status string, page, limit int) ([]domain.PendaftaranQueueItem, int, error)
-	// RequestRevisionToken menerbitkan token revisi untuk status PERBAIKAN.
-	RequestRevisionToken(ctx context.Context, req domain.RevisionTokenRequest, audit domain.AuditContext) (*domain.RevisionTokenResponse, error)
-	// SubmitRevision memproses revisi mandiri applicant bertoken.
-	SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error
 	// GetDetail adalah jalur admin: tolak objek di luar wilayah aktor.
 	GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Pendaftaran, error)
-	// RevealNIK mendekripsi NIK untuk verifikator berwenang (1.4.2): scope
-	// dicek via GetDetail, akses dicatat di audit trail. NIK plaintext
-	// tidak pernah masuk log/metadata.
-	RevealNIK(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
-	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error
+	// Verifikasi, revisi, dan KTA/NIK pindah ke RevisionService &
+	// VerificationService (R3: pecah god-service).
 }
 
-// PendaftaranDeps adalah dependensi service pendaftaran (R1: ganti
-// constructor 7-param). Field nil-able seperti sebelumnya; service
-// memeriksa nil dan gagal fail-closed per fitur.
+// PendaftaranDeps adalah dependensi service pendaftaran inti (R1+R3).
+// Field nil-able; service memeriksa nil dan gagal fail-closed per fitur.
 type PendaftaranDeps struct {
 	Repo        repository.PendaftaranRepository
 	AnggotaRepo repository.AnggotaRepository
 	AuditRepo   repository.AuditLogRepository
 	StorageSvc  ObjectVerifier
 	WilayahRepo repository.WilayahRepository
-	KTASvc      KTAService
 }
 
 type pendaftaranService struct {
@@ -67,7 +54,6 @@ type pendaftaranService struct {
 	auditRepo   repository.AuditLogRepository
 	storageSvc  ObjectVerifier
 	wilayahRepo repository.WilayahRepository
-	ktaSvc      KTAService
 }
 
 func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) PendaftaranService {
@@ -78,34 +64,7 @@ func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) Pendaftaran
 		auditRepo:   deps.AuditRepo,
 		storageSvc:  deps.StorageSvc,
 		wilayahRepo: deps.WilayahRepo,
-		ktaSvc:      deps.KTASvc,
 	}
-}
-
-// healKTADocument menyelesaikan PDF KTA untuk approve yang sebelumnya gagal
-// di tengah jalan (anggota sudah terbit, PDF belum). Idempoten: bila PDF
-// sudah ada, IssueKTADocument mengembalikan key lama.
-func (s *pendaftaranService) healKTADocument(ctx context.Context, id int, actorID, actorName, actorRole string, audit domain.AuditContext, meta string) error {
-	if s.anggotaRepo == nil || s.ktaSvc == nil {
-		return domain.NewConflictError("Pendaftaran sudah memiliki anggota")
-	}
-	item, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	if item.AnggotaID == nil {
-		return domain.NewConflictError("Pendaftaran sudah memiliki anggota")
-	}
-	member, err := s.anggotaRepo.GetByID(ctx, *item.AnggotaID)
-	if err != nil {
-		return err
-	}
-	if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
-		return err
-	}
-	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
-		"pendaftaran", strconv.Itoa(id), string(domain.PendaftaranActionSetujui), &meta)
-	return nil
 }
 
 var nipPattern = regexp.MustCompile(`^\d{16}$`)
@@ -309,7 +268,7 @@ func (s *pendaftaranService) BuildRegistrationNumber(ctx context.Context, year, 
 // GenerateBlindIndex mengubah NIK ternormalisasi menjadi blind index
 // HMAC-SHA256 untuk deteksi duplikasi aman (RULES 10).
 func (s *pendaftaranService) GenerateBlindIndex(nik string) (string, error) {
-	key, err := s.getBlindIndexKey()
+	key, err := blindIndexKey(s.cfg)
 	if err != nil {
 		return "", err
 	}
@@ -318,7 +277,7 @@ func (s *pendaftaranService) GenerateBlindIndex(nik string) (string, error) {
 
 // EncryptNIK mengenkripsi NIK ternormalisasi agar tidak pernah disimpan plaintext.
 func (s *pendaftaranService) EncryptNIK(nik string) (string, error) {
-	key, err := s.getAESKey()
+	key, err := aesKey(s.cfg)
 	if err != nil {
 		return "", err
 	}
@@ -479,124 +438,6 @@ func (s *pendaftaranService) GetDetail(ctx context.Context, id int, actor domain
 	return item, nil
 }
 
-// ProcessApproval memvalidasi otorisasi + jurisdiction + transisi status,
-// lalu mengeksekusi secara atomik beserta riwayat beraktor dan audit trail.
-// actor WAJIB berasal dari JWT terverifikasi (RULES 6), bukan dari client.
-func (s *pendaftaranService) ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error {
-	if id <= 0 {
-		return domain.NewValidationError("ID pendaftaran tidak valid")
-	}
-	if s.repo == nil {
-		return unavailable("pendaftaran")
-	}
-	if action == "" {
-		return domain.NewValidationError("Aksi verifikasi wajib dipilih")
-	}
-
-	item, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
-		return domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
-	}
-
-	targetStatus, ok := mapStatusForAction(action)
-	if !ok {
-		return domain.NewValidationError("Aksi tidak valid untuk proses pendaftaran")
-	}
-	if !domain.IsAllowedTransition(item.Status, targetStatus, action) {
-		return domain.NewValidationError("Transisi status tidak sah untuk aksi yang diminta")
-	}
-
-	note := strings.TrimSpace(catatan)
-	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
-	meta := fmt.Sprintf(`{"from":%q,"to":%q}`, string(item.Status), string(targetStatus))
-
-	if action == domain.PendaftaranActionSetujui {
-		if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.KTASigningKey) == "" {
-			return domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
-		}
-		member, err := s.repo.IssueMember(ctx, id, time.Now().Year(), s.cfg.Crypto.KTASigningKey)
-		if err != nil {
-			// Jalur heal: approve sebelumnya berhasil terbitkan anggota
-			// tetapi gagal di PDF (fail-closed) — coba selesaikan PDF-nya
-			// alih-alih gagal dengan "sudah memiliki anggota".
-			var appErr *domain.AppError
-			if errors.As(err, &appErr) && appErr.Code == 409 && s.anggotaRepo != nil {
-				return s.healKTADocument(ctx, id, actorID, actorName, actorRole, audit, meta)
-			}
-			return err
-		}
-		// PDF KTA server-side, fail-closed: gagal render/upload = approve
-		// gagal, admin retry (idempoten via jalur heal di atas).
-		if s.ktaSvc != nil {
-			if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
-				return err
-			}
-		}
-		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
-			"pendaftaran", strconv.Itoa(id), string(action), &meta)
-		return nil
-	}
-
-	if err := s.repo.UpdateStatusWithHistory(ctx, id, targetStatus, string(action), &actorID, &actorName, &actorRole, note); err != nil {
-		return err
-	}
-	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
-		"pendaftaran", strconv.Itoa(id), string(action), &meta)
-	return nil
-}
-
-// VerifyKTA memverifikasi keaslian KTA secara kriptografis (RULES 20).
-// NIA tak dikenal dan signature salah menghasilkan verdict valid=false yang
-// sama (tanpa oracle). Hanya input kosong yang ditolak sebagai 422.
-func (s *pendaftaranService) VerifyKTA(ctx context.Context, nia, sig string) (*domain.KTAVerificationResponse, error) {
-	code := strings.TrimSpace(nia)
-	signature := strings.TrimSpace(sig)
-	if code == "" || len(code) > 50 || len(signature) > 128 {
-		return nil, domain.NewValidationError("Parameter verifikasi KTA tidak valid")
-	}
-	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
-	}
-	member, err := s.anggotaRepo.GetByNIA(ctx, code)
-	if err != nil {
-		// NIA tak dikenal = verdict tidak valid (bukan 404, anti oracle).
-		return &domain.KTAVerificationResponse{NIA: code, Valid: false}, nil
-	}
-	keys := s.ktaVerifyKeys()
-	if len(keys) == 0 {
-		return nil, domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
-	}
-	// Rotasi: coba kunci aktif dulu, lalu kunci sebelumnya. Kartu lama yang
-	// ditandatangani kunci prev tetap valid tanpa migrasi ulang.
-	valid := false
-	for _, k := range keys {
-		if err := crypto.VerifyKTASignature(
-			member.NIA,
-			member.TanggalAngkat.Format("2006-01-02"),
-			member.ID,
-			signature,
-			k,
-		); err == nil {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return &domain.KTAVerificationResponse{NIA: member.NIA, Valid: false}, nil
-	}
-	tgl := member.TanggalAngkat
-	return &domain.KTAVerificationResponse{
-		NIA:           member.NIA,
-		Valid:         true,
-		NamaLengkap:   member.NamaLengkap,
-		Status:        string(member.Status),
-		TanggalAngkat: &tgl,
-	}, nil
-}
-
 // verifySubmittedDocuments memverifikasi setiap dokumen yang diklaim sudah
 // di-upload. Bila storage tidak dikonfigurasi: tolak di production
 // (fail-closed), lewati dengan warning eksplisit di non-production agar dev
@@ -619,22 +460,24 @@ func (s *pendaftaranService) verifySubmittedDocuments(ctx context.Context, req d
 		if k == "" {
 			continue // required sudah ditegakkan ValidateSubmitRequest
 		}
-		if err := s.verifyOneDocument(ctx, k, d.category); err != nil {
+		if err := verifyOneDocument(ctx, s.cfg, s.storageSvc, k, d.category); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// verifyOneDocument memverifikasi satu object via storage (R2: degradedSkip).
-func (s *pendaftaranService) verifyOneDocument(ctx context.Context, key, category string) error {
-	if s.storageSvc == nil || !s.storageSvc.Configured() {
-		if degradedSkip(s.cfg, "storage(verifikasi-dokumen:"+category+")") {
+// verifyOneDocument memverifikasi satu object via storage (R3: fungsi paket
+// agar dipakai inti + revisi). Storage mati: 503 di production, lewati +
+// warning di non-production.
+func verifyOneDocument(ctx context.Context, cfg *config.Config, storageSvc ObjectVerifier, key, category string) error {
+	if storageSvc == nil || !storageSvc.Configured() {
+		if degradedSkip(cfg, "storage(verifikasi-dokumen:"+category+")") {
 			return nil
 		}
 		return unavailable("verifikasi dokumen")
 	}
-	return s.storageSvc.VerifySubmittedObject(ctx, key, category)
+	return storageSvc.VerifySubmittedObject(ctx, key, category)
 }
 
 // validateWilayah memastikan provinsi/kabupaten ada, aktif, dan berelasi
@@ -663,49 +506,11 @@ func (s *pendaftaranService) validateWilayah(ctx context.Context, provinsiID, ka
 	return nil
 }
 
-// ktaVerifyKeys mengembalikan kunci verifikasi KTA: aktif dulu, lalu kunci
-// rotasi sebelumnya (verify-only). Urutan penting untuk short-circuit.
-func (s *pendaftaranService) ktaVerifyKeys() []string {
-	if s.cfg == nil {
-		return nil
-	}
-	keys := make([]string, 0, 2)
-	if k := strings.TrimSpace(s.cfg.Crypto.KTASigningKey); k != "" {
-		keys = append(keys, k)
-	}
-	if k := strings.TrimSpace(s.cfg.Crypto.KTASigningKeyPrev); k != "" {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-// RevealNIK mendekripsi NIK khusus untuk admin verifikator dalam yurisdiksinya.
-// Setiap pembukaan dicatat (actor, IP, request-ID) agar dapat diaudit (RULES 12, 21).
-func (s *pendaftaranService) RevealNIK(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) (string, error) {
-	item, err := s.GetDetail(ctx, id, actor)
-	if err != nil {
-		return "", err
-	}
-	key, err := s.getAESKey()
-	if err != nil {
-		return "", err
-	}
-	nik, err := crypto.DecryptAESGCM(item.NIKEncrypted, key)
-	if err != nil {
-		return "", domain.NewValidationError("Data NIK tidak dapat dibuka")
-	}
-	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
-	meta := `{"event":"nik_reveal"}`
-	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
-		"pendaftaran", strconv.Itoa(id), "NIK_REVEAL", &meta)
-	return nik, nil
-}
-
 // ListQueue mengembalikan antrean sesuai jurisdiction aktor + filter
 // status allowlist + pagination bounded. Scope nasional = tanpa filter.
 func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorContext, status string, page, limit int) ([]domain.PendaftaranQueueItem, int, error) {
 	if s.repo == nil {
-		return nil, 0, domain.NewValidationError("Repository pendaftaran belum tersedia")
+		return nil, 0, unavailable("pendaftaran")
 	}
 	st := strings.TrimSpace(status)
 	if st != "" {
@@ -760,155 +565,6 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 	return items, total, nil
 }
 
-// RevisionTokenTTL adalah masa berlaku token revisi applicant.
-const RevisionTokenTTL = 24 * time.Hour
-
-// normalizeEmail menyeragamkan email untuk perbandingan bukti pemilik.
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
-// normalizeWA menyeragamkan nomor WA ke digit inti: buang non-digit lalu
-// buang prefix negara/ trunk (62/0) sehingga 08xx, 62xxx, +62xxx setara.
-func normalizeWA(wa string) string {
-	var digits strings.Builder
-	for _, r := range wa {
-		if r >= '0' && r <= '9' {
-			digits.WriteRune(r)
-		}
-	}
-	d := digits.String()
-	d = strings.TrimPrefix(d, "62")
-	d = strings.TrimPrefix(d, "0")
-	return d
-}
-
-// MatchOwnerProof mencocokkan bukti pemilik (email DAN whatsapp) terhadap
-// data terdaftar. Pure function agar unit-testable. Kedua sisi
-// dinormalisasi; bukti kosong selalu gagal.
-func MatchOwnerProof(storedEmail, storedWA, proofEmail, proofWA string) bool {
-	pe, pw := normalizeEmail(proofEmail), normalizeWA(proofWA)
-	if pe == "" || pw == "" {
-		return false
-	}
-	return normalizeEmail(storedEmail) == pe && normalizeWA(storedWA) == pw
-}
-
-// RequestRevisionToken menerbitkan token revisi satu-permintaan untuk
-// pendaftaran berstatus PERBAIKAN. Wajib bukti pemilik (email DAN whatsapp
-// terdaftar — BE-001): nomor saja tidak cukup karena sekuensial dan
-// statusnya publik. Token mentah dikembalikan sekali; yang disimpan hanya
-// hash SHA-256 + expiry.
-//
-// PENERIMAAN RISIKO SEMENTARA (dicatat di laporan PR Fase 2): token
-// dikembalikan di respons, bukan kanal terverifikasi. Diterima karena
-// bukti ganda + limiter per-nomor + 24 jam + sekali pakai; pengiriman
-// WA/email tetap wajib sebelum produksi (Fase 5).
-func (s *pendaftaranService) RequestRevisionToken(ctx context.Context, req domain.RevisionTokenRequest, audit domain.AuditContext) (*domain.RevisionTokenResponse, error) {
-	nr := strings.TrimSpace(req.Nomor)
-	if nr == "" || len(nr) > 30 {
-		return nil, domain.NewValidationError("Nomor pendaftaran tidak valid")
-	}
-	if s.repo == nil {
-		return nil, domain.NewValidationError("Repository pendaftaran belum tersedia")
-	}
-	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
-	if err != nil {
-		return nil, err
-	}
-	if item.Status != domain.PendaftaranStatusPerbaikan {
-		return nil, domain.NewValidationError("Pendaftaran tidak dalam status revisi (PERBAIKAN)")
-	}
-	if !MatchOwnerProof(item.Email, item.Whatsapp, req.Email, req.Whatsapp) {
-		// 403 generik: tanpa bocorkan field mana yang salah. Bukti PII
-		// pemohon TIDAK masuk audit (hanya fakta kegagalan).
-		denyMeta := `{"reason":"owner_mismatch"}`
-		s.auditEvent(ctx, audit, nil, "Pendaftar "+nr, "PUBLIK",
-			"pendaftaran", strconv.Itoa(item.ID), "REVISI_TOKEN_DENIED", &denyMeta)
-		return nil, domain.NewForbiddenError("Anda tidak berhak meminta token revisi ini")
-	}
-
-	raw, err := crypto.GenerateSecureToken(32)
-	if err != nil {
-		return nil, fmt.Errorf("gagal menerbitkan token revisi: %w", err)
-	}
-	expiresAt := time.Now().Add(RevisionTokenTTL)
-	if err := s.repo.SetRevisiToken(ctx, item.ID, crypto.HashToken(raw), expiresAt); err != nil {
-		return nil, err
-	}
-	s.auditEvent(ctx, audit, nil, "Pendaftar "+nr, "PUBLIK",
-		"pendaftaran", strconv.Itoa(item.ID), "REVISI_TOKEN", nil)
-	return &domain.RevisionTokenResponse{Token: raw, ExpiresAt: expiresAt}, nil
-}
-
-// SubmitRevision memproses revisi mandiri applicant: token valid +
-// belum kedaluwarsa + state PERBAIKAN (satu UPDATE atomik, error generik
-// tanpa oracle), dokumen baru tervalidasi + terverifikasi storage,
-// status kembali DIAJUKAN, token hangus sekali pakai.
-func (s *pendaftaranService) SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error {
-	nr := strings.TrimSpace(nomor)
-	if nr == "" || len(nr) > 30 {
-		return domain.NewValidationError("Nomor pendaftaran tidak valid")
-	}
-	token := strings.TrimSpace(req.Token)
-	if token == "" || len(token) > 256 {
-		return domain.NewValidationError("Token revisi wajib diisi")
-	}
-	if s.repo == nil {
-		return unavailable("pendaftaran")
-	}
-	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
-	if err != nil {
-		return err
-	}
-
-	// Merge dokumen: field kosong = pertahankan yang lama. Field baru
-	// wajib lolos pola key + verifikasi storage (bila dikonfigurasi).
-	keys := map[string]string{}
-	inputs := map[string]struct {
-		val      string
-		category string
-		current  string
-	}{
-		"foto_key":             {req.FotoKey, "foto", item.FotoKey},
-		"ktp_key":              {req.KTPKey, "ktp", item.KTPKey},
-		"cv_key":               {req.CVKey, "cv", item.CVKey},
-		"sk_key":               {req.SKKey, "sk", item.SKKey},
-		"surat_pernyataan_key": {req.SuratPernyataanKey, "surat_pernyataan", item.SuratPernyataanKey},
-		"surat_sehat_key":      {req.SuratSehatKey, "surat_sehat", item.SuratSehatKey},
-	}
-	for name, in := range inputs {
-		k := strings.TrimSpace(in.val)
-		if k == "" {
-			k = in.current
-		} else {
-			if err := checkObjectKey(name, k, false); err != nil {
-				return err
-			}
-			if err := s.verifyOneDocument(ctx, k, in.category); err != nil {
-				return err
-			}
-		}
-		// Hanya foto + KTP yang wajib (selaras submit); dokumen opsional
-		// boleh tetap kosong bila tidak pernah diunggah.
-		if strings.TrimSpace(k) == "" && (name == "foto_key" || name == "ktp_key") {
-			return domain.NewValidationError("Dokumen " + name + " wajib ada")
-		}
-		keys[name] = k
-	}
-
-	// Perbandingan hash dilakukan di SQL dalam UPDATE atomik yang sama:
-	// token 256-bit + rate limit membuat brute force infeasible, sementara
-	// single-statement memberi satu error generik (tanpa oracle bedakan
-	// token salah vs kedaluwarsa vs state salah).
-	if err := s.repo.SubmitRevisionTx(ctx, item.ID, crypto.HashToken(token), keys, strings.TrimSpace(req.Catatan)); err != nil {
-		return err
-	}
-	s.auditEvent(ctx, audit, nil, "Pendaftar "+nr, "PUBLIK",
-		"pendaftaran", strconv.Itoa(item.ID), "REVISI", nil)
-	return nil
-}
-
 // auditEvent mendelegasikan ke writeAudit terpusat (R2).
 func (s *pendaftaranService) auditEvent(
 	ctx context.Context,
@@ -920,31 +576,18 @@ func (s *pendaftaranService) auditEvent(
 	writeAudit(ctx, s.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
 }
 
-func mapStatusForAction(action domain.PendaftaranApprovalAction) (domain.PendaftaranStatus, bool) {
-	switch action {
-	case domain.PendaftaranActionVerifikasi:
-		return domain.PendaftaranStatusDiverifikasi, true
-	case domain.PendaftaranActionPerbaikan:
-		return domain.PendaftaranStatusPerbaikan, true
-	case domain.PendaftaranActionTolak:
-		return domain.PendaftaranStatusDitolak, true
-	case domain.PendaftaranActionSetujui:
-		return domain.PendaftaranStatusDisetujui, true
-	default:
-		return "", false
-	}
-}
-
-func (s *pendaftaranService) getAESKey() (string, error) {
-	if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.AESMasterKey) == "" {
+// aesKey/blindIndexKey membaca kunci kripto dari config (R3: fungsi paket
+// agar dipakai inti + verifikasi tanpa duplikasi method).
+func aesKey(cfg *config.Config) (string, error) {
+	if cfg == nil || strings.TrimSpace(cfg.Crypto.AESMasterKey) == "" {
 		return "", domain.NewValidationError("AES_MASTER_KEY belum dikonfigurasi")
 	}
-	return s.cfg.Crypto.AESMasterKey, nil
+	return cfg.Crypto.AESMasterKey, nil
 }
 
-func (s *pendaftaranService) getBlindIndexKey() (string, error) {
-	if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.BlindIndexKey) == "" {
+func blindIndexKey(cfg *config.Config) (string, error) {
+	if cfg == nil || strings.TrimSpace(cfg.Crypto.BlindIndexKey) == "" {
 		return "", domain.NewValidationError("BLIND_INDEX_KEY belum dikonfigurasi")
 	}
-	return s.cfg.Crypto.BlindIndexKey, nil
+	return cfg.Crypto.BlindIndexKey, nil
 }

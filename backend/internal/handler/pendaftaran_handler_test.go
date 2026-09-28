@@ -72,7 +72,7 @@ var _ service.PendaftaranService = (*stubPendaftaranService)(nil)
 
 func testPendaftaranApp(stub *stubPendaftaranService) *fiber.App {
 	app := fiber.New()
-	h := NewPendaftaranHandler(stub, validator.New())
+	h := NewPendaftaranHandler(stub, stub, stub, validator.New())
 	app.Post("/pendaftaran", h.Submit)
 	app.Get("/pendaftaran/track/:nomor", h.TrackStatus)
 	app.Post("/pendaftaran/revisi/request-token", h.RequestRevisionToken)
@@ -130,7 +130,8 @@ func TestTrackEmptyNomor400(t *testing.T) {
 func TestDetailTanpaClaims401(t *testing.T) {
 	// Tanpa middleware Authenticate (tanpa claims) wajib 401, bukan 500.
 	app := fiber.New()
-	h := NewPendaftaranHandler(&stubPendaftaranService{}, validator.New())
+	stub := &stubPendaftaranService{}
+	h := NewPendaftaranHandler(stub, stub, stub, validator.New())
 	app.Get("/admin/pendaftaran/:id", h.Detail)
 
 	req := httptest.NewRequest("GET", "/admin/pendaftaran/1", nil)

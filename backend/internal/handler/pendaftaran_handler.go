@@ -16,15 +16,22 @@ import (
 // Thin-handler (RULES 4): hanya parse request, ambil identitas server-side,
 // panggil service, format response. Seluruh akses data lewat service.
 type PendaftaranHandler struct {
-	service   service.PendaftaranService
-	validator *validator.CustomValidator
+	service         service.PendaftaranService
+	revisionSvc     service.RevisionService
+	verificationSvc service.VerificationService
+	validator       *validator.CustomValidator
 }
 
 func NewPendaftaranHandler(
 	service service.PendaftaranService,
+	revisionSvc service.RevisionService,
+	verificationSvc service.VerificationService,
 	validator *validator.CustomValidator,
 ) *PendaftaranHandler {
-	return &PendaftaranHandler{service: service, validator: validator}
+	return &PendaftaranHandler{
+		service: service, revisionSvc: revisionSvc,
+		verificationSvc: verificationSvc, validator: validator,
+	}
 }
 
 // actorOf membangun identitas server-side dari JWT terverifikasi (RULES 6).
@@ -100,7 +107,7 @@ func (h *PendaftaranHandler) RevealNIK(c *fiber.Ctx) error {
 	if !ok {
 		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
-	nik, err := h.service.RevealNIK(c.Context(), id, actor, auditContextOf(c))
+	nik, err := h.verificationSvc.RevealNIK(c.Context(), id, actor, auditContextOf(c))
 	if err != nil {
 		return response.FromError(c, err)
 	}
@@ -147,7 +154,7 @@ func (h *PendaftaranHandler) RequestRevisionToken(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return response.BadRequest(c, "Format data tidak valid")
 	}
-	res, err := h.service.RequestRevisionToken(c.Context(), req, auditContextOf(c))
+	res, err := h.revisionSvc.RequestRevisionToken(c.Context(), req, auditContextOf(c))
 	if err != nil {
 		return response.FromError(c, err)
 	}
@@ -164,7 +171,7 @@ func (h *PendaftaranHandler) SubmitRevision(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return response.BadRequest(c, "Format data tidak valid")
 	}
-	if err := h.service.SubmitRevision(c.Context(), nomor, req, auditContextOf(c)); err != nil {
+	if err := h.revisionSvc.SubmitRevision(c.Context(), nomor, req, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
 	return response.Success(c, "Revisi berhasil dikirim, status kembali DIAJUKAN", nil)
@@ -199,7 +206,7 @@ func (h *PendaftaranHandler) processApproval(c *fiber.Ctx, action domain.Pendaft
 		Catatan string `json:"catatan"`
 	}
 	_ = c.BodyParser(&payload)
-	if err := h.service.ProcessApproval(c.Context(), id, action, payload.Catatan, actor, auditContextOf(c)); err != nil {
+	if err := h.verificationSvc.ProcessApproval(c.Context(), id, action, payload.Catatan, actor, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
 	return response.Success(c, successMsg, nil)
@@ -211,7 +218,7 @@ func (h *PendaftaranHandler) VerifyKTA(c *fiber.Ctx) error {
 	if nia == "" {
 		return response.BadRequest(c, "NIA wajib diisi")
 	}
-	result, err := h.service.VerifyKTA(c.Context(), nia, sig)
+	result, err := h.verificationSvc.VerifyKTA(c.Context(), nia, sig)
 	if err != nil {
 		return response.FromError(c, err)
 	}

@@ -61,14 +61,20 @@ func RegisterRoutes(
 	})
 	pendaftaranService := service.NewPendaftaranService(cfg, service.PendaftaranDeps{
 		Repo: pendaftaranRepo, AnggotaRepo: anggotaRepo, AuditRepo: auditRepo,
-		StorageSvc: storageService, WilayahRepo: wilayahRepo, KTASvc: ktaSvc,
+		StorageSvc: storageService, WilayahRepo: wilayahRepo,
 	})
 	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
 	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
 	secureCookie := cfg.App.Env != "development"
 	authHandler := NewAuthHandler(authService, val, cfg.Auth.RefreshTokenTTL, secureCookie,
 		cfg.Auth.CookieSameSite, cfg.Auth.CookiePath, cfg.Auth.CookieDomain)
-	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, val)
+	revisionSvc := service.NewRevisionService(cfg, service.RevisionDeps{
+		Repo: pendaftaranRepo, StorageSvc: storageService, AuditRepo: auditRepo,
+	})
+	verificationSvc := service.NewVerificationService(cfg, service.VerificationDeps{
+		Repo: pendaftaranRepo, AnggotaRepo: anggotaRepo, AuditRepo: auditRepo, KTASvc: ktaSvc,
+	})
+	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, revisionSvc, verificationSvc, val)
 	storageHandler := NewStorageHandler(storageService, val)
 	wilayahService := service.NewWilayahService(wilayahRepo)
 	wilayahHandler := NewWilayahHandler(wilayahService)
