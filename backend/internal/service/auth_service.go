@@ -91,12 +91,19 @@ var argon2Params = &argon2id.Params{
 	KeyLength:   32,
 }
 
-func NewAuthService(cfg *config.Config, userRepo repository.UserRepository, rdb *redis.Client, auditRepo repository.AuditLogRepository) AuthService {
+// AuthDeps adalah dependensi service auth (R1: konsisten dengan pola deps).
+type AuthDeps struct {
+	UserRepo  repository.UserRepository
+	RDB       *redis.Client
+	AuditRepo repository.AuditLogRepository
+}
+
+func NewAuthService(cfg *config.Config, deps AuthDeps) AuthService {
 	return &authService{
 		cfg:       cfg,
-		userRepo:  userRepo,
-		auditRepo: auditRepo,
-		rdb:       rdb,
+		userRepo:  deps.UserRepo,
+		auditRepo: deps.AuditRepo,
+		rdb:       deps.RDB,
 	}
 }
 

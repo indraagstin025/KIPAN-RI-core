@@ -50,12 +50,19 @@ func RegisterRoutes(
 	userRepo := repository.NewUserRepository(db)
 	auditRepo := repository.NewAuditLogRepository(db)
 	pendaftaranRepo := repository.NewPendaftaranRepository(db)
-	authService := service.NewAuthService(cfg, userRepo, rdb, auditRepo)
+	authService := service.NewAuthService(cfg, service.AuthDeps{
+		UserRepo: userRepo, RDB: rdb, AuditRepo: auditRepo,
+	})
 	anggotaRepo := repository.NewAnggotaRepository(db)
 	storageService := wireStorageService(cfg, auditRepo)
 	wilayahRepo := repository.NewWilayahRepository(db)
-	ktaSvc := service.NewKTAService(cfg, anggotaRepo, storageService, auditRepo)
-	pendaftaranService := service.NewPendaftaranService(cfg, pendaftaranRepo, anggotaRepo, auditRepo, storageService, wilayahRepo, ktaSvc)
+	ktaSvc := service.NewKTAService(cfg, service.KTADeps{
+		AnggotaRepo: anggotaRepo, DocStore: storageService, AuditRepo: auditRepo,
+	})
+	pendaftaranService := service.NewPendaftaranService(cfg, service.PendaftaranDeps{
+		Repo: pendaftaranRepo, AnggotaRepo: anggotaRepo, AuditRepo: auditRepo,
+		StorageSvc: storageService, WilayahRepo: wilayahRepo, KTASvc: ktaSvc,
+	})
 	// Flag Secure cookie diambil dari APP_ENV (fail-closed): hanya development
 	// yang boleh tanpa Secure. Jangan diturunkan dari header request.
 	secureCookie := cfg.App.Env != "development"

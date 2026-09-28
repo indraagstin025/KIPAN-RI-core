@@ -50,6 +50,18 @@ type PendaftaranService interface {
 	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error
 }
 
+// PendaftaranDeps adalah dependensi service pendaftaran (R1: ganti
+// constructor 7-param). Field nil-able seperti sebelumnya; service
+// memeriksa nil dan gagal fail-closed per fitur.
+type PendaftaranDeps struct {
+	Repo        repository.PendaftaranRepository
+	AnggotaRepo repository.AnggotaRepository
+	AuditRepo   repository.AuditLogRepository
+	StorageSvc  ObjectVerifier
+	WilayahRepo repository.WilayahRepository
+	KTASvc      KTAService
+}
+
 type pendaftaranService struct {
 	cfg         *config.Config
 	repo        repository.PendaftaranRepository
@@ -60,8 +72,16 @@ type pendaftaranService struct {
 	ktaSvc      KTAService
 }
 
-func NewPendaftaranService(cfg *config.Config, repo repository.PendaftaranRepository, anggotaRepo repository.AnggotaRepository, auditRepo repository.AuditLogRepository, storageSvc ObjectVerifier, wilayahRepo repository.WilayahRepository, ktaSvc KTAService) PendaftaranService {
-	return &pendaftaranService{cfg: cfg, repo: repo, anggotaRepo: anggotaRepo, auditRepo: auditRepo, storageSvc: storageSvc, wilayahRepo: wilayahRepo, ktaSvc: ktaSvc}
+func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) PendaftaranService {
+	return &pendaftaranService{
+		cfg:         cfg,
+		repo:        deps.Repo,
+		anggotaRepo: deps.AnggotaRepo,
+		auditRepo:   deps.AuditRepo,
+		storageSvc:  deps.StorageSvc,
+		wilayahRepo: deps.WilayahRepo,
+		ktaSvc:      deps.KTASvc,
+	}
 }
 
 // healKTADocument menyelesaikan PDF KTA untuk approve yang sebelumnya gagal

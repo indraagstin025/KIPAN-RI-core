@@ -81,7 +81,7 @@ func TestRevealNIKSuccess(t *testing.T) {
 	}}
 	cfg := &config.Config{}
 	cfg.Crypto.AESMasterKey = revealTestKey
-	svc := NewPendaftaranService(cfg, repo, nil, nil, nil, nil, nil)
+	svc := NewPendaftaranService(cfg, PendaftaranDeps{Repo: repo})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &kab}
 
 	nik, err := svc.RevealNIK(context.Background(), 9, actor, domain.AuditContext{})
@@ -102,7 +102,7 @@ func TestRevealNIKLintasWilayahDitolak(t *testing.T) {
 	}}
 	cfg := &config.Config{}
 	cfg.Crypto.AESMasterKey = revealTestKey
-	svc := NewPendaftaranService(cfg, repo, nil, nil, nil, nil, nil)
+	svc := NewPendaftaranService(cfg, PendaftaranDeps{Repo: repo})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &otherKab}
 
 	if _, err := svc.RevealNIK(context.Background(), 9, actor, domain.AuditContext{}); err == nil {

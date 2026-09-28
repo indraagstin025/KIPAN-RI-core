@@ -41,8 +41,15 @@ type ktaService struct {
 	auditRepo   repository.AuditLogRepository
 }
 
-func NewKTAService(cfg *config.Config, anggotaRepo repository.AnggotaRepository, docStore KTADocumentStore, auditRepo repository.AuditLogRepository) KTAService {
-	return &ktaService{cfg: cfg, anggotaRepo: anggotaRepo, docStore: docStore, auditRepo: auditRepo}
+// KTADeps adalah dependensi service KTA (R1: konsisten dengan pola deps).
+type KTADeps struct {
+	AnggotaRepo repository.AnggotaRepository
+	DocStore    KTADocumentStore
+	AuditRepo   repository.AuditLogRepository
+}
+
+func NewKTAService(cfg *config.Config, deps KTADeps) KTAService {
+	return &ktaService{cfg: cfg, anggotaRepo: deps.AnggotaRepo, docStore: deps.DocStore, auditRepo: deps.AuditRepo}
 }
 
 func (s *ktaService) verifyBaseURL() string {

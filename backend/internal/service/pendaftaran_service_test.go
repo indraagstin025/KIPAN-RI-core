@@ -39,7 +39,7 @@ func (f *fakeAnggotaRepo) SetKTAPDFKey(_ context.Context, _ int, _ string) error
 var _ repository.AnggotaRepository = (*fakeAnggotaRepo)(nil)
 
 func TestValidateSubmitRequestAcceptsValidPayload(t *testing.T) {
-	service := NewPendaftaranService(nil, nil, nil, nil, nil, nil, nil)
+	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	req := domain.PendaftaranSubmitRequest{
 		NamaLengkap:        "Rizki Pratama",
@@ -74,7 +74,7 @@ func TestValidateSubmitRequestAcceptsValidPayload(t *testing.T) {
 }
 
 func TestValidateSubmitRequestRejectsInvalidNIK(t *testing.T) {
-	service := NewPendaftaranService(nil, nil, nil, nil, nil, nil, nil)
+	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	req := domain.PendaftaranSubmitRequest{
 		NamaLengkap:   "Rizki Pratama",
@@ -120,7 +120,7 @@ func validSubmitRequest() domain.PendaftaranSubmitRequest {
 }
 
 func TestValidateSubmitRequestTable(t *testing.T) {
-	service := NewPendaftaranService(nil, nil, nil, nil, nil, nil, nil)
+	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	cases := []struct {
 		name   string
@@ -225,7 +225,7 @@ func TestVerifyKTAAcceptsActiveKey(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyActive
-	svc := NewPendaftaranService(cfg, nil, &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}, nil, nil, nil, nil)
+	svc := NewPendaftaranService(cfg, PendaftaranDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {
@@ -255,7 +255,7 @@ func TestVerifyKTAAcceptsPreviousKeyAfterRotation(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyNew
 	cfg.Crypto.KTASigningKeyPrev = keyOld
-	svc := NewPendaftaranService(cfg, nil, &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}, nil, nil, nil, nil)
+	svc := NewPendaftaranService(cfg, PendaftaranDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {
@@ -281,7 +281,7 @@ func TestVerifyKTARejectsUnknownKey(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyActive
-	svc := NewPendaftaranService(cfg, nil, &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}, nil, nil, nil, nil)
+	svc := NewPendaftaranService(cfg, PendaftaranDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {
@@ -320,7 +320,7 @@ func TestMatchOwnerProof(t *testing.T) {
 }
 
 func TestValidateSubmitRequestRejectsInvalidWhatsapp(t *testing.T) {
-	service := NewPendaftaranService(nil, nil, nil, nil, nil, nil, nil)
+	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	req := domain.PendaftaranSubmitRequest{
 		NamaLengkap:   "Rizki Pratama",
