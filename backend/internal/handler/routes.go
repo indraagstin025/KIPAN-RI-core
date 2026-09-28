@@ -158,11 +158,15 @@ func registerMembershipRoutes(
 	publicLimiter := middleware.AuthRateLimiter(rdb, "mem_pub:ip:", 30, 1*time.Minute)
 	adminMutasiLimiter := middleware.AuthRateLimiter(rdb, "mem_mut:ip:", 20, 1*time.Minute)
 
+	// Limiter token revisi per-nomor (BE-001): 3 permintaan / 24 jam per
+	// nomor pendaftaran, di atas limiter per-IP grup ini.
+	revTokenLimiter := middleware.RevisionTokenLimiter(rdb, 3, 24*time.Hour)
+
 	public := v1.Group("/pendaftaran")
 	public.Use(publicLimiter)
 	public.Post("", handler.Submit)
 	public.Get("/track/:nomor", handler.TrackStatus)
-	public.Post("/revisi/request-token", handler.RequestRevisionToken)
+	public.Post("/revisi/request-token", revTokenLimiter, handler.RequestRevisionToken)
 	public.Put("/revisi/:nomor", handler.SubmitRevision)
 	public.Get("/kta/:nia", handler.VerifyKTA)
 

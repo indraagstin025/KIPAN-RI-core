@@ -123,12 +123,13 @@ func (h *PendaftaranHandler) ListQueue(c *fiber.Ctx) error {
 }
 
 // RequestRevisionToken menerbitkan token revisi untuk status PERBAIKAN.
+// Wajib bukti pemilik (email DAN whatsapp terdaftar — BE-001).
 func (h *PendaftaranHandler) RequestRevisionToken(c *fiber.Ctx) error {
-	var payload struct {
-		Nomor string `json:"nomor"`
+	var req domain.RevisionTokenRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "Format data tidak valid")
 	}
-	_ = c.BodyParser(&payload)
-	res, err := h.service.RequestRevisionToken(c.Context(), payload.Nomor, auditContextOf(c))
+	res, err := h.service.RequestRevisionToken(c.Context(), req, auditContextOf(c))
 	if err != nil {
 		return response.FromError(c, err)
 	}

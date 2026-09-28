@@ -284,6 +284,33 @@ func TestVerifyKTARejectsUnknownKey(t *testing.T) {
 	}
 }
 
+func TestMatchOwnerProof(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		storedEmail, storedWA       string
+		proofEmail, proofWA         string
+		ok                         bool
+	}{
+		{"cocok persis", "a@b.co", "081234567890", "a@b.co", "081234567890", true},
+		{"email case-insensitive + spasi", "A@B.co", "081234567890", "  a@b.co ", "081234567890", true},
+		{"WA 62 setara 08", "a@b.co", "081234567890", "a@b.co", "6281234567890", true},
+		{"WA +62 setara 08", "a@b.co", "081234567890", "a@b.co", "+6281234567890", true},
+		{"WA strip/spasi diabaikan", "a@b.co", "081234567890", "a@b.co", "0812-3456-7890", true},
+		{"email salah", "a@b.co", "081234567890", "x@b.co", "081234567890", false},
+		{"WA salah", "a@b.co", "081234567890", "a@b.co", "081234567899", false},
+		{"keduanya salah", "a@b.co", "081234567890", "x@y.zz", "080000000000", false},
+		{"bukti kosong", "a@b.co", "081234567890", "", "", false},
+		{"email kosong", "a@b.co", "081234567890", "", "081234567890", false},
+		{"WA kosong", "a@b.co", "081234567890", "a@b.co", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := MatchOwnerProof(tc.storedEmail, tc.storedWA, tc.proofEmail, tc.proofWA); got != tc.ok {
+				t.Fatalf("MatchOwnerProof = %v, harap %v", got, tc.ok)
+			}
+		})
+	}
+}
+
 func TestValidateSubmitRequestRejectsInvalidWhatsapp(t *testing.T) {
 	service := NewPendaftaranService(nil, nil, nil, nil, nil, nil)
 

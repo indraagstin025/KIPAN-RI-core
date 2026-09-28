@@ -38,7 +38,7 @@ type PendaftaranService interface {
 	// ListQueue adalah antrean admin terfilter jurisdiction aktor.
 	ListQueue(ctx context.Context, actor domain.ActorContext, status string, page, limit int) ([]domain.PendaftaranQueueItem, int, error)
 	// RequestRevisionToken menerbitkan token revisi untuk status PERBAIKAN.
-	RequestRevisionToken(ctx context.Context, nomor string, audit domain.AuditContext) (*domain.RevisionTokenResponse, error)
+	RequestRevisionToken(ctx context.Context, req domain.RevisionTokenRequest, audit domain.AuditContext) (*domain.RevisionTokenResponse, error)
 	// SubmitRevision memproses revisi mandiri applicant bertoken.
 	SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error
 	// GetDetail adalah jalur admin: tolak objek di luar wilayah aktor.
@@ -680,14 +680,49 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 // RevisionTokenTTL adalah masa berlaku token revisi applicant.
 const RevisionTokenTTL = 24 * time.Hour
 
+// normalizeEmail menyeragamkan email untuk perbandingan bukti pemilik.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// normalizeWA menyeragamkan nomor WA ke digit inti: buang non-digit lalu
+// buang prefix negara/ trunk (62/0) sehingga 08xx, 62xxx, +62xxx setara.
+func normalizeWA(wa string) string {
+	var digits strings.Builder
+	for _, r := range wa {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+	}
+	d := digits.String()
+	d = strings.TrimPrefix(d, "62")
+	d = strings.TrimPrefix(d, "0")
+	return d
+}
+
+// MatchOwnerProof mencocokkan bukti pemilik (email DAN whatsapp) terhadap
+// data terdaftar. Pure function agar unit-testable. Kedua sisi
+// dinormalisasi; bukti kosong selalu gagal.
+func MatchOwnerProof(storedEmail, storedWA, proofEmail, proofWA string) bool {
+	pe, pw := normalizeEmail(proofEmail), normalizeWA(proofWA)
+	if pe == "" || pw == "" {
+		return false
+	}
+	return normalizeEmail(storedEmail) == pe && normalizeWA(storedWA) == pw
+}
+
 // RequestRevisionToken menerbitkan token revisi satu-permintaan untuk
-// pendaftaran berstatus PERBAIKAN. Token mentah dikembalikan sekali;
-// yang disimpan hanya hash SHA-256 + expiry.
+// pendaftaran berstatus PERBAIKAN. Wajib bukti pemilik (email DAN whatsapp
+// terdaftar — BE-001): nomor saja tidak cukup karena sekuensial dan
+// statusnya publik. Token mentah dikembalikan sekali; yang disimpan hanya
+// hash SHA-256 + expiry.
 //
-// CATATAN PENGIRIMAN: idealnya token dikirim via WA/email pendaftar
-// (notifikasi Fase 5). Sementara dikembalikan di respons (rate-limited).
-func (s *pendaftaranService) RequestRevisionToken(ctx context.Context, nomor string, audit domain.AuditContext) (*domain.RevisionTokenResponse, error) {
-	nr := strings.TrimSpace(nomor)
+// PENERIMAAN RISIKO SEMENTARA (dicatat di laporan PR Fase 2): token
+// dikembalikan di respons, bukan kanal terverifikasi. Diterima karena
+// bukti ganda + limiter per-nomor + 24 jam + sekali pakai; pengiriman
+// WA/email tetap wajib sebelum produksi (Fase 5).
+func (s *pendaftaranService) RequestRevisionToken(ctx context.Context, req domain.RevisionTokenRequest, audit domain.AuditContext) (*domain.RevisionTokenResponse, error) {
+	nr := strings.TrimSpace(req.Nomor)
 	if nr == "" || len(nr) > 30 {
 		return nil, domain.NewValidationError("Nomor pendaftaran tidak valid")
 	}
@@ -700,6 +735,14 @@ func (s *pendaftaranService) RequestRevisionToken(ctx context.Context, nomor str
 	}
 	if item.Status != domain.PendaftaranStatusPerbaikan {
 		return nil, domain.NewValidationError("Pendaftaran tidak dalam status revisi (PERBAIKAN)")
+	}
+	if !MatchOwnerProof(item.Email, item.Whatsapp, req.Email, req.Whatsapp) {
+		// 403 generik: tanpa bocorkan field mana yang salah. Bukti PII
+		// pemohon TIDAK masuk audit (hanya fakta kegagalan).
+		denyMeta := `{"reason":"owner_mismatch"}`
+		s.auditEvent(ctx, audit, nil, "Pendaftar "+nr, "PUBLIK",
+			"pendaftaran", strconv.Itoa(item.ID), "REVISI_TOKEN_DENIED", &denyMeta)
+		return nil, domain.NewForbiddenError("Anda tidak berhak meminta token revisi ini")
 	}
 
 	raw, err := crypto.GenerateSecureToken(32)

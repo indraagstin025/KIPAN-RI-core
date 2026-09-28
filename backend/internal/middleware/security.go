@@ -88,6 +88,38 @@ func AuthRateLimiter(rdb *redis.Client, keyPrefix string, maxRequests int, windo
 	return limiter.New(cfg)
 }
 
+// RevisionTokenLimiter membatasi permintaan token revisi PER NOMOR
+// pendaftaran (BE-001): limiter per-IP saja tidak menghentikan enumerasi
+// terarah ke satu target (botnet/ganti IP). Kunci memakai nomor ternormal
+// (trim + upper) agar varian penulisan tidak mereset kuota.
+func RevisionTokenLimiter(rdb *redis.Client, maxAttempts int, window time.Duration) fiber.Handler {
+	cfg := limiter.Config{
+		Max:        maxAttempts,
+		Expiration: window,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			var body struct {
+				Nomor string `json:"nomor"`
+			}
+			_ = c.BodyParser(&body)
+			nr := strings.ToUpper(strings.TrimSpace(body.Nomor))
+			if nr == "" {
+				return "rev_tok:ip:" + c.IP()
+			}
+			return "rev_tok:nomor:" + nr
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return response.TooManyRequests(c,
+				"Terlalu banyak permintaan token revisi. Coba lagi nanti.")
+		},
+	}
+
+	if rdb != nil {
+		cfg.Storage = fiberredis.NewFromConnection(rdb)
+	}
+
+	return limiter.New(cfg)
+}
+
 // LoginAttemptLimiter membatasi percobaan login PER EMAIL (bukan hanya per IP).
 // Layer kedua setelah AuthRateLimiter — melindungi dari botnet spray attack
 // di mana penyerang pakai banyak IP untuk mencoba password satu akun target.

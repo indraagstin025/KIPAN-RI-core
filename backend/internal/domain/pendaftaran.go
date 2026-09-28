@@ -126,6 +126,15 @@ type RevisionTokenResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// RevisionTokenRequest adalah bukti kepemilikan applicant: nomor + email
+// DAN whatsapp terdaftar (BE-001: nomor saja tidak cukup karena sekuensial
+// dan statusnya publik).
+type RevisionTokenRequest struct {
+	Nomor    string `json:"nomor"`
+	Email    string `json:"email"`
+	Whatsapp string `json:"whatsapp"`
+}
+
 // PendaftaranDetailResponse response detail pendaftaran untuk admin/public.
 type PendaftaranDetailResponse struct {
 	ID               int       `json:"id"`
