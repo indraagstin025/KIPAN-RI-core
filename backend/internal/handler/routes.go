@@ -157,7 +157,7 @@ func registerAuthRoutes(
 	auth := v1.Group("/auth")
 
 	// Layer 1: Rate limit per IP (semua endpoint auth)
-	authLimiter := middleware.AuthRateLimiter(rdb, "auth_rate:ip:", 20, 1*time.Minute)
+	authLimiter := middleware.RateLimit(rdb, "auth")
 
 	// Layer 2: Rate limit per email (khusus login)
 	// 20/15 mnt per pasangan email+IP (BE-003): longgar per akun agar
@@ -199,8 +199,8 @@ func registerMembershipRoutes(
 	// Limiter publik (anti enumerasi/spam) + limiter mutasi sensitif.
 	// Redis-backed agar konsisten multi-instance (seperti auth).
 	// Prefix berbeda: berbagi prefix = berbagi kuota (429 prematur).
-	publicLimiter := middleware.AuthRateLimiter(rdb, "mem_pub:ip:", 30, 1*time.Minute)
-	adminMutasiLimiter := middleware.AuthRateLimiter(rdb, "mem_mut:ip:", 20, 1*time.Minute)
+	publicLimiter := middleware.RateLimit(rdb, "mem_pub")
+	adminMutasiLimiter := middleware.RateLimit(rdb, "mem_mut")
 
 	// Limiter token revisi per-nomor (BE-001): 3 permintaan / 24 jam per
 	// nomor pendaftaran, di atas limiter per-IP grup ini.
@@ -243,7 +243,7 @@ func registerStorageRoutes(
 	authMiddleware *middleware.AuthMiddleware,
 	handler *StorageHandler,
 ) {
-	uploadLimiter := middleware.AuthRateLimiter(rdb, "stor_up:ip:", 30, 1*time.Minute)
+	uploadLimiter := middleware.RateLimit(rdb, "stor_up")
 
 	public := v1.Group("/storage")
 	public.Post("/presign-upload", uploadLimiter, handler.PresignUpload)
@@ -257,7 +257,7 @@ func registerWilayahRoutes(
 	rdb *redis.Client,
 	handler *WilayahHandler,
 ) {
-	wilayahLimiter := middleware.AuthRateLimiter(rdb, "wil_pub:ip:", 60, 1*time.Minute)
+	wilayahLimiter := middleware.RateLimit(rdb, "wil_pub")
 
 	public := v1.Group("/wilayah")
 	public.Use(wilayahLimiter)

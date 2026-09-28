@@ -27,8 +27,10 @@ import (
 // Pattern key yang akan dibersihkan. Semua ini adalah state transient
 // untuk testing — TIDAK ADA data bisnis di sini.
 var flushPatterns = []string{
-	"auth_rate:*",     // Rate limiter per IP (AuthRateLimiter)
-	"login_attempt:*", // Rate limiter per email (LoginAttemptLimiter)
+	"rl:*",            // Rate limiter registry per IP (R4: rl:<nama>:ip:)
+	"auth_rate:*",     // Legacy prefix (pra-R4) — aman dihapus bila kosong
+	"login_attempt:*", // Rate limiter per email+IP (LoginAttemptLimiter)
+	"rev_tok:*",       // Limiter token revisi per nomor (BE-001)
 	"blacklist:jti:*", // JWT blacklist (setelah logout)
 }
 
