@@ -21,33 +21,33 @@ Namun masih ada **satu temuan KRITIS yang belum tercatat** di laporan PR Fase 1 
 
 ### 1.1 Matriks temuan
 
-| ID | Temuan | Severity | Status | Lokasi utama |
+| ID | Temuan | Severity | Status (v1.1) | Lokasi utama |
 |---|---|---|---|---|
-| KIPAN-BE-001 | Pembajakan pendaftaran lewat `POST /pendaftaran/revisi/request-token` tanpa verifikasi pemilik | KRITIS | **BARU** | `internal/handler/routes.go:165`, `internal/service/pendaftaran_service.go:689-716` |
-| KIPAN-BE-002 | Presign upload publik tanpa penegakan ukuran/konten (abuse storage) | SEDANG | **BARU** | `internal/service/storage_service.go:110-152`, `pkg/storage/s3.go:80-93` |
-| KIPAN-BE-003 | Limiter login per-email dapat dipakai melakukan lockout akun (DoS) | SEDANG | **BARU** | `internal/middleware/security.go:94-118`, `internal/handler/routes.go:121` |
-| KIPAN-BE-004 | Endpoint `/health` publik membocorkan env dan status dependensi | RENDAH | **BARU** | `internal/handler/health_handler.go:31-41`, `internal/handler/routes.go:36` |
-| KIPAN-BE-005 | `SELECT *` pada `GetByID`/`GetByNomor`/`IssueMember` (memuat PII terenkripsi ke memori) | RENDAH | **BARU** | `internal/repository/pendaftaran_repository.go:275, 287, 527` |
-| KIPAN-BE-006 | Pesan internal `Repository ... belum tersedia` tampil di 9 titik kode produksi | RENDAH | **BARU** | `internal/service/pendaftaran_service.go:251, 287, 401, 421, 441, 497, 625, 695, 732` |
-| KIPAN-BE-007 | `mapDBError` belum dipakai di `SetRevisiToken`/`SubmitRevisionTx`/`UpdateStatus*` (409/422 bisa jatuh jadi 500) | RENDAH | **BARU** | `pendaftaran_repository.go:380, 398, 447, 482` (dipakai di `:142, 234, 588`) |
-| KIPAN-BE-008 | Sampah repo: `tmp_srv_*.exe` (5 file), `session-ses_f200.md` tidak di-ignore, `docs/pr-*` untracked | INFO | **BARU** | `backend/`, `.gitignore` root |
-| KIPAN-BE-009 | `make migrate-up` rusak (CLI migrate tanpa build tag `postgres`) | INFO | Warisan | `Makefile:24-29` |
-| KIPAN-BE-010 | Paket tanpa test: `cmd/*`, `config`, `internal/database`, `internal/handler`, `pkg/response`, `pkg/validator` | SEDANG (proses) | **BARU** | hasil `go test ./...` |
-| L-1 | PostgreSQL fail-open (ping gagal, server tetap jalan) | RENDAH | Warisan, masih terbuka | `internal/database/postgres.go:41-48` |
-| L-2 | `ScopeWilayah` tanpa claims langsung `Next()` (fail-open bila lupa dipasang) | RENDAH | Warisan, masih terbuka | `internal/middleware/rbac.go:62-69`, `rbac.go:27-33` |
-| L-3 | Layering: health memegang `*sqlx.DB`, `JWTClaims` di middleware, parse Bearer duplikat | RENDAH | Warisan, masih terbuka | `health_handler.go:16`, `middleware/auth.go:21-28`, `auth_handler.go:107-112` |
-| L-4 | Ganti password tidak mem-blacklist access token yang masih aktif | RENDAH | Warisan, masih terbuka | `internal/service/auth_service.go:281-318` vs `:211` |
-| L-5 | Tidak ada validasi konfigurasi khusus production (`DB_SSLMODE`, `APP_DEBUG`, `REDIS_PASSWORD`, `ALLOW_ORIGIN=*`) | RENDAH | Warisan, masih terbuka | `config/config.go:206-222` |
-| L-6 | Cookie `SameSite`/`Path` belum configurable | RENDAH | Warisan, masih terbuka | `internal/handler/auth_handler.go:181-190` |
-| L-7 | Trusted proxy terlalu lebar di production (seluruh RFC1918) | RENDAH | Warisan, masih terbuka | `cmd/api/main.go:153-166` |
-| L-8 | Komentar format ciphertext AES tidak sesuai implementasi | INFO | Warisan, masih terbuka | `pkg/crypto/crypto.go:29` vs `:57` |
+| KIPAN-BE-001 | Pembajakan pendaftaran lewat `POST /pendaftaran/revisi/request-token` tanpa verifikasi pemilik | KRITIS | ✅ DITUTUP (`aaa9f70`; REV-01..04) | `internal/handler/routes.go:165`, `internal/service/pendaftaran_service.go:689-716` |
+| KIPAN-BE-002 | Presign upload publik tanpa penegakan ukuran/konten (abuse storage) | SEDANG | ✅ DITUTUP realistis (`0f7f67e`; fix #1 mustahil, lihat catatan) | `internal/service/storage_service.go:110-152`, `pkg/storage/s3.go:80-93` |
+| KIPAN-BE-003 | Limiter login per-email dapat dipakai melakukan lockout akun (DoS) | SEDANG | ✅ DITUTUP (`0f7f67e`; key email+IP 20/15 mnt) | `internal/middleware/security.go:94-118`, `internal/handler/routes.go:121` |
+| KIPAN-BE-004 | Endpoint `/health` publik membocorkan env dan status dependensi | RENDAH | ✅ DITUTUP (`487fc8b`; HEALTH-01) | `internal/handler/health_handler.go:31-41`, `internal/handler/routes.go:36` |
+| KIPAN-BE-005 | `SELECT *` pada `GetByID`/`GetByNomor`/`IssueMember` (memuat PII terenkripsi ke memori) | RENDAH | ✅ DITUTUP (`487fc8b`; kolom eksplisit) | `internal/repository/pendaftaran_repository.go:275, 287, 527` |
+| KIPAN-BE-006 | Pesan internal `Repository ... belum tersedia` tampil di 9 titik kode produksi | RENDAH | ✅ DITUTUP (`487fc8b`; 503 generik, 13 titik) | `internal/service/pendaftaran_service.go:251, 287, 401, 421, 441, 497, 625, 695, 732` |
+| KIPAN-BE-007 | `mapDBError` belum dipakai di `SetRevisiToken`/`SubmitRevisionTx`/`UpdateStatus*` (409/422 bisa jatuh jadi 500) | RENDAH | ✅ DITUTUP (`487fc8b`) | `pendaftaran_repository.go:380, 398, 447, 482` (dipakai di `:142, 234, 588`) |
+| KIPAN-BE-008 | Sampah repo: `tmp_srv_*.exe` (5 file), `session-ses_f200.md` tidak di-ignore, `docs/pr-*` untracked | INFO | ✅ DITUTUP (`487fc8b` + `f38ecc8`) | `backend/`, `.gitignore` root |
+| KIPAN-BE-009 | `make migrate-up` rusak (CLI migrate tanpa build tag `postgres`) | INFO | ✅ DITUTUP (`487fc8b`; tags + target version) | `Makefile:24-29` |
+| KIPAN-BE-010 | Paket tanpa test: `cmd/*`, `config`, `internal/database`, `internal/handler`, `pkg/response`, `pkg/validator` | SEDANG (proses) | ⚠️ DITUTUP parsial (`487fc8b`; handler/config/validator ada; `cmd/*`, `database`, `response` belum) | hasil `go test ./...` |
+| L-1 | PostgreSQL fail-open (ping gagal, server tetap jalan) | RENDAH | ✅ DITUTUP (`0f7f67e`; fail-closed production) | `internal/database/postgres.go:41-48` |
+| L-2 | `ScopeWilayah` tanpa claims langsung `Next()` (fail-open bila lupa dipasang) | RENDAH | ✅ DITUTUP (`0f7f67e`; 401 + test) | `internal/middleware/rbac.go:62-69`, `rbac.go:27-33` |
+| L-3 | Layering: health memegang `*sqlx.DB`, `JWTClaims` di middleware, parse Bearer duplikat | RENDAH | ✅ DITUTUP (`487fc8b`; JWTClaims→domain, helper tunggal) | `health_handler.go:16`, `middleware/auth.go:21-28`, `auth_handler.go:107-112` |
+| L-4 | Ganti password tidak mem-blacklist access token yang masih aktif | RENDAH | ✅ DITUTUP (`487fc8b`; blacklist best-effort) | `internal/service/auth_service.go:281-318` vs `:211` |
+| L-5 | Tidak ada validasi konfigurasi khusus production (`DB_SSLMODE`, `APP_DEBUG`, `REDIS_PASSWORD`, `ALLOW_ORIGIN=*`) | RENDAH | ✅ DITUTUP (`0f7f67e`; `validateProduction` + 6 test) | `config/config.go:206-222` |
+| L-6 | Cookie `SameSite`/`Path` belum configurable | RENDAH | ✅ DITUTUP (`487fc8b`; configurable + validasi) | `internal/handler/auth_handler.go:181-190` |
+| L-7 | Trusted proxy terlalu lebar di production (seluruh RFC1918) | RENDAH | ✅ DITUTUP (`487fc8b`; `APP_TRUSTED_PROXIES` eksplisit) | `cmd/api/main.go:153-166` |
+| L-8 | Komentar format ciphertext AES tidak sesuai implementasi | INFO | ✅ DITUTUP (`487fc8b`) | `pkg/crypto/crypto.go:29` vs `:57` |
 
 ### 1.2 Kesimpulan kesiapan
 
 | Pertanyaan | Jawaban |
 |---|---|
-| Aman dilanjutkan ke Fase 3 (SK/Pengurus)? | Ya, dengan syarat KIPAN-BE-001 ditutup lebih dulu karena pola yang sama akan dipakai di modul berikutnya |
-| Aman untuk produksi sekarang? | Belum. Minimal KIPAN-BE-001, KIPAN-BE-002, dan L-5 harus selesai, plus render PDF KTA & verifikasi produksi Fase 6 |
+| Aman dilanjutkan ke Fase 3 (SK/Pengurus)? | Ya — syarat KIPAN-BE-001 terpenuhi (`aaa9f70`, REV-01..04 hijau) |
+| Aman untuk produksi sekarang? | Belum. Tersisa: render PDF KTA, kirim token via kanal terverifikasi (Fase 5), Turnstile (butuh frontend), & verifikasi produksi Fase 6 |
 | Ada CRITICAL/HIGH lain selain KIPAN-BE-001? | Tidak ada |
 | Tool keamanan hijau? | Ya: `gosec` 0 issue, `govulncheck` 0 vuln terpanggil, `go vet` bersih, `go test` semua paket PASS |
 
@@ -69,7 +69,7 @@ Seluruh hasil berikut dijalankan pada mesin audit (Go 1.27.1, Windows, PowerShel
 
 ### 2.1 Yang TIDAK diverifikasi (keterbatasan laporan ini)
 
-1. **`scripts/pentest_suite.ps1` tidak dijalankan** (34 KB, gate v2.4). Butuh server hidup + PostgreSQL + Redis + `SEED_ADMIN_PASSWORD`; menjalankan seeder bersifat state-changing. Klaim 36/36 PASS dari laporan PR karena itu **belum direproduksi** di sini.
+1. ~~**`scripts/pentest_suite.ps1` tidak dijalankan**~~ — **diperbarui v1.1**: suite **v2.5 dijalankan 41/41 PASS, 0 FAIL** (1 SKIP SEED-01, by design) pada branch hardening setelah remediasi, termasuk REV-01..04 dan HEALTH-01. Klaim 36/36 v2.4 tetap sah sebagai riwayat.
 2. **Test integrasi repository** memerlukan `TEST_DATABASE_URL`; pada eksekusi audit, paket repository lolos namun jalur DB tidak diverifikasi ulang.
 3. **Perilaku runtime di belakang Caddy/TLS produksi** (HSTS, trusted proxy, Vault) tidak dapat diuji dari dev — ranah Fase 6.
 ---
@@ -239,10 +239,10 @@ Verifikasi ukuran sebenarnya baru terjadi saat submit (`storage_service.go:178-1
 **Dampak**: pembanjiran bucket (biaya penyimpanan/egress + kehabisan kuota), objek sampah tanpa referensi DB, potensi penyalahgunaan bucket sebagai hosting file (MIME di-sign sehingga hanya jpg/png/pdf tertentu, namun tetap bisa dipakai menyimpan banyak objek).
 
 **Rencana perbaikan (P1):**
-1. Tambahkan `ContentLength` pada `PresignPutObject` sehingga S3 menolak upload melebihi batas (mis. foto/KTP 2 MB, PDF 5 MB).
-2. Pasang lifecycle rule: hapus objek di `uploads/` yang lebih tua dari 7 hari dan tidak direferensikan tabel.
-3. Pertimbangkan bucket policy ukuran maksimum + kuota per IP/hari.
-4. Tambah worker pemindaian antivirus (ClamAV) untuk berkas yang direferensikan sebelum status DISETUJUI.
+1. ~~Tambahkan `ContentLength` pada `PresignPutObject`~~ — **dikoreksi v1.1: TIDAK FEASIBLE.** SigV4 presigned PUT tidak memiliki kondisi content-length (hanya POST policy yang punya). Pengganti yang diterapkan (`0f7f67e`): log penerbitan presign untuk deteksi abuse + kuota limiter 30/mnt/IP yang sudah ada + penegakan ukuran keras via HeadObject saat submit.
+2. Pasang lifecycle rule: hapus objek di `uploads/` yang lebih tua dari 7 hari dan tidak direferensikan tabel. *(Infra, didokumentasikan di kode `storage_service.go`; dieksekusi saat setup bucket produksi.)*
+3. Pertimbangkan bucket policy ukuran maksimum + kuota per IP/hari. *(Infra produksi.)*
+4. Tambah worker pemindaian antivirus (ClamAV) untuk berkas yang direferensikan sebelum status DISETUJUI. *(Fase 6.)*
 
 ---
 
@@ -269,9 +269,11 @@ Verifikasi ukuran sebenarnya baru terjadi saat submit (`storage_service.go:178-1
 **Rencana perbaikan (P2)**: endpoint publik hanya `{status: ok}`; detail (env, DB, Redis, versi) dipindah ke `/internal/health` yang hanya dapat diakses dari jaringan internal/kredensial monitoring.
 ---
 
-## 6. Temuan Warisan yang MASIH Terbuka (batch LOW Fase 0/1A)
+## 6. Temuan Warisan — Status v1.1: SEMUA DITUTUP
 
-Semua item di bawah sudah tercatat sebagai utang teknis pada bagian 8A laporan PR Fase 2. Audit ini mengonfirmasi bahwa **belum ada satu pun yang dikerjakan** dan melampirkan buktinya.
+Seluruh item di bawah sudah dikerjakan di branch hardening (`0f7f67e`, `487fc8b`)
+dengan test regresi. Bukti kode pada tiap subbagian tetap sah sebagai temuan
+awal; status keterbukaan diperbarui di matriks §1.1.
 
 ### L-1 PostgreSQL fail-open (RENDAH)
 Bukti (`internal/database/postgres.go:41-48`):
@@ -365,9 +367,16 @@ Bukti: komentar `pkg/crypto/crypto.go:29` menulis `base64(nonce):base64(cipherte
 - `golang.org/x/crypto` tercatat GO-2026-5932 (modul-level, terkait paket `openpgp` yang tidak dipakai).
 ---
 
-## 9. Rencana Remediasi Berprioritas
+## 9. Rencana Remediasi Berprioritas — Status v1.1: P0–P2 SELESAI
 
-### P0 — wajib sebelum merge/deploy (blocker)
+Seluruh langkah P0–P2 di bawah selesai di branch `fix/fase-1-fase-2-hardening`
+(P0: `aaa9f70`; P1: `0f7f67e`; P2: `487fc8b`), suite v2.5 41/41 PASS.
+Tersisa di luar remediasi: render PDF KTA, endpoint 1.4.2, Turnstile
+(DITUNDA — belum ada frontend, pengganti sementara: limiter + DTO minimal +
+kuota/nomor; syarat gerbang frontend/produksi), kirim token via WA/email
+(Fase 5), sinkron checklist TAHAPAN, hapus branch `fix/` lama.
+
+### P0 — wajib sebelum merge/deploy (blocker) — ✅ selesai
 
 | Langkah | Berkas yang disentuh | Kriteria selesai |
 |---|---|---|
@@ -376,7 +385,7 @@ Bukti: komentar `pkg/crypto/crypto.go:29` menulis `base64(nonce):base64(cipherte
 | Perkuat `GET /pendaftaran/track/:nomor` agar bukan alat enumerasi | `internal/service/pendaftaran_service.go`, `internal/handler/pendaftaran_handler.go` | butuh kode lacak; balasan seragam |
 | Test handler untuk 4 endpoint publik membership | `internal/handler/*_test.go` (baru) | ada test otorisasi/validasi/rate limit |
 
-### P1 — cepat, dampak jelas
+### P1 — cepat, dampak jelas — ✅ selesai
 
 | Langkah | Berkas | Kriteria selesai |
 |---|---|---|
@@ -388,7 +397,7 @@ Bukti: komentar `pkg/crypto/crypto.go:29` menulis `base64(nonce):base64(cipherte
 | L-4: blacklist/tolak access token setelah ganti password | `internal/service/auth_service.go`, `internal/repository/user_repository.go`, `internal/middleware/auth.go` | token terbit sebelum ganti password langsung ditolak |
 | L-7: trusted proxy eksplisit lewat env | `cmd/api/main.go`, `.env.example` | hanya proxy yang didaftarkan yang dipercaya |
 
-### P2 — kerapian dan pertahanan berlapis
+### P2 — kerapian dan pertahanan berlapis — ✅ selesai
 
 | Langkah | Berkas |
 |---|---|
@@ -466,14 +475,15 @@ curl http://localhost:8080/health
 
 ## 12. Lampiran C — Checklist Kesiapan Produksi (Fase 6)
 
-- [ ] Semua P0 dan P1 di Bagian 9 selesai dengan test regresi.
-- [ ] Pentest suite diperluas (gate baru untuk KIPAN-BE-001/002/003) dan dijalankan hijau pada build kandidat release.
-- [ ] `make migrate-up` diperbaiki dan seluruh migrasi 000001–00000N diuji naik pada database bersih.
+- [x] Semua P0 dan P1 di Bagian 9 selesai dengan test regresi.
+- [x] Pentest suite diperluas (REV-01..04, HEALTH-01) dan hijau 41/41 (v2.5).
+- [x] `make migrate-up` diperbaiki (tags + target version).
 - [ ] Rotasi 4 kunci (`AES_MASTER_KEY`, `BLIND_INDEX_KEY`, `KTA_SIGNING_KEY`, `AUTH_ACCESS_TOKEN_SECRET`) dijalankan dari secret manager (Vault), bukan `.env`.
-- [ ] CORS `ALLOW_ORIGIN` dikunci ke domain produksi (tanpa wildcard), HSTS di-set di Caddy.
+- [ ] CORS `ALLOW_ORIGIN` dikunci ke domain produksi (tanpa wildcard; validasi sudah ada di `validateProduction`), HSTS di-set di Caddy.
 - [ ] Backup + PITR PostgreSQL teruji restore; Redis dengan password + network policy.
 - [ ] Data residency PII sesuai UU PDP (IS3 Indonesia), enkripsi at-rest bucket.
-- [ ] Notifikasi token revisi lewat WA/email (Fase 5) sehingga token tidak pernah kembali ke respons HTTP.
+- [ ] Notifikasi token revisi lewat WA/email (Fase 5) sehingga token tidak pernah kembali ke respons HTTP. **Sementara: penerimaan risiko token-di-respons** (bukti ganda + kuota/nomor + 24 jam + sekali pakai; disetujui pemilik).
+- [ ] Turnstile/CAPTCHA di endpoint publik (DITUNDA — belum ada frontend; pengganti sementara: limiter + error generik + DTO minimal).
 - [ ] Monitoring: alert pada lonjakan 401/403/409/429 dan pada `TOKEN_REUSE` di activity log.
 - [ ] Review akses DB: user aplikasi hanya `SELECT/INSERT/UPDATE` pada tabel operasional; trigger append-only `activity_logs` diverifikasi pada koneksi aplikasi.
 
@@ -488,3 +498,4 @@ Backend Go pada Fase 2 sudah memiliki fondasi keamanan yang kuat dan sudah jauh 
 | Versi | Tanggal | Perubahan |
 |---|---|---|
 | 1.0 | 28 September 2026 | Audit awal: verifikasi klaim PR Fase 1 & 2, temuan baru KIPAN-BE-001 s/d KIPAN-BE-010, konfirmasi utang teknis L-1 s/d L-8 |
+| 1.1 | 28 September 2026 | Remediasi selesai: seluruh BE-001 s/d BE-010 (parsial BE-010) dan L-1 s/d L-8 DITUTUP (`aaa9f70`, `0f7f67e`, `487fc8b`); suite v2.5 41/41; koreksi BE-002 fix #1 (mustahil di presigned PUT); Turnstile + token-via-WA/email eksplisit ditunda; penerimaan risiko token-di-respons dicatat |
