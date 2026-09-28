@@ -14,9 +14,9 @@
 |---|---|---|
 | D1 | Demisioner **butuh konfirmasi eksplisit admin DPP** (tidak otomatis saat SK baru disetujui) — ✅ disetujui | Endpoint `POST /admin/sk/:id/demisioner` terpisah: hanya `ADMIN_NASIONAL`/`SUPER_ADMIN`, hanya bila ada SK pengganti berstatus DISETUJUI untuk wilayah+level yang sama, SK lama → `Digantikan` + pengurusnya → `Demisioner` dalam 1 tx + audit; idempoten (sudah demisioner → 409 generik). **Tersulit Fase 3**: wajib integration test race 2× eksekusi (tepat 1 menang) |
 | D2 | Nomor SK **dari dokumen fisik, diinput admin** (bukan generated) — ✅ disetujui | Validasi format server-side: 5–100 karakter, pola `^[A-Za-z0-9][A-Za-z0-9/._\- ]{0,99}$` (contoh `001/SK/DPP-KIPAN/I/2026`); UNIQUE nasional + 409 generik (tutup balapan 2 admin); CHECK di migrasi |
-| D3 | Naskah PDF **wajib sejak draf** — ⏳ rekomendasi (belum dikonfirmasi) | Alasan: approve tanpa dokumen = SK bodong. Draf tanpa `sk_pdf_key` valid (HeadObject + magic) → 422; berlaku juga saat submit/review (dokumen tak bisa dicopot di tengah jalan) |
-| D4 | Rangkap jabatan: **1 orang 1 jabatan aktif per level+wilayah**; lintas level boleh (mis. DPC + DPD) — ⏳ rekomendasi (belum dikonfirmasi) | Enforce di service (cek sebelum insert → 409) + partial UNIQUE index; test dobel-jabatan |
-| D5 | Pengurus pada SK yang **DITOLAK → otomatis nonaktif** (bukan hapus, bukan pindah draf) — ⏳ rekomendasi (belum dikonfirmasi) | Status `Diberhentikan` + `tanggal_selesai` + riwayat, dalam tx penolakan yang sama; audit tercatat |
+| D3 | Naskah PDF **wajib sejak draf** (dengan status draft/setujui/not-approve) — ✅ disetujui | Alasan: approve tanpa dokumen = SK bodong. Draf tanpa `sk_pdf_key` valid (HeadObject + magic) → 422; berlaku juga saat submit/review (dokumen tak bisa dicopot di tengah jalan) |
+| D4 | Rangkap jabatan ikut **aturan warisan 3 lapis** (`pengurus/route.ts:57-99` proyek lama) — ✅ terjawab: (1) 1 orang maks 1× per SK, (2) jabatan inti tunggal per SK, (3) pengangkatan ke SK baru otomatis demisionerkan seluruh jabatan aktif lama ("dipromosikan") = praktis 1 aktif per orang | Enforce ketiganya di service (400/409) + test tiap lapis |
+| D5 | Penolakan SK **tidak menyentuh baris pengurus** (ikut proyek lama: `approve/route.ts:25-46` hanya flip status + catatan) — ✅ diputuskan | Baris tetap terikat di SK DITOLAK yang tak berlaku; **guard wajib**: semua query "pengurus/susunan aktif" filter SK `DISETUJUI` saja agar tak bocor ke tampilan; audit penolakan tercatat |
 
 ---
 
@@ -67,12 +67,12 @@ DRAFT --submit--> MENUNGGU_PROVINSI --review-prov--> MENUNGGU_NASIONAL --approve
 
 | # | Task | Kriteria selesai |
 |---|---|---|
-| 3.3.1 | Angkat pengurus ke draf SK: anggota harus ber-NIA + AKTIF + sewilayah SK; jabatan wajib; aturan rangkap D4 (1 aktif per level+wilayah) | Anggota fiktif → 422/404; dobel/rangkap → 409 |
+| 3.3.1 | Angkat pengurus ke draf SK: anggota harus ber-NIA + AKTIF + sewilayah SK; jabatan wajib; aturan warisan D4 (1× per SK, inti tunggal, promosi = demisioner lama otomatis) | Anggota fiktif → 422/404; dobel/rangkap → 400/409 |
 | 3.3.2 | `POST /admin/sk/:id/demisioner` (D1): prasyarat SK pengganti DISETUJUI wilayah+level sama; eksekusi SK lama → `Digantikan`, pengurus aktifnya → `Demisioner` + `tanggal_selesai`, 1 tx + audit; idempoten | Tanpa pengganti → 422; berulang → 409 generik; race 2× eksekusi → 1 menang |
 | 3.3.3 | Mutasi/ganti jabatan dalam SK aktif (nasional/super): jabatan lama ditutup (`tanggal_selesai` + status), baris baru dibuka; riwayat masa bakti utuh | Riwayat per anggota since-to-date benar |
 | 3.3.4 | Status keaktifan wilayah (dihitung live): `Aktif` (ada SK berlaku) / `Vakum` (kedaluwarsa) / `Belum Terbentuk`; endpoint `GET /wilayah/:id/status` | Nilai cocok dengan data SK |
 | 3.3.5 | Kunci SK yang sudah DISETUJUI: susunan tak bisa diubah kecuali via mutasi/demisioner resmi | Tambah pengurus ke SK sah → 422 |
-| 3.3.6 | Pengurus yatim (SK DITOLAK, D5): otomatis nonaktif + riwayat dalam tx penolakan | Tak ada pengurus aktif menggantung di SK mati |
+| 3.3.6 | Penolakan SK (D5, ikut warisan): baris pengurus dibiarkan + guard query aktif filter SK DISETUJUI | Tak ada bocor susunan SK mati ke tampilan aktif |
 
 ### Sprint 3.4 — Test & pentest suite v2.7
 
