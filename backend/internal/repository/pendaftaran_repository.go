@@ -28,6 +28,9 @@ type PendaftaranRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.Pendaftaran, error)
 	GetByNomorPendaftaran(ctx context.Context, nomor string) (*domain.Pendaftaran, error)
 	GetByNikHash(ctx context.Context, nikHash string) (*domain.Pendaftaran, error)
+	// ListHistory mengambil riwayat kronologis untuk timeline publik:
+	// hanya aksi + catatan + waktu (tanpa identitas aktor).
+	ListHistory(ctx context.Context, pendaftaranID int) ([]domain.PendaftaranRiwayat, error)
 	// ListQueue mengambil antrean terfilter wilayah + status dengan
 	// proyeksi kolom non-PII. limit dibatasi 1-100 oleh implementasi.
 	ListQueue(ctx context.Context, provinsiID, kabupatenID *int, status string, limit, offset int) ([]domain.PendaftaranQueueItem, error)
@@ -91,6 +94,7 @@ func (r *pendaftaranRepo) Create(ctx context.Context, p *domain.Pendaftaran) err
 			email,
 			whatsapp,
 			motivasi,
+			persyaratan_checklist,
 			foto_key,
 			ktp_key,
 			cv_key,
@@ -124,6 +128,7 @@ func (r *pendaftaranRepo) Create(ctx context.Context, p *domain.Pendaftaran) err
 			:email,
 			:whatsapp,
 			:motivasi,
+			:persyaratan_checklist,
 			:foto_key,
 			:ktp_key,
 			:cv_key,
@@ -177,6 +182,7 @@ func (r *pendaftaranRepo) CreateWithHistory(ctx context.Context, p *domain.Penda
 			email,
 			whatsapp,
 			motivasi,
+			persyaratan_checklist,
 			foto_key,
 			ktp_key,
 			cv_key,
@@ -210,6 +216,7 @@ func (r *pendaftaranRepo) CreateWithHistory(ctx context.Context, p *domain.Penda
 			:email,
 			:whatsapp,
 			:motivasi,
+			:persyaratan_checklist,
 			:foto_key,
 			:ktp_key,
 			:cv_key,
@@ -276,7 +283,8 @@ func (r *pendaftaranRepo) NextRegistrationSequence(ctx context.Context, year, mo
 const pendaftaranColumns = `id, nomor_pendaftaran, nama_lengkap, nik_hash,
 	nik_encrypted, tempat_lahir, tanggal_lahir, jenis_kelamin, agama,
 	pendidikan, pekerjaan, status_pribadi, alamat, provinsi_id, kabupaten_id,
-	kecamatan, desa, kode_pos, email, whatsapp, motivasi, foto_key, ktp_key,
+	kecamatan, desa, kode_pos, email, whatsapp, motivasi, persyaratan_checklist,
+	foto_key, ktp_key,
 	cv_key, sk_key, surat_pernyataan_key, surat_sehat_key, status,
 	catatan_perbaikan, revisi_token_hash, revisi_token_expires_at,
 	anggota_id, created_at, updated_at`
@@ -315,6 +323,16 @@ func (r *pendaftaranRepo) GetByNikHash(ctx context.Context, nikHash string) (*do
 		return nil, err
 	}
 	return &p, nil
+}
+
+func (r *pendaftaranRepo) ListHistory(ctx context.Context, pendaftaranID int) ([]domain.PendaftaranRiwayat, error) {
+	items := make([]domain.PendaftaranRiwayat, 0)
+	query := `SELECT id, pendaftaran_id, aksi, catatan, created_at
+		FROM pendaftaran_riwayat WHERE pendaftaran_id = $1 ORDER BY created_at ASC`
+	if err := r.db.SelectContext(ctx, &items, query, pendaftaranID); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // queueWhere membangun klausa WHERE + args dengan placeholder $n terindeks.

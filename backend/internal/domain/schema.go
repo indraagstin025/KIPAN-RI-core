@@ -14,6 +14,7 @@ import (
 type JWTClaims struct {
 	UserID      string `json:"user_id"`
 	Email       string `json:"email"`
+	Name        string `json:"name,omitempty"`
 	Role        Role   `json:"role"`
 	ProvinsiID  *int   `json:"provinsi_id,omitempty"`
 	KabupatenID *int   `json:"kabupaten_id,omitempty"`
@@ -67,11 +68,11 @@ const (
 type AnggotaStatus string
 
 const (
-	AnggotaStatusAktif        AnggotaStatus = "AKTIF"
-	AnggotaStatusNonaktif     AnggotaStatus = "NONAKTIF"
-	AnggotaStatusDemisioner   AnggotaStatus = "DEMISIONER"
+	AnggotaStatusAktif         AnggotaStatus = "AKTIF"
+	AnggotaStatusNonaktif      AnggotaStatus = "NONAKTIF"
+	AnggotaStatusDemisioner    AnggotaStatus = "DEMISIONER"
 	AnggotaStatusDiberhentikan AnggotaStatus = "DIBERHENTIKAN"
-	AnggotaStatusMeninggal    AnggotaStatus = "MENINGGAL"
+	AnggotaStatusMeninggal     AnggotaStatus = "MENINGGAL"
 )
 
 // SKStatus status Surat Keputusan
@@ -107,9 +108,9 @@ const (
 type PengurusStatus string
 
 const (
-	PengurusStatusAktif           PengurusStatus = "Aktif"
+	PengurusStatusAktif            PengurusStatus = "Aktif"
 	PengurusStatusDemisioner       PengurusStatus = "Demisioner"
-	PengurusStatusDiberhentikan   PengurusStatus = "Diberhentikan"
+	PengurusStatusDiberhentikan    PengurusStatus = "Diberhentikan"
 	PengurusStatusMengundurkanDiri PengurusStatus = "Mengundurkan Diri"
 	PengurusStatusMeninggal        PengurusStatus = "Meninggal"
 )
@@ -119,6 +120,7 @@ type NotificationType string
 
 const (
 	NotifTypePendaftaran NotificationType = "PENDAFTARAN"
+	NotifTypeVerifikasi  NotificationType = "VERIFIKASI"
 	NotifTypeSK          NotificationType = "SK"
 	NotifTypeSistem      NotificationType = "SISTEM"
 )
@@ -200,27 +202,30 @@ type UserRefreshToken struct {
 
 // Pendaftaran formulir registrasi calon kader
 type Pendaftaran struct {
-	ID                   int               `db:"id" json:"id"`
-	NomorPendaftaran     string            `db:"nomor_pendaftaran" json:"nomor_pendaftaran"` // REG-YYYYMM-XXXXX
-	NamaLengkap          string            `db:"nama_lengkap" json:"nama_lengkap"`
-	NIKHash              string            `db:"nik_hash" json:"-"`                       // HMAC-SHA256 Blind Index
-	NIKEncrypted         string            `db:"nik_encrypted" json:"-"`                  // AES-256-GCM
-	TempatLahir          string            `db:"tempat_lahir" json:"tempat_lahir"`
-	TanggalLahir         time.Time         `db:"tanggal_lahir" json:"tanggal_lahir"`
-	JenisKelamin         string            `db:"jenis_kelamin" json:"jenis_kelamin"` // L | P
-	Agama                string            `db:"agama" json:"agama"`
-	Pendidikan           string            `db:"pendidikan" json:"pendidikan"`
-	Pekerjaan            string            `db:"pekerjaan" json:"pekerjaan"`
-	StatusPribadi        string            `db:"status_pribadi" json:"status_pribadi"`
-	Alamat               string            `db:"alamat" json:"alamat"`
-	ProvinsiID           int               `db:"provinsi_id" json:"provinsi_id"`
-	KabupatenID          int               `db:"kabupaten_id" json:"kabupaten_id"`
-	Kecamatan            string            `db:"kecamatan" json:"kecamatan"`
-	Desa                 string            `db:"desa" json:"desa"`
-	KodePos              string            `db:"kode_pos" json:"kode_pos"`
-	Email                string            `db:"email" json:"email"`
-	Whatsapp             string            `db:"whatsapp" json:"whatsapp"`
-	Motivasi             string            `db:"motivasi" json:"motivasi"`
+	ID               int       `db:"id" json:"id"`
+	NomorPendaftaran string    `db:"nomor_pendaftaran" json:"nomor_pendaftaran"` // REG-YYYYMM-XXXXX
+	NamaLengkap      string    `db:"nama_lengkap" json:"nama_lengkap"`
+	NIKHash          string    `db:"nik_hash" json:"-"`      // HMAC-SHA256 Blind Index
+	NIKEncrypted     string    `db:"nik_encrypted" json:"-"` // AES-256-GCM
+	TempatLahir      string    `db:"tempat_lahir" json:"tempat_lahir"`
+	TanggalLahir     time.Time `db:"tanggal_lahir" json:"tanggal_lahir"`
+	JenisKelamin     string    `db:"jenis_kelamin" json:"jenis_kelamin"` // L | P
+	Agama            string    `db:"agama" json:"agama"`
+	Pendidikan       string    `db:"pendidikan" json:"pendidikan"`
+	Pekerjaan        string    `db:"pekerjaan" json:"pekerjaan"`
+	StatusPribadi    string    `db:"status_pribadi" json:"status_pribadi"`
+	Alamat           string    `db:"alamat" json:"alamat"`
+	ProvinsiID       int       `db:"provinsi_id" json:"provinsi_id"`
+	KabupatenID      int       `db:"kabupaten_id" json:"kabupaten_id"`
+	Kecamatan        string    `db:"kecamatan" json:"kecamatan"`
+	Desa             string    `db:"desa" json:"desa"`
+	KodePos          string    `db:"kode_pos" json:"kode_pos"`
+	Email            string    `db:"email" json:"email"`
+	Whatsapp         string    `db:"whatsapp" json:"whatsapp"`
+	Motivasi         string    `db:"motivasi" json:"motivasi"`
+	// PersyaratanChecklist menyimpan pilihan checklist pendaftar sebagai
+	// JSON array string (selaras form KIPAN_INDONESIA).
+	PersyaratanChecklist string            `db:"persyaratan_checklist" json:"persyaratan_checklist"`
 	FotoKey              string            `db:"foto_key" json:"foto_key"`
 	KTPKey               string            `db:"ktp_key" json:"ktp_key"` // PRIVATE bucket
 	CVKey                string            `db:"cv_key" json:"cv_key"`
@@ -341,7 +346,7 @@ type Pengurus struct {
 	TanggalSelesai   *time.Time     `db:"tanggal_selesai" json:"tanggal_selesai,omitempty"`
 	CreatedAt        time.Time      `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time      `db:"updated_at" json:"updated_at"`
-} 
+}
 
 // ============================================================
 // 6. ACTIVITY LOG (AUDIT TRAIL FORENSIK) & NOTIFIKASI
@@ -358,8 +363,8 @@ type ActivityLog struct {
 	UserAgent  string    `db:"user_agent" json:"user_agent"`
 	EntityName string    `db:"entity_name" json:"entity_name"` // "pendaftaran" | "anggota" | "surat_keputusan" | "pengurus" | "users"
 	EntityID   string    `db:"entity_id" json:"entity_id"`
-	Action     string    `db:"action" json:"action"`       // "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "LOGIN" | "LOGOUT"
-	Metadata   *string   `db:"metadata" json:"metadata"`   // JSON string perubahan (PII wajib dimasking)
+	Action     string    `db:"action" json:"action"`     // "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "LOGIN" | "LOGOUT"
+	Metadata   *string   `db:"metadata" json:"metadata"` // JSON string perubahan (PII wajib dimasking)
 	RequestID  string    `db:"request_id" json:"request_id"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }

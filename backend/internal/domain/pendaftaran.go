@@ -5,30 +5,33 @@ import "time"
 // PendaftaranSubmitRequest adalah payload masuk untuk pendaftaran calon anggota.
 // Semua field bersifat server-side validated agar tidak mempercayai data klien secara mentah.
 type PendaftaranSubmitRequest struct {
-	NamaLengkap        string `json:"nama_lengkap"`
-	NIK                string `json:"nik"`
-	TempatLahir        string `json:"tempat_lahir"`
-	TanggalLahir       string `json:"tanggal_lahir"`
-	JenisKelamin       string `json:"jenis_kelamin"`
-	Agama              string `json:"agama,omitempty"`
-	Pendidikan         string `json:"pendidikan,omitempty"`
-	Pekerjaan          string `json:"pekerjaan,omitempty"`
-	StatusPribadi      string `json:"status_pribadi,omitempty"`
-	Alamat             string `json:"alamat"`
-	ProvinsiID         int    `json:"provinsi_id"`
-	KabupatenID        int    `json:"kabupaten_id"`
-	Kecamatan          string `json:"kecamatan,omitempty"`
-	Desa               string `json:"desa,omitempty"`
-	KodePos            string `json:"kode_pos,omitempty"`
-	Email              string `json:"email"`
-	Whatsapp           string `json:"whatsapp"`
-	Motivasi           string `json:"motivation,omitempty"`
-	FotoKey            string `json:"foto_key,omitempty"`
-	KTPKey             string `json:"ktp_key,omitempty"`
-	CVKey              string `json:"cv_key,omitempty"`
-	SKKey              string `json:"sk_key,omitempty"`
-	SuratPernyataanKey string `json:"surat_pernyataan_key,omitempty"`
-	SuratSehatKey      string `json:"surat_sehat_key,omitempty"`
+	NamaLengkap   string `json:"nama_lengkap"`
+	NIK           string `json:"nik"`
+	TempatLahir   string `json:"tempat_lahir"`
+	TanggalLahir  string `json:"tanggal_lahir"`
+	JenisKelamin  string `json:"jenis_kelamin"`
+	Agama         string `json:"agama,omitempty"`
+	Pendidikan    string `json:"pendidikan,omitempty"`
+	Pekerjaan     string `json:"pekerjaan,omitempty"`
+	StatusPribadi string `json:"status_pribadi,omitempty"`
+	Alamat        string `json:"alamat"`
+	ProvinsiID    int    `json:"provinsi_id"`
+	KabupatenID   int    `json:"kabupaten_id"`
+	Kecamatan     string `json:"kecamatan,omitempty"`
+	Desa          string `json:"desa,omitempty"`
+	KodePos       string `json:"kode_pos,omitempty"`
+	Email         string `json:"email"`
+	Whatsapp      string `json:"whatsapp"`
+	Motivasi      string `json:"motivation,omitempty"`
+	// Persyaratan adalah checklist yang dicentang pendaftar (selaras form
+	// KIPAN_INDONESIA). Opsional di server; label livedi frontend.
+	Persyaratan        []string `json:"persyaratan,omitempty"`
+	FotoKey            string   `json:"foto_key,omitempty"`
+	KTPKey             string   `json:"ktp_key,omitempty"`
+	CVKey              string   `json:"cv_key,omitempty"`
+	SKKey              string   `json:"sk_key,omitempty"`
+	SuratPernyataanKey string   `json:"surat_pernyataan_key,omitempty"`
+	SuratSehatKey      string   `json:"surat_sehat_key,omitempty"`
 }
 
 // PendaftaranApprovalAction action yang diizinkan untuk admin saat memproses pendaftaran.
@@ -74,13 +77,46 @@ type PendaftaranCreateResult struct {
 	Status           string `json:"status"`
 }
 
-// PendaftaranTrackingResponse adalah DTO publik minimal untuk pelacakan
-// mandiri: tanpa nama, kontak, alamat, maupun object key (RULES 12).
+// PendaftaranTrackingResponse adalah DTO publik MINIMAL untuk pelacakan
+// mandiri: HANYA nomor + status + timestamp. Nomor pelacakan (REG) bersifat
+// sekuensial dan dapat dienumerasi, sehingga respons publik TIDAK boleh
+// memuat PII (nama/wilayah/catatan/timeline) — field kaya dipindahkan ke
+// jalur berpruf pemilik (SEC-TRACK-PII).
+// Catatan: TrackingTimelineItem disimpan sebagai reserve untuk endpoint
+// detail pendaftar (menyusul).
 type PendaftaranTrackingResponse struct {
 	NomorPendaftaran string    `json:"nomor_pendaftaran"`
 	Status           string    `json:"status"`
+	StatusLabel      string    `json:"status_label"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// TrackingTimelineItem adalah satu baris riwayat publik: aksi + waktu
+// (+ catatan applicant-facing). Tanpa identitas aktor.
+type TrackingTimelineItem struct {
+	Aksi      string    `json:"aksi"`
+	Catatan   *string   `json:"catatan,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TrackingStatusLabel memetakan status ke label UI Indonesia (selaras
+// statusMap di track/route.ts proyek lama).
+func TrackingStatusLabel(status PendaftaranStatus) string {
+	switch status {
+	case PendaftaranStatusDiajukan:
+		return "Pendaftaran Diterima"
+	case PendaftaranStatusDiverifikasi:
+		return "Sedang Diverifikasi"
+	case PendaftaranStatusPerbaikan:
+		return "Perlu Perbaikan"
+	case PendaftaranStatusDitolak:
+		return "Pendaftaran Ditolak"
+	case PendaftaranStatusDisetujui:
+		return "Disetujui"
+	default:
+		return string(status)
+	}
 }
 
 // KTAVerificationResponse adalah DTO publik verifikasi KTA: hanya data yang

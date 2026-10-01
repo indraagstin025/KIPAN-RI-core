@@ -16,6 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
+	"github.com/rs/zerolog/log"
 )
 
 type VerificationService interface {
@@ -30,6 +31,7 @@ type VerificationDeps struct {
 	AnggotaRepo repository.AnggotaRepository
 	AuditRepo   repository.AuditLogRepository
 	KTASvc      KTAService
+	NotifRepo   repository.NotificationRepository
 }
 
 type verificationSvc struct {
@@ -38,12 +40,13 @@ type verificationSvc struct {
 	anggotaRepo repository.AnggotaRepository
 	auditRepo   repository.AuditLogRepository
 	ktaSvc      KTAService
+	notifRepo   repository.NotificationRepository
 }
 
 func NewVerificationService(cfg *config.Config, deps VerificationDeps) VerificationService {
 	return &verificationSvc{
 		cfg: cfg, repo: deps.Repo, anggotaRepo: deps.AnggotaRepo,
-		auditRepo: deps.AuditRepo, ktaSvc: deps.KTASvc,
+		auditRepo: deps.AuditRepo, ktaSvc: deps.KTASvc, notifRepo: deps.NotifRepo,
 	}
 }
 
@@ -105,6 +108,10 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 		}
 		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 			"pendaftaran", strconv.Itoa(id), string(action), &meta)
+		s.notifyAdmins(ctx, "Pembaruan Status Verifikasi",
+			"Pendaftaran "+item.NamaLengkap+" disetujui menjadi Anggota.",
+			domain.NotifTypeVerifikasi, "#admin?page=verifikasi",
+			item.ProvinsiID, item.KabupatenID)
 		return nil
 	}
 
@@ -113,6 +120,10 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 	}
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 		"pendaftaran", strconv.Itoa(id), string(action), &meta)
+	s.notifyAdmins(ctx, "Pembaruan Status Verifikasi",
+		"Pendaftaran "+item.NamaLengkap+" diperbarui menjadi "+string(targetStatus)+".",
+		domain.NotifTypeVerifikasi, "#admin?page=verifikasi",
+		item.ProvinsiID, item.KabupatenID)
 	return nil
 }
 
@@ -251,6 +262,16 @@ func ktaVerifyKeys(cfg *config.Config) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// notifyAdmins menyebar notifikasi ke admin berhak secara best-effort.
+func (s *verificationSvc) notifyAdmins(ctx context.Context, title, message string, notifType domain.NotificationType, link string, provID, kabID int) {
+	if s.notifRepo == nil {
+		return
+	}
+	if err := s.notifRepo.NotifyAdmins(ctx, title, message, notifType, link, provID, kabID); err != nil {
+		log.Warn().Err(err).Msg("gagal menyebar notifikasi verifikasi")
+	}
 }
 
 // auditEvent mendelegasikan ke writeAudit terpusat (R2).

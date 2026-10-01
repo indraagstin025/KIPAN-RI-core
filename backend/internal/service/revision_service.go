@@ -84,9 +84,9 @@ func MatchOwnerProof(storedEmail, storedWA, proofEmail, proofWA string) bool {
 // bukti ganda + limiter per-nomor + 24 jam + sekali pakai; pengiriman
 // WA/email tetap wajib sebelum produksi (Fase 5).
 func (s *revisionSvc) RequestRevisionToken(ctx context.Context, req domain.RevisionTokenRequest, audit domain.AuditContext) (*domain.RevisionTokenResponse, error) {
-	nr := strings.TrimSpace(req.Nomor)
-	if nr == "" || len(nr) > 30 {
-		return nil, domain.NewValidationError("Nomor pendaftaran tidak valid")
+	nr, err := normalizeNomor(req.Nomor)
+	if err != nil {
+		return nil, err
 	}
 	if s.repo == nil {
 		return nil, unavailable("pendaftaran")
@@ -125,9 +125,9 @@ func (s *revisionSvc) RequestRevisionToken(ctx context.Context, req domain.Revis
 // tanpa oracle), dokumen baru tervalidasi + terverifikasi storage,
 // status kembali DIAJUKAN, token hangus sekali pakai.
 func (s *revisionSvc) SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error {
-	nr := strings.TrimSpace(nomor)
-	if nr == "" || len(nr) > 30 {
-		return domain.NewValidationError("Nomor pendaftaran tidak valid")
+	nr, err := normalizeNomor(nomor)
+	if err != nil {
+		return err
 	}
 	token := strings.TrimSpace(req.Token)
 	if token == "" || len(token) > 256 {

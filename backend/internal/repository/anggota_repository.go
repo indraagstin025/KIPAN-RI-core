@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -22,6 +23,11 @@ type AnggotaRepository interface {
 	GetByNIA(ctx context.Context, nia string) (*domain.Anggota, error)
 	// GetByID mengambil anggota berdasarkan ID.
 	GetByID(ctx context.Context, id int) (*domain.Anggota, error)
+	// ListAnggota mengambil daftar terfilter wilayah + status + pencarian
+	// nama/NIA dengan proyeksi non-PII. limit dibatasi 1-100.
+	ListAnggota(ctx context.Context, provinsiID, kabupatenID *int, status, search string, limit, offset int) ([]domain.AnggotaListItem, error)
+	// CountAnggota menghitung total baris filter yang sama untuk meta pagination.
+	CountAnggota(ctx context.Context, provinsiID, kabupatenID *int, status, search string) (int, error)
 	// SetKTAPDFKey menyimpan object key PDF KTA hasil render server.
 	SetKTAPDFKey(ctx context.Context, id int, key string) error
 }
@@ -93,4 +99,71 @@ func (r *anggotaRepo) GetByNIA(ctx context.Context, nia string) (*domain.Anggota
 		return nil, err
 	}
 	return &a, nil
+}
+
+// anggotaWhere membangun klausa WHERE + args dengan placeholder $n.
+// Filter wilayah berasal dari ActorContext server-side (bukan client).
+// Pencarian hanya nama/NIA (ILIKE); NIK tidak bisa dicari parsial karena
+// terenkripsi GCM + blind index exact-match.
+func anggotaWhere(provinsiID, kabupatenID *int, status, search string) (string, []interface{}) {
+	where := []string{"1 = 1"}
+	args := []interface{}{}
+	if provinsiID != nil {
+		args = append(args, *provinsiID)
+		where = append(where, fmt.Sprintf("a.provinsi_id = $%d", len(args)))
+	}
+	if kabupatenID != nil {
+		args = append(args, *kabupatenID)
+		where = append(where, fmt.Sprintf("a.kabupaten_id = $%d", len(args)))
+	}
+	if s := strings.TrimSpace(status); s != "" {
+		args = append(args, s)
+		where = append(where, fmt.Sprintf("a.status = $%d", len(args)))
+	}
+	if q := strings.TrimSpace(search); q != "" {
+		args = append(args, "%"+q+"%")
+		where = append(where, fmt.Sprintf("(a.nama_lengkap ILIKE $%d OR a.nia ILIKE $%d)", len(args), len(args)))
+	}
+	return strings.Join(where, " AND "), args
+}
+
+const anggotaListColumns = `a.id, a.nia, a.nama_lengkap, a.status,
+	a.provinsi_id, p.nama AS provinsi_nama,
+	a.kabupaten_id, k.nama AS kabupaten_nama,
+	a.tanggal_angkat, a.created_at`
+
+const anggotaListJoins = `FROM anggota a
+	JOIN wilayah_provinsi p ON p.id = a.provinsi_id
+	JOIN wilayah_kabupaten k ON k.id = a.kabupaten_id`
+
+func (r *anggotaRepo) ListAnggota(ctx context.Context, provinsiID, kabupatenID *int, status, search string, limit, offset int) ([]domain.AnggotaListItem, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	items := make([]domain.AnggotaListItem, 0)
+	where, args := anggotaWhere(provinsiID, kabupatenID, status, search)
+	args = append(args, limit, offset)
+	query := `SELECT ` + anggotaListColumns + ` ` + anggotaListJoins +
+		` WHERE ` + where + ` ORDER BY a.created_at DESC` +
+		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, len(args)-1, len(args))
+	if err := r.db.SelectContext(ctx, &items, query, args...); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *anggotaRepo) CountAnggota(ctx context.Context, provinsiID, kabupatenID *int, status, search string) (int, error) {
+	var total int
+	where, args := anggotaWhere(provinsiID, kabupatenID, status, search)
+	query := `SELECT COUNT(*) ` + anggotaListJoins + ` WHERE ` + where
+	if err := r.db.GetContext(ctx, &total, query, args...); err != nil {
+		return 0, err
+	}
+	return total, nil
 }

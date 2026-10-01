@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/mail"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/generator"
+	"github.com/rs/zerolog/log"
 )
 
 // PendaftaranService berisi business logic pendaftaran calon anggota.
@@ -45,6 +47,7 @@ type PendaftaranDeps struct {
 	AuditRepo   repository.AuditLogRepository
 	StorageSvc  ObjectVerifier
 	WilayahRepo repository.WilayahRepository
+	NotifRepo   repository.NotificationRepository
 }
 
 type pendaftaranService struct {
@@ -54,6 +57,7 @@ type pendaftaranService struct {
 	auditRepo   repository.AuditLogRepository
 	storageSvc  ObjectVerifier
 	wilayahRepo repository.WilayahRepository
+	notifRepo   repository.NotificationRepository
 }
 
 func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) PendaftaranService {
@@ -64,6 +68,7 @@ func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) Pendaftaran
 		auditRepo:   deps.AuditRepo,
 		storageSvc:  deps.StorageSvc,
 		wilayahRepo: deps.WilayahRepo,
+		notifRepo:   deps.NotifRepo,
 	}
 }
 
@@ -78,6 +83,21 @@ var phonePattern = regexp.MustCompile(`^(\+62|62|0)8[1-9][0-9]{6,10}$`)
 // di batch storage presign.
 var objectKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/_\.\-]{0,254}$`)
 
+// nomorPattern menerima REG-YYYYMM-XXXX (warisan KIPAN_INDONESIA, 4 digit)
+// dan REG-YYYYMM-XXXXX (baru, 5 digit) selama masa transisi migrasi data.
+var nomorPattern = regexp.MustCompile(`^REG-\d{6}-\d{4,5}$`)
+
+// normalizeNomor menyeragamkan nomor registrasi (trim + uppercase) dan
+// menolak format di luar dua varian yang dikenal (422, bukan 404 agar
+// pesan selaras UI lama "Format nomor pendaftaran tidak valid").
+func normalizeNomor(nomor string) (string, error) {
+	nr := strings.ToUpper(strings.TrimSpace(nomor))
+	if nr == "" || len(nr) > 30 || !nomorPattern.MatchString(nr) {
+		return "", domain.NewValidationError("Nomor pendaftaran tidak valid")
+	}
+	return nr, nil
+}
+
 // Batas panjang field selaras kolom database (anti-DoS + 422, bukan 500).
 const (
 	maxNamaLen          = 150
@@ -89,8 +109,8 @@ const (
 	maxKodePosLen       = 10
 	maxMotivasiLen      = 1000
 	maxBebasLen         = 100
-	minPendaftarAge     = 17
-	maxPendaftarAge     = 100
+	minPendaftarAge     = 16
+	maxPendaftarAge     = 30
 )
 
 // ValidateSubmitRequest memastikan payload pendaftaran aman dan valid sebelum masuk DB.
@@ -173,6 +193,9 @@ func (s *pendaftaranService) ValidateSubmitRequest(req domain.PendaftaranSubmitR
 	if containsAngleBracket(req.Motivasi) {
 		return domain.NewValidationError("Motivasi tidak boleh mengandung karakter < atau >")
 	}
+	if err := checkPersyaratan(req.Persyaratan); err != nil {
+		return err
+	}
 	for _, f := range []struct {
 		label string
 		val   string
@@ -195,7 +218,46 @@ func (s *pendaftaranService) ValidateSubmitRequest(req domain.PendaftaranSubmitR
 	return nil
 }
 
-// containsAngleBracket menolak < > pada field plain-text (anti stored-XSS;
+// checkPersyaratan memvalidasi checklist persyaratan pendaftar (selaras
+// form KIPAN_INDONESIA): opsional, maks 20 item, tiap item 1-100 karakter
+// tanpa angle bracket (anti stored-XSS).
+func checkPersyaratan(items []string) error {
+	if len(items) > 20 {
+		return domain.NewValidationError("Persyaratan maksimal 20 item")
+	}
+	for _, it := range items {
+		t := strings.TrimSpace(it)
+		if t == "" || len([]rune(t)) > maxBebasLen {
+			return domain.NewValidationError("Item persyaratan wajib 1-100 karakter")
+		}
+		if containsAngleBracket(t) {
+			return domain.NewValidationError("Item persyaratan tidak boleh mengandung karakter < atau >")
+		}
+	}
+	return nil
+}
+
+// marshalPersyaratan menyeragamkan checklist (trim) lalu mengenkode ke
+// JSON array string untuk kolom persyaratan_checklist. Gagal encode yang
+// praktis mustahil dipetakan ke 422 agar tidak menjadi 500.
+func marshalPersyaratan(items []string) (string, error) {
+	clean := make([]string, 0, len(items))
+	for _, it := range items {
+		if t := strings.TrimSpace(it); t != "" {
+			clean = append(clean, t)
+		}
+	}
+	if clean == nil {
+		clean = []string{}
+	}
+	raw, err := json.Marshal(clean)
+	if err != nil {
+		return "", domain.NewValidationError("Checklist persyaratan tidak valid")
+	}
+	return string(raw), nil
+}
+
+// containsAngleBracket menolak < > pada field plain-text (anti stored-XSS);
 // nama/alamat yang sah tidak pernah mengandung angle bracket).
 func containsAngleBracket(s string) bool {
 	return strings.ContainsAny(s, "<>")
@@ -219,7 +281,8 @@ func isPlausibleNIKDate(nik string) bool {
 	return false
 }
 
-// checkPendaftarAge menolak tanggal masa depan dan umur di luar 17-100 tahun.
+// checkPendaftarAge menolak tanggal masa depan dan umur di luar 16-30 tahun
+// (selaras KIPAN_INDONESIA: POST /api/pendaftaran menolak umur <16/>30).
 func checkPendaftarAge(dob, now time.Time) error {
 	if dob.After(now) {
 		return domain.NewValidationError("Tanggal lahir tidak boleh di masa depan")
@@ -229,7 +292,7 @@ func checkPendaftarAge(dob, now time.Time) error {
 		age--
 	}
 	if age < minPendaftarAge || age > maxPendaftarAge {
-		return domain.NewValidationError("Usia pendaftar harus 17-100 tahun")
+		return domain.NewValidationError("Usia pendaftar harus 16-30 tahun")
 	}
 	return nil
 }
@@ -335,6 +398,10 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 	if err != nil {
 		return nil, domain.NewValidationError("Format tanggal lahir tidak valid")
 	}
+	persyaratanJSON, err := marshalPersyaratan(req.Persyaratan)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 
 	// Retry sekali untuk perebutan nomor (UNIQUE backstop). 409 final tetap
@@ -350,33 +417,34 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 			return nil, err
 		}
 		entity := &domain.Pendaftaran{
-			NomorPendaftaran:   number,
-			NamaLengkap:        strings.TrimSpace(req.NamaLengkap),
-			NIKHash:            blindIndex,
-			NIKEncrypted:       nikEncrypted,
-			TempatLahir:        strings.TrimSpace(req.TempatLahir),
-			TanggalLahir:       dob,
-			JenisKelamin:       strings.TrimSpace(req.JenisKelamin),
-			Agama:              strings.TrimSpace(req.Agama),
-			Pendidikan:         strings.TrimSpace(req.Pendidikan),
-			Pekerjaan:          strings.TrimSpace(req.Pekerjaan),
-			StatusPribadi:      strings.TrimSpace(req.StatusPribadi),
-			Alamat:             strings.TrimSpace(req.Alamat),
-			ProvinsiID:         req.ProvinsiID,
-			KabupatenID:        req.KabupatenID,
-			Kecamatan:          strings.TrimSpace(req.Kecamatan),
-			Desa:               strings.TrimSpace(req.Desa),
-			KodePos:            strings.TrimSpace(req.KodePos),
-			Email:              strings.TrimSpace(req.Email),
-			Whatsapp:           strings.TrimSpace(req.Whatsapp),
-			Motivasi:           strings.TrimSpace(req.Motivasi),
-			FotoKey:            strings.TrimSpace(req.FotoKey),
-			KTPKey:             strings.TrimSpace(req.KTPKey),
-			CVKey:              strings.TrimSpace(req.CVKey),
-			SKKey:              strings.TrimSpace(req.SKKey),
-			SuratPernyataanKey: strings.TrimSpace(req.SuratPernyataanKey),
-			SuratSehatKey:      strings.TrimSpace(req.SuratSehatKey),
-			Status:             domain.PendaftaranStatusDiajukan,
+			NomorPendaftaran:     number,
+			NamaLengkap:          strings.TrimSpace(req.NamaLengkap),
+			NIKHash:              blindIndex,
+			NIKEncrypted:         nikEncrypted,
+			TempatLahir:          strings.TrimSpace(req.TempatLahir),
+			TanggalLahir:         dob,
+			JenisKelamin:         strings.TrimSpace(req.JenisKelamin),
+			Agama:                strings.TrimSpace(req.Agama),
+			Pendidikan:           strings.TrimSpace(req.Pendidikan),
+			Pekerjaan:            strings.TrimSpace(req.Pekerjaan),
+			StatusPribadi:        strings.TrimSpace(req.StatusPribadi),
+			Alamat:               strings.TrimSpace(req.Alamat),
+			ProvinsiID:           req.ProvinsiID,
+			KabupatenID:          req.KabupatenID,
+			Kecamatan:            strings.TrimSpace(req.Kecamatan),
+			Desa:                 strings.TrimSpace(req.Desa),
+			KodePos:              strings.TrimSpace(req.KodePos),
+			Email:                strings.TrimSpace(req.Email),
+			Whatsapp:             strings.TrimSpace(req.Whatsapp),
+			Motivasi:             strings.TrimSpace(req.Motivasi),
+			PersyaratanChecklist: persyaratanJSON,
+			FotoKey:              strings.TrimSpace(req.FotoKey),
+			KTPKey:               strings.TrimSpace(req.KTPKey),
+			CVKey:                strings.TrimSpace(req.CVKey),
+			SKKey:                strings.TrimSpace(req.SKKey),
+			SuratPernyataanKey:   strings.TrimSpace(req.SuratPernyataanKey),
+			SuratSehatKey:        strings.TrimSpace(req.SuratSehatKey),
+			Status:               domain.PendaftaranStatusDiajukan,
 		}
 		if err := s.repo.CreateWithHistory(ctx, entity, "SUBMIT", "Pendaftaran mandiri diterima"); err != nil {
 			var appErr *domain.AppError
@@ -389,6 +457,11 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 		// Jejak audit: aktor adalah pendaftar publik (tanpa akun).
 		s.auditEvent(ctx, audit, nil, entity.NamaLengkap, "PUBLIK",
 			"pendaftaran", strconv.Itoa(entity.ID), "SUBMIT", nil)
+		// Notifikasi fan-out server-side (best-effort, tanpa gagalkan submit).
+		s.notifyAdmins(ctx, "Pendaftaran Baru",
+			entity.NamaLengkap+" mendaftar dan menunggu verifikasi ("+number+").",
+			domain.NotifTypePendaftaran, "#admin?page=verifikasi",
+			entity.ProvinsiID, entity.KabupatenID)
 		return &domain.PendaftaranCreateResult{
 			ID:               entity.ID,
 			NomorPendaftaran: number,
@@ -398,12 +471,14 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 	return nil, lastErr
 }
 
-// GetTracking melayani pelacakan publik dengan DTO minimal: nomor, status,
-// dan timestamp. Tanpa nama, kontak, alamat, maupun object key (RULES 12).
+// GetTracking melayani pelacakan publik MINIMAL: nomor + status + timestamp.
+// Field kaya (nama, wilayah, catatan, timeline) SENGAJA tidak disertakan pada
+// jalur publik karena nomor REG sekuensial dapat dienumerasi (SEC-TRACK-PII).
+// Data kaya akan dilayani lewat jalur berpruf pemilik (menyusul).
 func (s *pendaftaranService) GetTracking(ctx context.Context, nomor string) (*domain.PendaftaranTrackingResponse, error) {
-	nr := strings.TrimSpace(nomor)
-	if nr == "" || len(nr) > 30 {
-		return nil, domain.NewValidationError("Nomor pendaftaran tidak valid")
+	nr, err := normalizeNomor(nomor)
+	if err != nil {
+		return nil, err
 	}
 	if s.repo == nil {
 		return nil, domain.NewValidationError("Repository pendaftaran belum tersedia")
@@ -414,9 +489,10 @@ func (s *pendaftaranService) GetTracking(ctx context.Context, nomor string) (*do
 	}
 	return &domain.PendaftaranTrackingResponse{
 		NomorPendaftaran: item.NomorPendaftaran,
-		Status:          string(item.Status),
-		CreatedAt:       item.CreatedAt,
-		UpdatedAt:       item.UpdatedAt,
+		Status:           string(item.Status),
+		StatusLabel:      domain.TrackingStatusLabel(item.Status),
+		CreatedAt:        item.CreatedAt,
+		UpdatedAt:        item.UpdatedAt,
 	}, nil
 }
 
@@ -563,6 +639,17 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 		return nil, 0, err
 	}
 	return items, total, nil
+}
+
+// notifyAdmins menyebar notifikasi ke admin berhak secara best-effort:
+// gagal kirim hanya dicatat warn, tidak menggagalkan alur utama.
+func (s *pendaftaranService) notifyAdmins(ctx context.Context, title, message string, notifType domain.NotificationType, link string, provID, kabID int) {
+	if s.notifRepo == nil {
+		return
+	}
+	if err := s.notifRepo.NotifyAdmins(ctx, title, message, notifType, link, provID, kabID); err != nil {
+		log.Warn().Err(err).Msg("gagal menyebar notifikasi pendaftaran")
+	}
 }
 
 // auditEvent mendelegasikan ke writeAudit terpusat (R2).

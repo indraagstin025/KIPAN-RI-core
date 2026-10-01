@@ -21,6 +21,9 @@ type WilayahRepository interface {
 	ListProvinsi(ctx context.Context) ([]domain.WilayahProvinsi, error)
 	// ListKabupaten mengembalikan kabupaten aktif dalam satu provinsi.
 	ListKabupaten(ctx context.Context, provinsiID int) ([]domain.WilayahKabupaten, error)
+	// GetNames mengembalikan nama provinsi + kabupaten untuk DTO tampil
+	// (track publik, daftar anggota). Nama kosong bila ID tak dikenal.
+	GetNames(ctx context.Context, provinsiID, kabupatenID int) (provinsi, kabupaten string, err error)
 }
 
 type wilayahRepo struct {
@@ -69,4 +72,15 @@ func (r *wilayahRepo) ListKabupaten(ctx context.Context, provinsiID int) ([]doma
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *wilayahRepo) GetNames(ctx context.Context, provinsiID, kabupatenID int) (string, string, error) {
+	var prov, kab string
+	query := `SELECT
+		COALESCE((SELECT nama FROM wilayah_provinsi WHERE id = $1), ''),
+		COALESCE((SELECT nama FROM wilayah_kabupaten WHERE id = $2), '')`
+	if err := r.db.QueryRowxContext(ctx, query, provinsiID, kabupatenID).Scan(&prov, &kab); err != nil {
+		return "", "", err
+	}
+	return prov, kab, nil
 }

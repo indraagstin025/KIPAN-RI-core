@@ -23,3 +23,18 @@ func TestIsAllowedTransition(t *testing.T) {
 		t.Fatal("expected invalid reverse transition to be rejected")
 	}
 }
+
+func TestTrackingStatusLabel(t *testing.T) {
+	cases := map[PendaftaranStatus]string{
+		PendaftaranStatusDiajukan:     "Pendaftaran Diterima",
+		PendaftaranStatusDiverifikasi: "Sedang Diverifikasi",
+		PendaftaranStatusPerbaikan:    "Perlu Perbaikan",
+		PendaftaranStatusDitolak:      "Pendaftaran Ditolak",
+		PendaftaranStatusDisetujui:    "Disetujui",
+	}
+	for status, want := range cases {
+		if got := TrackingStatusLabel(status); got != want {
+			t.Fatalf("label %q = %q, want %q", status, got, want)
+		}
+	}
+}

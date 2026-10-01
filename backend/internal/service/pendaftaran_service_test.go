@@ -36,6 +36,14 @@ func (f *fakeAnggotaRepo) SetKTAPDFKey(_ context.Context, _ int, _ string) error
 	return nil
 }
 
+func (f *fakeAnggotaRepo) ListAnggota(_ context.Context, _, _ *int, _, _ string, _, _ int) ([]domain.AnggotaListItem, error) {
+	return []domain.AnggotaListItem{}, nil
+}
+
+func (f *fakeAnggotaRepo) CountAnggota(_ context.Context, _, _ *int, _, _ string) (int, error) {
+	return 0, nil
+}
+
 var _ repository.AnggotaRepository = (*fakeAnggotaRepo)(nil)
 
 func TestValidateSubmitRequestAcceptsValidPayload(t *testing.T) {
@@ -77,20 +85,20 @@ func TestValidateSubmitRequestRejectsInvalidNIK(t *testing.T) {
 	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	req := domain.PendaftaranSubmitRequest{
-		NamaLengkap:   "Rizki Pratama",
-		NIK:           "12345",
-		TempatLahir:   "Bandung",
-		TanggalLahir:  time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		JenisKelamin:  "L",
-		Alamat:        "Jl. Merdeka No. 10, Bandung",
-		ProvinsiID:    32,
-		KabupatenID:   3273,
-		Kecamatan:     "Cidadap",
-		Desa:          "Ciumbuleuit",
-		Email:         "rizki@example.com",
-		Whatsapp:      "081234567890",
-		FotoKey:       "uploads/foto.jpg",
-		KTPKey:        "uploads/ktp.jpg",
+		NamaLengkap:  "Rizki Pratama",
+		NIK:          "12345",
+		TempatLahir:  "Bandung",
+		TanggalLahir: time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		JenisKelamin: "L",
+		Alamat:       "Jl. Merdeka No. 10, Bandung",
+		ProvinsiID:   32,
+		KabupatenID:  3273,
+		Kecamatan:    "Cidadap",
+		Desa:         "Ciumbuleuit",
+		Email:        "rizki@example.com",
+		Whatsapp:     "081234567890",
+		FotoKey:      "uploads/foto.jpg",
+		KTPKey:       "uploads/ktp.jpg",
 	}
 
 	if err := service.ValidateSubmitRequest(req); err == nil {
@@ -100,22 +108,22 @@ func TestValidateSubmitRequestRejectsInvalidNIK(t *testing.T) {
 
 func validSubmitRequest() domain.PendaftaranSubmitRequest {
 	return domain.PendaftaranSubmitRequest{
-		NamaLengkap:        "Rizki Pratama",
-		NIK:                "3201010101010001",
-		TempatLahir:        "Bandung",
-		TanggalLahir:       time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		JenisKelamin:       "L",
-		Alamat:             "Jl. Merdeka No. 10, Bandung",
-		ProvinsiID:         32,
-		KabupatenID:        3273,
-		Kecamatan:          "Cidadap",
-		Desa:               "Ciumbuleuit",
-		KodePos:            "40142",
-		Email:              "rizki@example.com",
-		Whatsapp:           "081234567890",
-		Motivasi:           "Ingin belajar dan berkontribusi",
-		FotoKey:            "uploads/foto.jpg",
-		KTPKey:             "uploads/ktp.jpg",
+		NamaLengkap:  "Rizki Pratama",
+		NIK:          "3201010101010001",
+		TempatLahir:  "Bandung",
+		TanggalLahir: time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		JenisKelamin: "L",
+		Alamat:       "Jl. Merdeka No. 10, Bandung",
+		ProvinsiID:   32,
+		KabupatenID:  3273,
+		Kecamatan:    "Cidadap",
+		Desa:         "Ciumbuleuit",
+		KodePos:      "40142",
+		Email:        "rizki@example.com",
+		Whatsapp:     "081234567890",
+		Motivasi:     "Ingin belajar dan berkontribusi",
+		FotoKey:      "uploads/foto.jpg",
+		KTPKey:       "uploads/ktp.jpg",
 	}
 }
 
@@ -141,6 +149,9 @@ func TestValidateSubmitRequestTable(t *testing.T) {
 		}},
 		{"DOB anak 5 tahun", func(r *domain.PendaftaranSubmitRequest) {
 			r.TanggalLahir = time.Now().AddDate(-5, 0, 0).Format(time.RFC3339)
+		}},
+		{"DOB usia 40 tahun (di atas 30)", func(r *domain.PendaftaranSubmitRequest) {
+			r.TanggalLahir = time.Now().AddDate(-40, 0, 0).Format(time.RFC3339)
 		}},
 		{"nama 1 char", func(r *domain.PendaftaranSubmitRequest) { r.NamaLengkap = "A" }},
 		{"nama 200 char", func(r *domain.PendaftaranSubmitRequest) {
@@ -175,6 +186,15 @@ func TestValidateSubmitRequestTable(t *testing.T) {
 	req.Whatsapp = "+6281234567890"
 	if err := service.ValidateSubmitRequest(req); err != nil {
 		t.Fatalf("expected +62-prefix WhatsApp to pass: %v", err)
+	}
+
+	// Batas umur 16-30 (selaras KIPAN_INDONESIA): 16 dan 30 lolos.
+	for _, age := range []int{16, 30} {
+		req := validSubmitRequest()
+		req.TanggalLahir = time.Now().AddDate(-age, 0, 0).Format(time.RFC3339)
+		if err := service.ValidateSubmitRequest(req); err != nil {
+			t.Fatalf("expected age %d to pass: %v", age, err)
+		}
 	}
 }
 
@@ -294,10 +314,10 @@ func TestVerifyKTARejectsUnknownKey(t *testing.T) {
 
 func TestMatchOwnerProof(t *testing.T) {
 	for _, tc := range []struct {
-		name                       string
-		storedEmail, storedWA       string
-		proofEmail, proofWA         string
-		ok                         bool
+		name                  string
+		storedEmail, storedWA string
+		proofEmail, proofWA   string
+		ok                    bool
 	}{
 		{"cocok persis", "a@b.co", "081234567890", "a@b.co", "081234567890", true},
 		{"email case-insensitive + spasi", "A@B.co", "081234567890", "  a@b.co ", "081234567890", true},
@@ -323,20 +343,20 @@ func TestValidateSubmitRequestRejectsInvalidWhatsapp(t *testing.T) {
 	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	req := domain.PendaftaranSubmitRequest{
-		NamaLengkap:   "Rizki Pratama",
-		NIK:           "3201010101010001",
-		TempatLahir:   "Bandung",
-		TanggalLahir:  time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		JenisKelamin:  "L",
-		Alamat:        "Jl. Merdeka No. 10, Bandung",
-		ProvinsiID:    32,
-		KabupatenID:   3273,
-		Kecamatan:     "Cidadap",
-		Desa:          "Ciumbuleuit",
-		Email:         "rizki@example.com",
-		Whatsapp:      "abc123",
-		FotoKey:       "uploads/foto.jpg",
-		KTPKey:        "uploads/ktp.jpg",
+		NamaLengkap:  "Rizki Pratama",
+		NIK:          "3201010101010001",
+		TempatLahir:  "Bandung",
+		TanggalLahir: time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		JenisKelamin: "L",
+		Alamat:       "Jl. Merdeka No. 10, Bandung",
+		ProvinsiID:   32,
+		KabupatenID:  3273,
+		Kecamatan:    "Cidadap",
+		Desa:         "Ciumbuleuit",
+		Email:        "rizki@example.com",
+		Whatsapp:     "abc123",
+		FotoKey:      "uploads/foto.jpg",
+		KTPKey:       "uploads/ktp.jpg",
 	}
 
 	if err := service.ValidateSubmitRequest(req); err == nil {

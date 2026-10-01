@@ -42,6 +42,9 @@ func (f *fakePendaftaranRepo) GetByNomorPendaftaran(context.Context, string) (*d
 func (f *fakePendaftaranRepo) GetByNikHash(context.Context, string) (*domain.Pendaftaran, error) {
 	return nil, domain.ErrNotFound
 }
+func (f *fakePendaftaranRepo) ListHistory(context.Context, int) ([]domain.PendaftaranRiwayat, error) {
+	return []domain.PendaftaranRiwayat{}, nil
+}
 func (f *fakePendaftaranRepo) ListQueue(context.Context, *int, *int, string, int, int) ([]domain.PendaftaranQueueItem, error) {
 	return nil, errFakeUnimpl
 }
