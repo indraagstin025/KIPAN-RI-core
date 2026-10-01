@@ -1,47 +1,58 @@
 # ============================================================
-# Root .gitignore — SIM-KIPAN Core Monorepo
+# .gitignore — SIM-KIPAN Backend (Go)
+# Flattened: isi backend/ dipindah ke root, repo ini backend murni
 # ============================================================
 
 # Project Lama (Referensi development - ignore dari commit)
 KIPAN_INDONESIA/
 KIPAN_INDONESIA/**
 
-# Environment files
-*.env
-*.env.local
-*.env.*.local
+# Environment files (JANGAN COMMIT .env!)
 .env
+.env.local
+.env.*.local
 .env.production
 .env.staging
+*.env
 
-# Binaries & Build Outputs
-backend/bin/
-backend/dist/
-backend/tmp/
+# Binary builds
+/bin/
+/dist/
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-frontend/dist/
-frontend/dist-ssr/
-frontend/.next/
-frontend/out/
 
-# Dependencies
-node_modules/
-frontend/node_modules/
-.pnpm-store/
+# Go
+vendor/
+
+# Test coverage
+coverage/
+coverage.html
+*.out
+*.test
+
+# Air (hot reload)
+tmp/
+
+# Security scan reports (generate ulang tiap run, jangan commit artefak statis)
+results.json
+results.sarif
+reports/
+
+# Uploads lokal (PII — jangan pernah commit berkas identitas)
+uploads/
+
+# Docker data local
+.docker-data/
+postgres_data/
+redis_data/
+minio_data/
 
 # Cache & Temporary
 .cache/
-.eslintcache
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.turbo/
 
 # OS & Editor
 .DS_Store
@@ -54,13 +65,6 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/settings.json
 
-# Docker data local
-.docker-data/
-postgres_data/
-redis_data/
-minio_data/
-
-# Coverage & Tests
-coverage/
-*.out
-*.test
+# BE-008: dump transkrip sesi agent — tidak pernah di-commit
+# (berisiko memuat kredensial/pesan sensitif dari terminal)
+session-*.md
