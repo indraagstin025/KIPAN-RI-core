@@ -71,13 +71,26 @@ type PresignViewResult struct {
 // gagal fail-closed 503, kecuali verifikasi submit yang degraded eksplisit
 // hanya di non-production (pola yang sama dengan Redis).
 type StorageService struct {
-	cfg       *config.Config
-	client    *storage.Client
-	auditRepo repository.AuditLogRepository
+	cfg           *config.Config
+	client        *storage.Client
+	auditRepo     repository.AuditLogRepository
+	ownerResolver DocumentOwnerResolver
 }
 
-func NewStorageService(cfg *config.Config, client *storage.Client, auditRepo repository.AuditLogRepository) *StorageService {
-	return &StorageService{cfg: cfg, client: client, auditRepo: auditRepo}
+// DocumentOwnerResolver menentukan pemilik (jurisdiksi) sebuah object key
+// dokumen. Wajib ada agar akses baca dapat DIOTORISASI (SEC-STORE-BOLA),
+// bukan sekadar diautentikasi. Nil = fail-closed (tiket tidak diterbitkan).
+type DocumentOwnerResolver interface {
+	ResolveOwner(ctx context.Context, key string) (*repository.DocumentOwner, error)
+}
+
+func NewStorageService(
+	cfg *config.Config,
+	client *storage.Client,
+	auditRepo repository.AuditLogRepository,
+	ownerResolver DocumentOwnerResolver,
+) *StorageService {
+	return &StorageService{cfg: cfg, client: client, auditRepo: auditRepo, ownerResolver: ownerResolver}
 }
 
 // Configured mengembalikan true bila S3 client tersedia.
@@ -222,6 +235,23 @@ func (s *StorageService) RequestViewPresign(ctx context.Context, key string, act
 	}
 	if s.client == nil {
 		return nil, unavailable("storage")
+	}
+
+	// OTORISASI (SEC-STORE-BOLA): tiket baca HANYA untuk dokumen milik entitas
+	// dalam yurisdiksi aktor. Autentikasi saja tidak cukup (BOLA/IDOR).
+	// Resolver nil = fail-closed: jangan pernah menerbitkan tiket tanpa otorisasi.
+	if s.ownerResolver == nil {
+		return nil, unavailable("otorisasi dokumen")
+	}
+	owner, err := s.ownerResolver.ResolveOwner(ctx, k)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, domain.NewNotFoundError("Dokumen")
+		}
+		return nil, err
+	}
+	if !actor.CanAccessWilayah(owner.ProvinsiID, owner.KabupatenID) {
+		return nil, domain.NewForbiddenError("Dokumen di luar wilayah kerja Anda")
 	}
 
 	const ttl = 5 * time.Minute

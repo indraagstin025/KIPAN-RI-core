@@ -10,7 +10,7 @@ import (
 // Service dengan client nil: validasi input tetap jalan (422), operasi yang
 // butuh S3 gagal fail-closed 503.
 func newUnconfiguredStorageService() *StorageService {
-	return NewStorageService(&config.Config{}, nil, nil)
+	return NewStorageService(&config.Config{}, nil, nil, nil)
 }
 
 func TestRequestUploadPresignRejectsInvalidInput(t *testing.T) {

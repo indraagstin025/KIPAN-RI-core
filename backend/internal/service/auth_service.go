@@ -443,6 +443,7 @@ func (s *authService) generateAccessToken(user *domain.User) (string, time.Durat
 	claims := middleware.JWTClaims{
 		UserID:      user.ID,
 		Email:       user.Email,
+		Name:        user.Name,
 		Role:        user.Role,
 		ProvinsiID:  user.ProvinsiID,
 		KabupatenID: user.KabupatenID,

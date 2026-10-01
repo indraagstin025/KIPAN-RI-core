@@ -36,14 +36,20 @@ func NewPendaftaranHandler(
 
 // actorOf membangun identitas server-side dari JWT terverifikasi (RULES 6).
 // Kembalikan false bila tidak ada claims (route admin wajib Authenticate).
+// Name memakai klaim nama; token terbitan lama (tanpa klaim nama) fallback
+// ke email agar audit tetap terisi identifier (SEC-AUDIT-NAME).
 func actorOf(c *fiber.Ctx) (domain.ActorContext, bool) {
 	claims := middleware.GetUser(c)
 	if claims == nil {
 		return domain.ActorContext{}, false
 	}
+	name := claims.Name
+	if name == "" {
+		name = claims.Email
+	}
 	return domain.ActorContext{
 		UserID:      claims.UserID,
-		Name:        claims.Email,
+		Name:        name,
 		Role:        claims.Role,
 		ProvinsiID:  claims.ProvinsiID,
 		KabupatenID: claims.KabupatenID,

@@ -41,7 +41,7 @@ func TestRateLimitEnforcesQuota(t *testing.T) {
 }
 
 func TestRateLimitKnownNames(t *testing.T) {
-	for _, name := range []string{"auth", "mem_pub", "mem_mut", "stor_up", "wil_pub"} {
+	for _, name := range []string{"auth", "mem_pub", "mem_mut", "stor_up", "wil_pub", "agt_pub"} {
 		if RateLimit(nil, name) == nil {
 			t.Fatalf("limiter %q nil", name)
 		}

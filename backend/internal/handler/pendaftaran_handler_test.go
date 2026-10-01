@@ -159,3 +159,41 @@ func TestRequestTokenButuhBuktiPemilik(t *testing.T) {
 		t.Fatalf("harap 403 tanpa bukti pemilik, dapat %d", resp.StatusCode)
 	}
 }
+
+func TestActorOfPakaiNamaKlaim(t *testing.T) {
+	// SEC-AUDIT-NAME: klaim nama masuk ActorContext.Name agar audit
+	// mencatat nama pengguna, bukan email.
+	newCtx := func(claims *middleware.JWTClaims) (domain.ActorContext, bool) {
+		app := fiber.New()
+		var got domain.ActorContext
+		var ok bool
+		app.Get("/", func(c *fiber.Ctx) error {
+			if claims != nil {
+				c.Locals("user", claims)
+			}
+			got, ok = actorOf(c)
+			return c.SendStatus(fiber.StatusOK)
+		})
+		req := httptest.NewRequest("GET", "/", nil)
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("request gagal: %v", err)
+		}
+		resp.Body.Close()
+		return got, ok
+	}
+
+	actor, ok := newCtx(&middleware.JWTClaims{UserID: "u1", Email: "a@x.id", Name: "Budi Santoso", Role: domain.RoleSuperAdmin})
+	if !ok || actor.Name != "Budi Santoso" {
+		t.Fatalf("harap Name dari klaim, dapat %+v ok=%v", actor, ok)
+	}
+	// Token lama tanpa klaim nama fallback ke email.
+	actor, ok = newCtx(&middleware.JWTClaims{UserID: "u1", Email: "a@x.id", Role: domain.RoleSuperAdmin})
+	if !ok || actor.Name != "a@x.id" {
+		t.Fatalf("harap fallback email, dapat %+v ok=%v", actor, ok)
+	}
+	// Tanpa claims → tidak terotentikasi.
+	if _, ok := newCtx(nil); ok {
+		t.Fatal("harap false tanpa claims")
+	}
+}

@@ -24,6 +24,7 @@ var ratePolicies = map[string]ratePolicy{
 	"mem_mut": {max: 20, window: time.Minute}, // mutasi admin membership
 	"stor_up": {max: 30, window: time.Minute}, // presign upload publik
 	"wil_pub": {max: 60, window: time.Minute}, // daftar wilayah (read-only ringan)
+	"agt_pub": {max: 30, window: time.Minute}, // cek anggota publik (anti scraping NIA)
 }
 
 // RateLimit mengembalikan limiter per-IP sesuai nama kebijakan terdaftar.

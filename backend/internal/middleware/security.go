@@ -153,3 +153,32 @@ func LoginAttemptLimiter(rdb *redis.Client, maxAttempts int, window time.Duratio
 
 	return limiter.New(cfg)
 }
+
+// TrackLimiter membatasi pelacakan publik PER NOMOR pendaftaran (SEC-TRACK-PII):
+// nomor REG sekuensial mudah dienumerasi, sehingga limiter per-IP saja tidak
+// menghentikan scraping satu-target dari banyak IP. Kunci memakai nomor pada
+// path (trim + upper) agar varian penulisan tidak mereset kuota; fallback ke
+// IP bila nomor kosong.
+func TrackLimiter(rdb *redis.Client, maxRequests int, window time.Duration) fiber.Handler {
+	cfg := limiter.Config{
+		Max:        maxRequests,
+		Expiration: window,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			nr := strings.ToUpper(strings.TrimSpace(c.Params("nomor")))
+			if nr == "" {
+				return "track:ip:" + c.IP()
+			}
+			return "track:nomor:" + nr
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return response.TooManyRequests(c,
+				"Terlalu banyak pelacakan untuk nomor ini. Coba lagi nanti.")
+		},
+	}
+
+	if rdb != nil {
+		cfg.Storage = fiberredis.NewFromConnection(rdb)
+	}
+
+	return limiter.New(cfg)
+}
