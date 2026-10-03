@@ -279,7 +279,7 @@ NIA tidak boleh ditentukan oleh client.
 
 Format NIA mengikuti standar:
 
-`KIPAN-[PROV]-[KAB]-[TAHUN]-[NO_URUT]`
+`KIPAN-IND-[KAB]-[TAHUN]-[NO_URUT]`
 
 NIA wajib:
 

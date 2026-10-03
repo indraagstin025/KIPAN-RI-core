@@ -16,11 +16,17 @@
 //	cd backend
 //	$env:SEED_ADMIN_PASSWORD='<password-kuat>'; go run ./cmd/seed   # PowerShell
 //	SEED_ADMIN_PASSWORD='<password-kuat>' go run ./cmd/seed         # bash
+//
+// Mode admin tunggal (provisioning per wilayah, tanpa menyentuh 5 akun fix):
+//
+//	go run ./cmd/seed -email a@x.id -role ADMIN_KABUPATEN -prov-kode 32 -kab-kode 3273 [-name "..."]
+//	go run ./cmd/seed -email b@x.id -role ADMIN_PROVINSI -prov-kode 33
 package main
 
 import (
 	"context"
 	"crypto/rand"
+	"flag"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -60,6 +66,7 @@ const (
 	NasionalAdminEmail = "adminnasional@kipan.id"
 	ProvAdminEmail     = "adminprov.jabar@kipan.id"
 	KabAdminEmail      = "adminkab.bandung@kipan.id"
+	UserKaderEmail     = "user.kader@kipan.id"
 
 	// Kode BPS (dipakai untuk lookup, bukan untuk ID)
 	JawaBaratKode   = "32"
@@ -94,6 +101,7 @@ type seedUser struct {
 	Email       string
 	Name        string
 	Role        string
+	TipeUser    string
 	ProvinsiID  *int
 	KabupatenID *int
 }
@@ -104,6 +112,14 @@ type seedUser struct {
 
 func main() {
 	setupLogger()
+
+	var singleEmail = flag.String("email", "", "Email akun admin tunggal (mode single; kosongkan untuk seed 5 akun fix)")
+	var singleRole = flag.String("role", "", "Role: ADMIN_PROVINSI | ADMIN_KABUPATEN (wajib bila -email diisi)")
+	var singleProv = flag.String("prov-kode", "", "Kode BPS provinsi 2 digit (cth. 32)")
+	var singleKab = flag.String("kab-kode", "", "Kode BPS kabupaten 4 digit (wajib untuk ADMIN_KABUPATEN)")
+	var singleName = flag.String("name", "", "Nama tampilan (opsional; default dari wilayah)")
+	var allRegions = flag.Bool("all-regions", false, "Selain 5 akun tetap, buat 1 admin per provinsi & kabupaten (email adminprov.<kode> / adminkab.<kode> @kipan.id)")
+	flag.Parse()
 
 	log.Info().Msg("🌱 Memulai seeder data minimal...")
 
@@ -135,11 +151,35 @@ func main() {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Timeout longgar: hashing Argon2id per akun (ratusan akun regional).
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
+
+	// Mode admin tunggal: hanya buat/refresh SATU akun admin regional.
+	// Dipakai untuk provisioning 38 provinsi / 514 kab-kota tanpa
+	// menyentuh 5 akun fix. Kode wilayah wajib sudah ada di DB (tidak
+	// auto-create agar salah ketik tidak melahirkan wilayah fiktif).
+	if strings.TrimSpace(*singleEmail) != "" {
+		if err := seedSingleAdmin(ctx, db, password, singleAdminArgs{
+			Email:    *singleEmail,
+			Role:     *singleRole,
+			ProvKode: *singleProv,
+			KabKode:  *singleKab,
+			Name:     *singleName,
+		}); err != nil {
+			log.Fatal().Err(err).Msg("❌ Seeder admin tunggal gagal")
+		}
+		return
+	}
 
 	if err := seedAll(ctx, db, password); err != nil {
 		log.Fatal().Err(err).Msg("❌ Seeder gagal")
+	}
+
+	if *allRegions {
+		if err := seedRegions(ctx, db, password); err != nil {
+			log.Fatal().Err(err).Msg("❌ Seeder admin regional gagal")
+		}
 	}
 
 	printSummary(password, generated)
@@ -318,6 +358,10 @@ func printSummary(password string, generated bool) {
 		Str("email", KabAdminEmail).
 		Str("role", "ADMIN_KABUPATEN").
 		Msg("  → Admin DPC Kota Bandung")
+	log.Info().
+		Str("email", UserKaderEmail).
+		Str("role", "USER (KADER, tanpa anggota terhubung)").
+		Msg("  → Kader Uji")
 	log.Info().Msg("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
@@ -396,6 +440,154 @@ func seedAll(ctx context.Context, db *sqlx.DB, password string) error {
 }
 
 // ============================================================
+// Mode admin tunggal (provisioning regional)
+// ============================================================
+
+type singleAdminArgs struct {
+	Email    string
+	Role     string
+	ProvKode string
+	KabKode  string
+	Name     string
+}
+
+// seedSingleAdmin membuat/me-refresh SATU akun ADMIN_PROVINSI /
+// ADMIN_KABUPATEN untuk kode wilayah yang SUDAH ADA di DB. Idempoten
+// (reuse upsertUser). Gagal keras bila kode tak dikenal agar salah ketik
+// tidak melahirkan wilayah fiktif.
+func seedSingleAdmin(ctx context.Context, db *sqlx.DB, password string, a singleAdminArgs) error {
+	email := strings.TrimSpace(a.Email)
+	if len(email) < 5 || len(email) > 255 || !strings.Contains(email, "@") {
+		return fmt.Errorf("email tidak valid: %q", a.Email)
+	}
+	role := strings.ToUpper(strings.TrimSpace(a.Role))
+	if role != "ADMIN_PROVINSI" && role != "ADMIN_KABUPATEN" {
+		return fmt.Errorf("role harus ADMIN_PROVINSI atau ADMIN_KABUPATEN (dapat %q)", a.Role)
+	}
+	provKode := strings.TrimSpace(a.ProvKode)
+	if len(provKode) != 2 {
+		return fmt.Errorf("prov-kode harus 2 digit BPS (dapat %q)", a.ProvKode)
+	}
+	var provID int
+	var provNama string
+	if err := db.QueryRowxContext(ctx,
+		`SELECT id, nama FROM wilayah_provinsi WHERE kode = $1 AND is_active`,
+		provKode).Scan(&provID, &provNama); err != nil {
+		return fmt.Errorf("provinsi kode %q tidak dikenal di DB: %w", provKode, err)
+	}
+
+	var kabID *int
+	var kabNama string
+	if role == "ADMIN_KABUPATEN" {
+		kabKode := strings.TrimSpace(a.KabKode)
+		if len(kabKode) != 4 {
+			return fmt.Errorf("kab-kode harus 4 digit BPS untuk ADMIN_KABUPATEN (dapat %q)", a.KabKode)
+		}
+		var id int
+		var nama string
+		var ownerProv int
+		if err := db.QueryRowxContext(ctx,
+			`SELECT id, nama, provinsi_id FROM wilayah_kabupaten WHERE kode = $1 AND is_active`,
+			kabKode).Scan(&id, &nama, &ownerProv); err != nil {
+			return fmt.Errorf("kabupaten kode %q tidak dikenal di DB: %w", kabKode, err)
+		}
+		if ownerProv != provID {
+			return fmt.Errorf("kabupaten %q bukan bagian provinsi %q", kabKode, provKode)
+		}
+		kabID, kabNama = &id, nama
+	} else if strings.TrimSpace(a.KabKode) != "" {
+		return fmt.Errorf("kab-kode hanya untuk ADMIN_KABUPATEN")
+	}
+
+	name := strings.TrimSpace(a.Name)
+	if name == "" {
+		if role == "ADMIN_KABUPATEN" {
+			name = "Admin Kabupaten/Kota " + kabNama
+		} else {
+			name = "Admin Provinsi " + provNama
+		}
+	}
+
+	u := seedUser{Email: email, Name: name, Role: role, ProvinsiID: &provID, KabupatenID: kabID}
+	if err := upsertUser(ctx, db, u, password); err != nil {
+		return err
+	}
+	log.Info().
+		Str("email", email).
+		Str("role", role).
+		Str("wilayah", name).
+		Msg("✅ Akun admin regional siap (password dari environment / acak sesi ini)")
+	return nil
+}
+
+// ============================================================
+// Seed admin regional (bulk)
+// ============================================================
+
+// seedRegions membuat/merefresh satu akun ADMIN_PROVINSI per provinsi dan
+// satu akun ADMIN_KABUPATEN per kabupaten/kota. Tiap akun di-hash terpisah
+// (salt unik) di dalam upsertUser. Email berpola:
+//
+//	adminprov.<kode-bps>@kipan.id
+//	adminkab.<kode-bps>@kipan.id
+func seedRegions(ctx context.Context, db *sqlx.DB, password string) error {
+	type provRow struct {
+		ID   int    `db:"id"`
+		Kode string `db:"kode"`
+		Nama string `db:"nama"`
+	}
+	var provs []provRow
+	if err := db.SelectContext(ctx, &provs,
+		`SELECT id, kode, nama FROM wilayah_provinsi WHERE is_active ORDER BY kode`); err != nil {
+		return fmt.Errorf("baca provinsi: %w", err)
+	}
+	for _, p := range provs {
+		id := p.ID
+		u := seedUser{
+			Email:      "adminprov." + p.Kode + "@kipan.id",
+			Name:       "Admin Provinsi " + p.Nama,
+			Role:       "ADMIN_PROVINSI",
+			ProvinsiID: &id,
+		}
+		if err := upsertUser(ctx, db, u, password); err != nil {
+			return fmt.Errorf("upsert %s: %w", u.Email, err)
+		}
+	}
+
+	type kabRow struct {
+		ID         int    `db:"id"`
+		Kode       string `db:"kode"`
+		Nama       string `db:"nama"`
+		ProvinsiID int    `db:"provinsi_id"`
+	}
+	var kabs []kabRow
+	if err := db.SelectContext(ctx, &kabs,
+		`SELECT id, kode, nama, provinsi_id FROM wilayah_kabupaten WHERE is_active ORDER BY kode`); err != nil {
+		return fmt.Errorf("baca kabupaten: %w", err)
+	}
+	for _, k := range kabs {
+		id := k.ID
+		provID := k.ProvinsiID
+		u := seedUser{
+			Email:       "adminkab." + k.Kode + "@kipan.id",
+			Name:        "Admin Kabupaten/Kota " + k.Nama,
+			Role:        "ADMIN_KABUPATEN",
+			ProvinsiID:  &provID,
+			KabupatenID: &id,
+		}
+		if err := upsertUser(ctx, db, u, password); err != nil {
+			return fmt.Errorf("upsert %s: %w", u.Email, err)
+		}
+	}
+
+	log.Info().
+		Int("provinsi", len(provs)).
+		Int("kabupaten", len(kabs)).
+		Msg("✅ Admin regional dibuat/di-refresh")
+	return nil
+}
+
+// ============================================================
 // Seed Provinsi
 // ============================================================
 
@@ -469,14 +661,9 @@ func seedKabupaten(ctx context.Context, db *sqlx.DB, provinsiID int) (int, error
 // Seed Users
 // ============================================================
 
-// seedUsers membuat / memperbarui 3 akun admin pengujian memakai `password`
+// seedUsers membuat / memperbarui akun pengujian memakai `password`
 // yang diberikan pemanggil. Password TIDAK di-hardcode di sini (RULES #9).
 func seedUsers(ctx context.Context, db *sqlx.DB, password string, provinsiID, kabupatenID int) error {
-	hash, err := argon2id.CreateHash(password, argon2Params)
-	if err != nil {
-		return fmt.Errorf("gagal hash password: %w", err)
-	}
-
 	users := []seedUser{
 		{
 			Email: SuperAdminEmail,
@@ -501,10 +688,18 @@ func seedUsers(ctx context.Context, db *sqlx.DB, password string, provinsiID, ka
 			ProvinsiID:  &provinsiID,
 			KabupatenID: &kabupatenID,
 		},
+		{
+			Email:       UserKaderEmail,
+			Name:        "Kader Uji Kota Bandung",
+			Role:        "USER",
+			TipeUser:    "KADER",
+			ProvinsiID:  &provinsiID,
+			KabupatenID: &kabupatenID,
+		},
 	}
 
 	for _, u := range users {
-		if err := upsertUser(ctx, db, u, hash); err != nil {
+		if err := upsertUser(ctx, db, u, password); err != nil {
 			return fmt.Errorf("upsert user %s: %w", u.Email, err)
 		}
 	}
@@ -513,26 +708,34 @@ func seedUsers(ctx context.Context, db *sqlx.DB, password string, provinsiID, ka
 }
 
 // upsertUser insert user jika belum ada, atau update (password + role + wilayah)
-// jika sudah ada. Aman dijalankan berkali-kali.
-func upsertUser(ctx context.Context, db *sqlx.DB, u seedUser, hash string) error {
+// jika sudah ada. Password di-hash DI SINI sehingga tiap akun dapat salt acak
+// sendiri (hash berbeda walau passwordnya sama). Aman dijalankan berkali-kali.
+func upsertUser(ctx context.Context, db *sqlx.DB, u seedUser, password string) error {
+	hash, err := argon2id.CreateHash(password, argon2Params)
+	if err != nil {
+		return fmt.Errorf("gagal hash password: %w", err)
+	}
+
 	var existingID string
-	err := db.GetContext(ctx, &existingID,
+	err = db.GetContext(ctx, &existingID,
 		`SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL`,
 		u.Email)
 
 	if err == nil {
 		// User sudah ada — update supaya state konsisten untuk test
+		tipe := resolveTipe(u)
 		_, err = db.ExecContext(ctx, `
 			UPDATE users
 			SET password_hash = $1,
 			    role          = $2,
+			    tipe_user     = $3,
 			    status        = 'Aktif',
-			    name          = $3,
-			    provinsi_id   = $4,
-			    kabupaten_id  = $5,
+			    name          = $4,
+			    provinsi_id   = $5,
+			    kabupaten_id  = $6,
 			    updated_at    = NOW()
-			WHERE id = $6
-		`, hash, u.Role, u.Name, u.ProvinsiID, u.KabupatenID, existingID)
+			WHERE id = $7
+		`, hash, u.Role, tipe, u.Name, u.ProvinsiID, u.KabupatenID, existingID)
 		if err != nil {
 			return fmt.Errorf("update: %w", err)
 		}
@@ -542,15 +745,28 @@ func upsertUser(ctx context.Context, db *sqlx.DB, u seedUser, hash string) error
 	}
 
 	// User belum ada — insert baru
+	tipe := resolveTipe(u)
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO users (id, email, password_hash, name, role, status,
+		INSERT INTO users (id, email, password_hash, name, role, tipe_user, status,
 		                   provinsi_id, kabupaten_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, 'Aktif', $6, $7, NOW(), NOW())
-	`, uuid.NewString(), u.Email, hash, u.Name, u.Role, u.ProvinsiID, u.KabupatenID)
+		VALUES ($1, $2, $3, $4, $5, $6, 'Aktif', $7, $8, NOW(), NOW())
+	`, uuid.NewString(), u.Email, hash, u.Name, u.Role, tipe, u.ProvinsiID, u.KabupatenID)
 	if err != nil {
 		return fmt.Errorf("insert: %w", err)
 	}
 
 	log.Info().Str("email", u.Email).Str("role", u.Role).Msg("User baru dibuat")
 	return nil
+}
+
+// resolveTipe menentukan tipe_user: akun admin (role<>USER) => ADMIN;
+// akun USER => TipeUser yang diberikan, default KADER.
+func resolveTipe(u seedUser) string {
+	if u.Role != "USER" {
+		return "ADMIN"
+	}
+	if t := strings.TrimSpace(u.TipeUser); t != "" {
+		return t
+	}
+	return "KADER"
 }

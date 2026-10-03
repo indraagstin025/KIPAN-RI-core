@@ -1,0 +1,42 @@
+[
+    {
+        "code":  "64.01",
+        "name":  "Kabupaten Paser"
+    },
+    {
+        "code":  "64.02",
+        "name":  "Kabupaten Kutai Kartanegara"
+    },
+    {
+        "code":  "64.03",
+        "name":  "Kabupaten Berau"
+    },
+    {
+        "code":  "64.07",
+        "name":  "Kabupaten Kutai Barat"
+    },
+    {
+        "code":  "64.08",
+        "name":  "Kabupaten Kutai Timur"
+    },
+    {
+        "code":  "64.09",
+        "name":  "Kabupaten Penajam Paser Utara"
+    },
+    {
+        "code":  "64.11",
+        "name":  "Kabupaten Mahakam Ulu"
+    },
+    {
+        "code":  "64.71",
+        "name":  "Kota Balikpapan"
+    },
+    {
+        "code":  "64.72",
+        "name":  "Kota Samarinda"
+    },
+    {
+        "code":  "64.74",
+        "name":  "Kota Bontang"
+    }
+]

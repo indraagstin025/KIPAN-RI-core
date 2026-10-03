@@ -1,0 +1,30 @@
+[
+    {
+        "code":  "21.01",
+        "name":  "Kabupaten Bintan"
+    },
+    {
+        "code":  "21.02",
+        "name":  "Kabupaten Karimun"
+    },
+    {
+        "code":  "21.03",
+        "name":  "Kabupaten Natuna"
+    },
+    {
+        "code":  "21.04",
+        "name":  "Kabupaten Lingga"
+    },
+    {
+        "code":  "21.05",
+        "name":  "Kabupaten Kepulauan Anambas"
+    },
+    {
+        "code":  "21.71",
+        "name":  "Kota Batam"
+    },
+    {
+        "code":  "21.72",
+        "name":  "Kota Tanjung Pinang"
+    }
+]

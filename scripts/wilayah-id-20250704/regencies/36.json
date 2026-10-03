@@ -1,0 +1,34 @@
+[
+    {
+        "code":  "36.01",
+        "name":  "Kabupaten Pandeglang"
+    },
+    {
+        "code":  "36.02",
+        "name":  "Kabupaten Lebak"
+    },
+    {
+        "code":  "36.03",
+        "name":  "Kabupaten Tangerang"
+    },
+    {
+        "code":  "36.04",
+        "name":  "Kabupaten Serang"
+    },
+    {
+        "code":  "36.71",
+        "name":  "Kota Tangerang"
+    },
+    {
+        "code":  "36.72",
+        "name":  "Kota Cilegon"
+    },
+    {
+        "code":  "36.73",
+        "name":  "Kota Serang"
+    },
+    {
+        "code":  "36.74",
+        "name":  "Kota Tangerang Selatan"
+    }
+]

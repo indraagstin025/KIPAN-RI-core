@@ -1,0 +1,165 @@
+{
+    "source":  "https://wilayah.id (Kepmendagri No 300.2.2-2138/2025)",
+    "upstream_updated_at":  "2025-07-04",
+    "fetched_at":  "2026-10-02T21:16:07.2952905Z",
+    "provinces":  38,
+    "regencies":  514,
+    "files":  [
+                  {
+                      "path":  "provinces.json",
+                      "sha256":  "B20A1491C0841487766E6CD96E85AB1979FF289174B2C7C80BE1C4D23C9DBA6E"
+                  },
+                  {
+                      "path":  "regencies/11.json",
+                      "sha256":  "530C5BD5C3AA18591BA47C4F44FA5797DA01F5B95F247CF44AE6314CC567AC5E"
+                  },
+                  {
+                      "path":  "regencies/12.json",
+                      "sha256":  "18DE9288EA898D6B8594606198851E6DF57E1ADC39DEE9FE427771FB529D23DA"
+                  },
+                  {
+                      "path":  "regencies/13.json",
+                      "sha256":  "3A0BC1B2A0505039D9AC852D31F4FFC070D44455B85E56F457775253143B5AFB"
+                  },
+                  {
+                      "path":  "regencies/14.json",
+                      "sha256":  "EDA6E8203B2EC83322D6E29D84F18DF8B70410AC0F998FE3463DF37040B8D4A0"
+                  },
+                  {
+                      "path":  "regencies/15.json",
+                      "sha256":  "7FD4440FBBE6629A726A1E1646EB3FAC7EF16E2603E8BB8E9606D9F825C7D08B"
+                  },
+                  {
+                      "path":  "regencies/16.json",
+                      "sha256":  "B01637AAE5B15992CFEA0601A9F24434ED21203F75C86436261017E6D13A1536"
+                  },
+                  {
+                      "path":  "regencies/17.json",
+                      "sha256":  "0310342F73D2C454D494ED9B36C7D2018FC9B5B1C091C3F0263EBF93AADB4FA3"
+                  },
+                  {
+                      "path":  "regencies/18.json",
+                      "sha256":  "BA7164517D960CD3E290F8661608EA09C632D87E6DADF634E2F06C23D617F59B"
+                  },
+                  {
+                      "path":  "regencies/19.json",
+                      "sha256":  "4972FC1BC0B0B1610E1DEB467908B416CBCDA9462AAEBD9EE6FC3007CE14470B"
+                  },
+                  {
+                      "path":  "regencies/21.json",
+                      "sha256":  "D0CC35DEF6276E92D4E770C6B2122A6596E769A522B07BE060032423C00BC379"
+                  },
+                  {
+                      "path":  "regencies/31.json",
+                      "sha256":  "969A6F1EA8A169813BB12A0FAC5252474203AA3703CE16D8CDE827207D83C03C"
+                  },
+                  {
+                      "path":  "regencies/32.json",
+                      "sha256":  "3E5D235454843ACF577E484DD5FDC71B8DBE422590A2E826FFA27D3ABE0F250F"
+                  },
+                  {
+                      "path":  "regencies/33.json",
+                      "sha256":  "7BEA501685BE5AEC9BEC8EA8AC2992F3CEB18A998705487747B188BB79084140"
+                  },
+                  {
+                      "path":  "regencies/34.json",
+                      "sha256":  "C920E1A5E64F9D83F34CCD4FE3ADEB9C010844A6B92F110516930A812322D8DA"
+                  },
+                  {
+                      "path":  "regencies/35.json",
+                      "sha256":  "562F68CAF94A9F2ED2CBC64FB6E0C1E0E6AE35EB73537A91891DEE055AF78ABA"
+                  },
+                  {
+                      "path":  "regencies/36.json",
+                      "sha256":  "D3EDEF3C31D71F2A6C2CA1F71EEA806C46B7FD695E9E5DC2FB2D8AEBB68C1CCE"
+                  },
+                  {
+                      "path":  "regencies/51.json",
+                      "sha256":  "071E7D6CE8F22D0C44D1ADA090163DB09C1CFA7BBBAE93276B4E6BB757CADE58"
+                  },
+                  {
+                      "path":  "regencies/52.json",
+                      "sha256":  "25B93D33B2BBA90132D71E56CD8E03E9C1623C3EAC93E0C4A90F5895328FD63C"
+                  },
+                  {
+                      "path":  "regencies/53.json",
+                      "sha256":  "D268898D56A4F3702C6D6271EDE7265EC4FE91676C48EF1292EF130FC1C5F4BF"
+                  },
+                  {
+                      "path":  "regencies/61.json",
+                      "sha256":  "5296945E4E5EA9DE89B0901F4E3A5FFA1E2899FCF6C9D168150CEE77AF2C211C"
+                  },
+                  {
+                      "path":  "regencies/62.json",
+                      "sha256":  "6A1C5A9E869F5D9B02C355EAFFDD41E5D31330AA2B0946B0FF8B65AD9B2EBA34"
+                  },
+                  {
+                      "path":  "regencies/63.json",
+                      "sha256":  "DC16C5DF4ADEC60B6301952363AC21AC5B07BA69E8B867B20025455327FB3C01"
+                  },
+                  {
+                      "path":  "regencies/64.json",
+                      "sha256":  "0F9618E5B0E451A0ABA8A13AB834CDCF150A1AF59FA1C541AA114752044F3554"
+                  },
+                  {
+                      "path":  "regencies/65.json",
+                      "sha256":  "099AEA3E809BD7C6297BE951E4311AE05494A771759693B776EA2BC35ADB69DB"
+                  },
+                  {
+                      "path":  "regencies/71.json",
+                      "sha256":  "E854570EF4606361A5EE2087A262DB36B7DB118A6F08E2EDEC8A916861EB1D62"
+                  },
+                  {
+                      "path":  "regencies/72.json",
+                      "sha256":  "925BD220855D2A70D24ECC77A954A64373801CD3E3E5E0C022E62C2AF597EA85"
+                  },
+                  {
+                      "path":  "regencies/73.json",
+                      "sha256":  "683965660BC487D333B1E0E55A7339DB350E77BED0D1C0BEF9E050FD1A017730"
+                  },
+                  {
+                      "path":  "regencies/74.json",
+                      "sha256":  "750A5D5893DF37AD572A54EDD870880C385BFC05243E7380B500FE2B718EA738"
+                  },
+                  {
+                      "path":  "regencies/75.json",
+                      "sha256":  "40370483A395C060FE220BFF135C143CCC322E0CBCE903206E8CCFFE2721E3B4"
+                  },
+                  {
+                      "path":  "regencies/76.json",
+                      "sha256":  "9546E14BDC4DAFE88BF79C11CF9CD6C56B4FF8FA7F5478589FBE1DB6A3183745"
+                  },
+                  {
+                      "path":  "regencies/81.json",
+                      "sha256":  "443ACF8C6198191A19CD11137FB00F80FC250CD5103F81E8A19396C6F7EA08D5"
+                  },
+                  {
+                      "path":  "regencies/82.json",
+                      "sha256":  "C3263A8D2DBDDCBE939B839AEAE207750DB6AC90100A4693930F02A1B8254BF4"
+                  },
+                  {
+                      "path":  "regencies/91.json",
+                      "sha256":  "807B2980D983DF11AA18EF7DDD4FAE81D9501C6DE5615623A01C88B47E9F470B"
+                  },
+                  {
+                      "path":  "regencies/92.json",
+                      "sha256":  "94C0F9215E5A8CC8FE2839E0AB1646809C81E136BF878B2C9BC0B49F95AA018B"
+                  },
+                  {
+                      "path":  "regencies/93.json",
+                      "sha256":  "F1EC98FF4C94009FAB39D11A5E773849A60D97E9856366008966FD4BA5DF1549"
+                  },
+                  {
+                      "path":  "regencies/94.json",
+                      "sha256":  "F7AEA0A755A43333E2A880A53D158B1159DD496D5FC18D2959CA01DCCB3244ED"
+                  },
+                  {
+                      "path":  "regencies/95.json",
+                      "sha256":  "0A2EA46B5CF639E9BBBC0CD01787C897BD60FBBA405F7DB96A9D488B37D5B18F"
+                  },
+                  {
+                      "path":  "regencies/96.json",
+                      "sha256":  "62A4605F6C4A916D3490DD23081BEF95F00477D37BC0602182C59EE75482F438"
+                  }
+              ]
+}

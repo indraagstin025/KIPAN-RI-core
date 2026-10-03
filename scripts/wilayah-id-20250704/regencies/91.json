@@ -1,0 +1,38 @@
+[
+    {
+        "code":  "91.03",
+        "name":  "Kabupaten Jayapura"
+    },
+    {
+        "code":  "91.05",
+        "name":  "Kabupaten Kepulauan Yapen"
+    },
+    {
+        "code":  "91.06",
+        "name":  "Kabupaten Biak Numfor"
+    },
+    {
+        "code":  "91.10",
+        "name":  "Kabupaten Sarmi"
+    },
+    {
+        "code":  "91.11",
+        "name":  "Kabupaten Keerom"
+    },
+    {
+        "code":  "91.15",
+        "name":  "Kabupaten Waropen"
+    },
+    {
+        "code":  "91.19",
+        "name":  "Kabupaten Supiori"
+    },
+    {
+        "code":  "91.20",
+        "name":  "Kabupaten Mamberamo Raya"
+    },
+    {
+        "code":  "91.71",
+        "name":  "Kota Jayapura"
+    }
+]

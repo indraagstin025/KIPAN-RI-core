@@ -32,6 +32,8 @@ var flushPatterns = []string{
 	"login_attempt:*", // Rate limiter per email+IP (LoginAttemptLimiter)
 	"rev_tok:*",       // Limiter token revisi per nomor (BE-001)
 	"blacklist:jti:*", // JWT blacklist (setelah logout)
+	"otp:wa:*",        // OTP WhatsApp (kode/cooldown/limit percobaan)
+	"pwreset:*",       // Token reset password + limiter
 }
 
 func main() {

@@ -1,0 +1,110 @@
+[
+    {
+        "code":  "32.01",
+        "name":  "Kabupaten Bogor"
+    },
+    {
+        "code":  "32.02",
+        "name":  "Kabupaten Sukabumi"
+    },
+    {
+        "code":  "32.03",
+        "name":  "Kabupaten Cianjur"
+    },
+    {
+        "code":  "32.04",
+        "name":  "Kabupaten Bandung"
+    },
+    {
+        "code":  "32.05",
+        "name":  "Kabupaten Garut"
+    },
+    {
+        "code":  "32.06",
+        "name":  "Kabupaten Tasikmalaya"
+    },
+    {
+        "code":  "32.07",
+        "name":  "Kabupaten Ciamis"
+    },
+    {
+        "code":  "32.08",
+        "name":  "Kabupaten Kuningan"
+    },
+    {
+        "code":  "32.09",
+        "name":  "Kabupaten Cirebon"
+    },
+    {
+        "code":  "32.10",
+        "name":  "Kabupaten Majalengka"
+    },
+    {
+        "code":  "32.11",
+        "name":  "Kabupaten Sumedang"
+    },
+    {
+        "code":  "32.12",
+        "name":  "Kabupaten Indramayu"
+    },
+    {
+        "code":  "32.13",
+        "name":  "Kabupaten Subang"
+    },
+    {
+        "code":  "32.14",
+        "name":  "Kabupaten Purwakarta"
+    },
+    {
+        "code":  "32.15",
+        "name":  "Kabupaten Karawang"
+    },
+    {
+        "code":  "32.16",
+        "name":  "Kabupaten Bekasi"
+    },
+    {
+        "code":  "32.17",
+        "name":  "Kabupaten Bandung Barat"
+    },
+    {
+        "code":  "32.18",
+        "name":  "Kabupaten Pangandaran"
+    },
+    {
+        "code":  "32.71",
+        "name":  "Kota Bogor"
+    },
+    {
+        "code":  "32.72",
+        "name":  "Kota Sukabumi"
+    },
+    {
+        "code":  "32.73",
+        "name":  "Kota Bandung"
+    },
+    {
+        "code":  "32.74",
+        "name":  "Kota Cirebon"
+    },
+    {
+        "code":  "32.75",
+        "name":  "Kota Bekasi"
+    },
+    {
+        "code":  "32.76",
+        "name":  "Kota Depok"
+    },
+    {
+        "code":  "32.77",
+        "name":  "Kota Cimahi"
+    },
+    {
+        "code":  "32.78",
+        "name":  "Kota Tasikmalaya"
+    },
+    {
+        "code":  "32.79",
+        "name":  "Kota Banjar"
+    }
+]

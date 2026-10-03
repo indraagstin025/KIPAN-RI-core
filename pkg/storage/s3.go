@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -47,23 +48,21 @@ func NewClient(endpoint, region, accessKey, secretKey string) (*Client, error) {
 		region = "auto"
 	}
 
-	resolver := aws.EndpointResolverWithOptionsFunc(
-		func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
-			return aws.Endpoint{URL: endpoint, HostnameImmutable: true}, nil
-		},
-	)
 	awscfg, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion(region),
 		awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
-		awsconfig.WithEndpointResolverWithOptions(resolver),
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	// BaseEndpoint (bukan resolver legacy): mengisi resolved URI sehingga
+	// presigned POST ikut bekerja, bukan hanya PUT/GET. Tetap path-style
+	// untuk kompatibilitas MinIO.
 	s3client := s3.NewFromConfig(awscfg, func(o *s3.Options) {
 		o.UsePathStyle = true
+		o.BaseEndpoint = aws.String(endpoint)
 	})
 	return &Client{
 		s3:       s3client,
@@ -75,21 +74,34 @@ func NewClient(endpoint, region, accessKey, secretKey string) (*Client, error) {
 // Endpoint mengembalikan endpoint yang dipakai (untuk log/debug).
 func (c *Client) Endpoint() string { return c.endpoint }
 
-// PresignPut menerbitkan URL upload langsung (browser → S3, bypass backend).
-// Content-Type di-sign ke URL sehingga S3 menolak upload dengan tipe beda.
-func (c *Client) PresignPut(ctx context.Context, bucket, key, contentType string, expiry time.Duration) (string, error) {
-	out, err := c.presign.PresignPutObject(ctx,
+// PresignPostUpload menerbitkan POST policy (browser → S3, bypass backend)
+// dengan batas ukuran KERAS via kondisi content-length-range. Berbeda dari
+// presigned PUT, S3/MinIO MENOLAK body di luar rentang ini di level storage,
+// sehingga mencegah penyalahgunaan tiket untuk mengisi bucket (DoS storage).
+//
+// Key dibatasi persis oleh SDK (kondisi "key"); Content-Type tetap
+// diverifikasi ulang di backend saat submit (HeadObject + magic bytes).
+func (c *Client) PresignPostUpload(ctx context.Context, bucket, key string, maxSize int64, expiry time.Duration) (string, map[string]string, error) {
+	if maxSize <= 0 {
+		return "", nil, errors.New("batas ukuran upload tidak valid")
+	}
+	out, err := c.presign.PresignPostObject(ctx,
 		&s3.PutObjectInput{
-			Bucket:      aws.String(bucket),
-			Key:         aws.String(key),
-			ContentType: aws.String(contentType),
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
 		},
-		s3.WithPresignExpires(expiry),
+		func(o *s3.PresignPostOptions) {
+			o.Expires = expiry
+			o.Conditions = []any{
+				// S3 menegakkan ukuran object di antara min..max saat POST.
+				[]any{"content-length-range", 0, maxSize},
+			}
+		},
 	)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return out.URL, nil
+	return out.URL, out.Values, nil
 }
 
 // PresignGet menerbitkan URL unduh sementara untuk dokumen privat.
@@ -139,7 +151,7 @@ func (c *Client) SniffHead(ctx context.Context, bucket, key string, n int64) ([]
 	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
-		Range:  aws.String("bytes=0-511"),
+		Range:  aws.String(fmt.Sprintf("bytes=0-%d", n-1)),
 	})
 	if err != nil {
 		if isNotFound(err) {
@@ -149,6 +161,57 @@ func (c *Client) SniffHead(ctx context.Context, bucket, key string, n int64) ([]
 	}
 	defer out.Body.Close()
 	return io.ReadAll(io.LimitReader(out.Body, n))
+}
+
+// SniffTail mengunduh N byte TERAKHIR object (suffix Range GET) untuk
+// inspeksi trailer PDF (deteksi enkripsi) tanpa memuat file utuh.
+// Batas 8 KB: trailer + startxref dokumen ≤5 MB selalu muat di ekor ini.
+func (c *Client) SniffTail(ctx context.Context, bucket, key string, n int64) ([]byte, error) {
+	if n <= 0 || n > 8192 {
+		n = 4096
+	}
+	out, err := c.s3.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+		Range:  aws.String(fmt.Sprintf("bytes=-%d", n)),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			return nil, ErrObjectNotFound
+		}
+		return nil, err
+	}
+	defer out.Body.Close()
+	return io.ReadAll(io.LimitReader(out.Body, n))
+}
+
+// LooksEncryptedPDF mendeteksi PDF terkunci (user/owner password) via
+// penanda /Encrypt di ekor file. Kamus trailer (yang memuat /Encrypt)
+// terletak tepat sebelum startxref akhir, sehingga ekor ≤8 KB selalu
+// mencakupnya untuk dokumen ≤5 MB.
+//
+// Heuristik yang disengaja (bukan parser PDF penuh): false-negative mungkin
+// pada PDF non-standar/linearized eksotis — verifikasi manual admin tetap
+// backstop. False-positive praktis mustahil: isi content stream umumnya
+// terkompresi sehingga literal "/Encrypt" tak terbaca, dan kemunculan di
+// trailer selalu berarti kamus enkripsi (posisinya terikat spesifikasi).
+func LooksEncryptedPDF(tail []byte) bool {
+	if len(tail) == 0 {
+		return false
+	}
+	idx := bytes.Index(tail, []byte("/Encrypt"))
+	if idx < 0 {
+		return false
+	}
+	after := idx + len("/Encrypt")
+	if after >= len(tail) {
+		return false
+	}
+	switch tail[after] {
+	case ' ', '\t', '\n', '\r', '\x00', '\f', '/', '<', '[', '(':
+		return true
+	}
+	return false
 }
 
 // Put mengunggah object kecil (mis. PDF KTA) langsung dari backend.

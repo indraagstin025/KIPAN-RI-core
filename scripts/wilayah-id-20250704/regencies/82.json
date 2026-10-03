@@ -1,0 +1,42 @@
+[
+    {
+        "code":  "82.01",
+        "name":  "Kabupaten Halmahera Barat"
+    },
+    {
+        "code":  "82.02",
+        "name":  "Kabupaten Halmahera Tengah"
+    },
+    {
+        "code":  "82.03",
+        "name":  "Kabupaten Halmahera Utara"
+    },
+    {
+        "code":  "82.04",
+        "name":  "Kabupaten Halmahera Selatan"
+    },
+    {
+        "code":  "82.05",
+        "name":  "Kabupaten Kepulauan Sula"
+    },
+    {
+        "code":  "82.06",
+        "name":  "Kabupaten Halmahera Timur"
+    },
+    {
+        "code":  "82.07",
+        "name":  "Kabupaten Pulau Morotai"
+    },
+    {
+        "code":  "82.08",
+        "name":  "Kabupaten Pulau Taliabu"
+    },
+    {
+        "code":  "82.71",
+        "name":  "Kota Ternate"
+    },
+    {
+        "code":  "82.72",
+        "name":  "Kota Tidore Kepulauan"
+    }
+]

@@ -3,10 +3,12 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
@@ -17,6 +19,8 @@ type Config struct {
 	Auth     AuthConfig
 	Storage  StorageConfig
 	Crypto   CryptoConfig
+	WA       WAConfig
+	Mail     MailConfig
 }
 
 type AppConfig struct {
@@ -29,6 +33,34 @@ type AppConfig struct {
 	TrustedProxies string
 	// Base URL publik verifikasi KTA yang tertanam di QR (tanpa trailing /).
 	KTAVerifyBaseURL string
+	// Base URL frontend publik untuk tautan di pesan (lacak, revisi),
+	// tanpa trailing slash. Contoh: http://localhost:5173 (dev).
+	PublicURL string
+	// #2: token rahasia untuk /internal/health. Kosong = endpoint tidak
+	// didaftarkan di produksi (fail-closed); di dev dibiarkan terbuka.
+	InternalHealthToken string
+}
+
+// WAConfig mengatur pengiriman WhatsApp. Produksi WAJIB provider nyata
+// (fonnte) + token — LogGateway hanya untuk dev/test.
+type WAConfig struct {
+	Provider    string // "log" | "fonnte"
+	FonnteToken string
+}
+
+// MailConfig mengatur SMTP (Mailpit dev / Mailtrap sandbox / produksi).
+// Host kosong = LogMailSender (HANYA non-production; produksi fail-fast).
+type MailConfig struct {
+	Host      string
+	Port      int
+	Username  string
+	Password  string
+	FromEmail string
+	FromName  string
+}
+
+func (m MailConfig) Enabled() bool {
+	return strings.TrimSpace(m.Host) != ""
 }
 
 type DatabaseConfig struct {
@@ -125,6 +157,16 @@ func Load() (*Config, error) {
 	v.SetDefault("AUTH_COOKIE_PATH", "/api/v1/auth")
 	v.SetDefault("AUTH_COOKIE_DOMAIN", "")
 	v.SetDefault("KTA_VERIFY_BASE_URL", "https://kipan.id")
+	v.SetDefault("APP_PUBLIC_URL", "http://localhost:5173")
+	v.SetDefault("INTERNAL_HEALTH_TOKEN", "")
+
+	v.SetDefault("WA_GATEWAY_PROVIDER", "log")
+
+	// Email: host kosong = log-only (dev). Set MAIL_HOST=127.0.0.1 untuk
+	// Mailpit (port 1025), atau sandbox.smtp.mailtrap.io:2525 untuk Mailtrap.
+	v.SetDefault("MAIL_PORT", 1025)
+	v.SetDefault("MAIL_FROM_EMAIL", "no-reply@kipan.id")
+	v.SetDefault("MAIL_FROM_NAME", "Sistem Informasi KIPAN")
 
 	v.SetDefault("STORAGE_REGION", "auto")
 	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
@@ -135,10 +177,10 @@ func Load() (*Config, error) {
 	// ============================================================
 	// Parse durations
 	// ============================================================
-	connLifetime := mustParseDuration(v.GetString("DB_CONN_MAX_LIFETIME"), 5*time.Minute)
-	accessTTL := mustParseDuration(v.GetString("AUTH_ACCESS_TOKEN_TTL"), 15*time.Minute)
-	refreshTTL := mustParseDuration(v.GetString("AUTH_REFRESH_TOKEN_TTL"), 7*24*time.Hour)
-	presignedTTL := mustParseDuration(v.GetString("STORAGE_PRESIGNED_TTL"), 5*time.Minute)
+	connLifetime := mustParseDuration(v.GetString("DB_CONN_MAX_LIFETIME"), 5*time.Minute, "DB_CONN_MAX_LIFETIME")
+	accessTTL := mustParseDuration(v.GetString("AUTH_ACCESS_TOKEN_TTL"), 15*time.Minute, "AUTH_ACCESS_TOKEN_TTL")
+	refreshTTL := mustParseDuration(v.GetString("AUTH_REFRESH_TOKEN_TTL"), 7*24*time.Hour, "AUTH_REFRESH_TOKEN_TTL")
+	presignedTTL := mustParseDuration(v.GetString("STORAGE_PRESIGNED_TTL"), 5*time.Minute, "STORAGE_PRESIGNED_TTL")
 
 	// ============================================================
 	// Build DSN
@@ -172,13 +214,15 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:           v.GetString("APP_NAME"),
-			Env:            v.GetString("APP_ENV"),
-			Port:           v.GetString("APP_PORT"),
-			AllowOrigin:    v.GetString("APP_ALLOW_ORIGIN"),
-			Debug:          v.GetBool("APP_DEBUG"),
+			Name:             v.GetString("APP_NAME"),
+			Env:              v.GetString("APP_ENV"),
+			Port:             v.GetString("APP_PORT"),
+			AllowOrigin:      normalizeOrigins(v.GetString("APP_ALLOW_ORIGIN")),
+			Debug:            v.GetBool("APP_DEBUG"),
 			TrustedProxies:   v.GetString("APP_TRUSTED_PROXIES"),
 			KTAVerifyBaseURL: strings.TrimRight(strings.TrimSpace(v.GetString("KTA_VERIFY_BASE_URL")), "/"),
+			PublicURL:        strings.TrimRight(strings.TrimSpace(v.GetString("APP_PUBLIC_URL")), "/"),
+			InternalHealthToken: strings.TrimSpace(v.GetString("INTERNAL_HEALTH_TOKEN")),
 		},
 		Database: DatabaseConfig{
 			DSN:             dsn,
@@ -221,6 +265,18 @@ func Load() (*Config, error) {
 			KTASigningKey:     v.GetString("KTA_SIGNING_KEY"),
 			KTASigningKeyPrev: v.GetString("KTA_SIGNING_KEY_PREV"),
 		},
+		WA: WAConfig{
+			Provider:    strings.ToLower(strings.TrimSpace(v.GetString("WA_GATEWAY_PROVIDER"))),
+			FonnteToken: strings.TrimSpace(v.GetString("FONNTE_TOKEN_KEY")),
+		},
+		Mail: MailConfig{
+			Host:      strings.TrimSpace(v.GetString("MAIL_HOST")),
+			Port:      v.GetInt("MAIL_PORT"),
+			Username:  strings.TrimSpace(v.GetString("MAIL_USERNAME")),
+			Password:  v.GetString("MAIL_PASSWORD"),
+			FromEmail: strings.TrimSpace(v.GetString("MAIL_FROM_EMAIL")),
+			FromName:  strings.TrimSpace(v.GetString("MAIL_FROM_NAME")),
+		},
 	}
 
 	// ============================================================
@@ -231,6 +287,15 @@ func Load() (*Config, error) {
 	}
 	if err := validateAuth(cfg.Auth); err != nil {
 		return nil, err
+	}
+	// #10: SameSite=None hanya sah dengan Secure. Produksi selalu Secure
+	// (cookie hanya di-set saat APP_ENV != development). Di non-production
+	// flag Secure mati sehingga browser modern menolak cookie None — beri
+	// peringatan agar tidak bingung "refresh cookie hilang".
+	if strings.EqualFold(cfg.Auth.CookieSameSite, "None") && cfg.App.Env != "production" {
+		log.Warn().Msg(
+			"AUTH_COOKIE_SAMESITE=None di non-production: browser modern menolak cookie tanpa Secure; " +
+				"pakai Lax/Strict untuk dev, atau jalankan via HTTPS")
 	}
 	if cfg.App.Env != "development" && cfg.Database.DSN == "" {
 		return nil, fmt.Errorf(
@@ -263,17 +328,94 @@ func validateProduction(cfg *Config) error {
 	if strings.Contains(cfg.App.AllowOrigin, "*") {
 		return fmt.Errorf("production menolak APP_ALLOW_ORIGIN=%q (wildcard + credentials rawan CSRF)", cfg.App.AllowOrigin)
 	}
+	// T5: trusted proxy tidak boleh wildcard (semua X-Forwarded-For dipercaya
+	// → rate-limit per-IP bisa dilewati & IP audit dipalsukan). Setiap entri
+	// juga wajib IP/CIDR valid agar salah ketik tidak diam-diam diabaikan.
+	if err := validateTrustedProxies(cfg.App.TrustedProxies); err != nil {
+		return err
+	}
 	if strings.TrimSpace(cfg.Storage.Endpoint) == "" {
 		return fmt.Errorf("production menolak STORAGE_ENDPOINT kosong (verifikasi dokumen wajib)")
+	}
+	// Batch 2: gateway WA nyata wajib (OTP tidak boleh berakhir di log) +
+	// base URL publik untuk tautan pesan.
+	if cfg.WA.Provider != "fonnte" {
+		return fmt.Errorf(
+			"production menolak WA_GATEWAY_PROVIDER=%q (wajib 'fonnte'; gateway log membocorkan OTP ke log)", cfg.WA.Provider)
+	}
+	if strings.TrimSpace(cfg.WA.FonnteToken) == "" {
+		return fmt.Errorf("production menolak FONNTE_TOKEN_KEY kosong")
+	}
+	if cfg.App.PublicURL == "" {
+		return fmt.Errorf("production menolak APP_PUBLIC_URL kosong (tautan lacak di pesan WA/email)")
+	}
+	// Batch 3: email nyata wajib di produksi (reset password + notifikasi
+	// status). SMTP lokal (Mailpit) tidak boleh dipakai di produksi.
+	if !cfg.Mail.Enabled() {
+		return fmt.Errorf("production menolak MAIL_HOST kosong (reset password & notifikasi email wajib)")
+	}
+	if h := strings.ToLower(cfg.Mail.Host); h == "127.0.0.1" || h == "localhost" || h == "::1" {
+		return fmt.Errorf("production menolak MAIL_HOST=%q (SMTP lokal hanya untuk dev)", cfg.Mail.Host)
+	}
+	if cfg.Mail.Username == "" {
+		return fmt.Errorf("production menolak MAIL_USERNAME kosong (SMTP produksi wajib terautentikasi)")
+	}
+	if cfg.Mail.Port <= 0 || cfg.Mail.Port > 65535 {
+		return fmt.Errorf("production menolak MAIL_PORT=%d (harus 1-65535)", cfg.Mail.Port)
+	}
+	return nil
+}
+
+// normalizeOrigins membereskan daftar origin CORS yang dipisah koma:
+// trim spasi tiap entri dan buang yang kosong, lalu gabung kembali. Tanpa
+// ini, "https://a.com, https://b.com" membuat origin kedua (spasi di depan)
+// tidak cocok (T12).
+func normalizeOrigins(raw string) string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+// validateTrustedProxies memastikan APP_TRUSTED_PROXIES hanya berisi IP/CIDR
+// eksplisit: wildcard ditolak dan entri tak valid dilaporkan (fail-fast),
+// bukan diabaikan diam-diam.
+func validateTrustedProxies(raw string) error {
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if p == "*" {
+			return fmt.Errorf(
+				"APP_TRUSTED_PROXIES menolak wildcard %q (X-Forwarded-For bisa dipalsukan)", p)
+		}
+		if net.ParseIP(p) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(p); err != nil {
+			return fmt.Errorf(
+				"APP_TRUSTED_PROXIES berisi entri tidak valid %q (harus IP atau CIDR)", p)
+		}
 	}
 	return nil
 }
 
 // mustParseDuration parse durasi; fallback ke default jika gagal.
-// Tidak mengembalikan error karena nilai default sudah aman.
-func mustParseDuration(raw string, fallback time.Duration) time.Duration {
+// Tidak mengembalikan error karena nilai default sudah aman, tetapi
+// mencatat warning bila nilai yang diisi tidak valid (T13) agar salah
+// ketik tidak diam-diam diabaikan.
+func mustParseDuration(raw string, fallback time.Duration, label string) time.Duration {
 	d, err := time.ParseDuration(raw)
 	if err != nil || d <= 0 {
+		if strings.TrimSpace(raw) != "" {
+			log.Warn().Str("field", label).Str("value", raw).Dur("fallback", fallback).
+				Msg("Durasi tidak valid — memakai nilai default")
+		}
 		return fallback
 	}
 	return d

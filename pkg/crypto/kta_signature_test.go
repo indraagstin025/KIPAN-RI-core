@@ -4,7 +4,7 @@ import "testing"
 
 func TestKTASignatureRoundTrip(t *testing.T) {
 	const secret = "00112233445566778899aabbccddeeff"
-	const nia = "KIPAN-32-3273-2026-00001"
+	const nia = "KIPAN-IND-3273-2026-000001"
 	const tanggalAngkat = "2026-09-27"
 	const anggotaID = 42
 

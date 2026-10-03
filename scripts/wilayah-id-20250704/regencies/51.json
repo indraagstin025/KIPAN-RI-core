@@ -1,0 +1,38 @@
+[
+    {
+        "code":  "51.01",
+        "name":  "Kabupaten Jembrana"
+    },
+    {
+        "code":  "51.02",
+        "name":  "Kabupaten Tabanan"
+    },
+    {
+        "code":  "51.03",
+        "name":  "Kabupaten Badung"
+    },
+    {
+        "code":  "51.04",
+        "name":  "Kabupaten Gianyar"
+    },
+    {
+        "code":  "51.05",
+        "name":  "Kabupaten Klungkung"
+    },
+    {
+        "code":  "51.06",
+        "name":  "Kabupaten Bangli"
+    },
+    {
+        "code":  "51.07",
+        "name":  "Kabupaten Karangasem"
+    },
+    {
+        "code":  "51.08",
+        "name":  "Kabupaten Buleleng"
+    },
+    {
+        "code":  "51.71",
+        "name":  "Kota Denpasar"
+    }
+]

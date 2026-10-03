@@ -1,0 +1,46 @@
+[
+    {
+        "code":  "81.01",
+        "name":  "Kabupaten Maluku Tengah"
+    },
+    {
+        "code":  "81.02",
+        "name":  "Kabupaten Maluku Tenggara"
+    },
+    {
+        "code":  "81.03",
+        "name":  "Kabupaten Kepulauan Tanimbar"
+    },
+    {
+        "code":  "81.04",
+        "name":  "Kabupaten Buru"
+    },
+    {
+        "code":  "81.05",
+        "name":  "Kabupaten Seram Bagian Timur"
+    },
+    {
+        "code":  "81.06",
+        "name":  "Kabupaten Seram Bagian Barat"
+    },
+    {
+        "code":  "81.07",
+        "name":  "Kabupaten Kepulauan Aru"
+    },
+    {
+        "code":  "81.08",
+        "name":  "Kabupaten Maluku Barat Daya"
+    },
+    {
+        "code":  "81.09",
+        "name":  "Kabupaten Buru Selatan"
+    },
+    {
+        "code":  "81.71",
+        "name":  "Kota Ambon"
+    },
+    {
+        "code":  "81.72",
+        "name":  "Kota Tual"
+    }
+]

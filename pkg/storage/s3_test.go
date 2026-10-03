@@ -65,15 +65,20 @@ func TestPresignOffline(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	putURL, err := c.PresignPut(ctx, "kipan-uploads", "uploads/pendaftaran/202609/uuid.jpg", "image/jpeg", 10*time.Minute)
+	putURL, fields, err := c.PresignPostUpload(ctx, "kipan-uploads", "uploads/pendaftaran/202609/uuid.jpg", 5<<20, 10*time.Minute)
 	if err != nil {
-		t.Fatalf("PresignPut gagal: %v", err)
+		t.Fatalf("PresignPostUpload gagal: %v", err)
 	}
-	if !strings.Contains(putURL, "127.0.0.1:9000/kipan-uploads/uploads/pendaftaran/202609/uuid.jpg") {
-		t.Fatalf("presign URL tidak memuat bucket+key yang benar: %s", putURL)
+	if !strings.Contains(putURL, "127.0.0.1:9000/kipan-uploads") {
+		t.Fatalf("presign URL tidak memuat endpoint+bucket yang benar: %s", putURL)
 	}
-	if !strings.Contains(putURL, "X-Amz-Signature=") {
-		t.Fatalf("presign URL tanpa signature: %s", putURL)
+	for _, k := range []string{"key", "policy", "X-Amz-Signature", "X-Amz-Credential", "X-Amz-Date", "X-Amz-Algorithm"} {
+		if fields[k] == "" {
+			t.Fatalf("field %q kosong pada presigned POST: %+v", k, fields)
+		}
+	}
+	if fields["key"] != "uploads/pendaftaran/202609/uuid.jpg" {
+		t.Fatalf("key pada fields tidak sesuai: %s", fields["key"])
 	}
 
 	getURL, err := c.PresignGet(ctx, "kipan-private", "uploads/pendaftaran/202609/uuid.jpg", 5*time.Minute)

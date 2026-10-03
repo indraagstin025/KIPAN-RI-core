@@ -1,0 +1,62 @@
+[
+    {
+        "code":  "71.01",
+        "name":  "Kabupaten Bolaang Mongondow"
+    },
+    {
+        "code":  "71.02",
+        "name":  "Kabupaten Minahasa"
+    },
+    {
+        "code":  "71.03",
+        "name":  "Kabupaten Kepulauan Sangihe"
+    },
+    {
+        "code":  "71.04",
+        "name":  "Kabupaten Kepulauan Talaud"
+    },
+    {
+        "code":  "71.05",
+        "name":  "Kabupaten Minahasa Selatan"
+    },
+    {
+        "code":  "71.06",
+        "name":  "Kabupaten Minahasa Utara"
+    },
+    {
+        "code":  "71.07",
+        "name":  "Kabupaten Minahasa Tenggara"
+    },
+    {
+        "code":  "71.08",
+        "name":  "Kabupaten Bolaang Mongondow Utara"
+    },
+    {
+        "code":  "71.09",
+        "name":  "Kabupaten Kep. Siau Tagulandang Biaro"
+    },
+    {
+        "code":  "71.10",
+        "name":  "Kabupaten Bolaang Mongondow Timur"
+    },
+    {
+        "code":  "71.11",
+        "name":  "Kabupaten Bolaang Mongondow Selatan"
+    },
+    {
+        "code":  "71.71",
+        "name":  "Kota Manado"
+    },
+    {
+        "code":  "71.72",
+        "name":  "Kota Bitung"
+    },
+    {
+        "code":  "71.73",
+        "name":  "Kota Tomohon"
+    },
+    {
+        "code":  "71.74",
+        "name":  "Kota Kotamobagu"
+    }
+]

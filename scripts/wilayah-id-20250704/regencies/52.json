@@ -1,0 +1,42 @@
+[
+    {
+        "code":  "52.01",
+        "name":  "Kabupaten Lombok Barat"
+    },
+    {
+        "code":  "52.02",
+        "name":  "Kabupaten Lombok Tengah"
+    },
+    {
+        "code":  "52.03",
+        "name":  "Kabupaten Lombok Timur"
+    },
+    {
+        "code":  "52.04",
+        "name":  "Kabupaten Sumbawa"
+    },
+    {
+        "code":  "52.05",
+        "name":  "Kabupaten Dompu"
+    },
+    {
+        "code":  "52.06",
+        "name":  "Kabupaten Bima"
+    },
+    {
+        "code":  "52.07",
+        "name":  "Kabupaten Sumbawa Barat"
+    },
+    {
+        "code":  "52.08",
+        "name":  "Kabupaten Lombok Utara"
+    },
+    {
+        "code":  "52.71",
+        "name":  "Kota Mataram"
+    },
+    {
+        "code":  "52.72",
+        "name":  "Kota Bima"
+    }
+]
