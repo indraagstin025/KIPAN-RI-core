@@ -24,6 +24,18 @@ func (h *AnggotaHandler) List(c *fiber.Ctx) error {
 	if !ok {
 		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
+	if c.Query("paginate") == "cursor" {
+		items, next, err := h.service.ListAnggotaCursor(c.Context(), actor,
+			c.Query("status"), c.Query("search"), c.Query("cursor"), c.QueryInt("limit", 25))
+		if err != nil {
+			return response.FromError(c, err)
+		}
+		return response.Paginated(c, "Daftar anggota", items, fiber.Map{
+			"per_page":    c.QueryInt("limit", 25),
+			"with_total":  false,
+			"next_cursor": next,
+		})
+	}
 	page := c.QueryInt("page", 1)
 	limit := c.QueryInt("limit", 25)
 	items, total, err := h.service.ListAnggota(c.Context(), actor, c.Query("status"), c.Query("search"), page, limit)
@@ -79,4 +91,25 @@ func (h *AnggotaHandler) CheckPublic(c *fiber.Ctx) error {
 		return response.FromError(c, err)
 	}
 	return response.Success(c, "Data keanggotaan ditemukan", info)
+}
+
+// ResetPassword (T1) menerbitkan password awal baru untuk akun USER milik
+// anggota. Password hanya tampil SEKALI di respons; seluruh sesi anggota
+// dicabut dan aksi tercatat di audit. Wajib admin dalam yurisdiksi anggota.
+func (h *AnggotaHandler) ResetPassword(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID anggota tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	password, err := h.service.ResetMemberPassword(c.Context(), id, actor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Password anggota direset — tampilkan sekali ke anggota", fiber.Map{
+		"one_time_password": password,
+	})
 }

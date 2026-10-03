@@ -30,6 +30,10 @@ type AnggotaRepository interface {
 	CountAnggota(ctx context.Context, provinsiID, kabupatenID *int, status, search string) (int, error)
 	// SetKTAPDFKey menyimpan object key PDF KTA hasil render server.
 	SetKTAPDFKey(ctx context.Context, id int, key string) error
+	// SetUserID menghubungkan anggota ke akun USER (dibuat saat approve).
+	SetUserID(ctx context.Context, id int, userID string) error
+	// GetByUserID mengambil anggota milik akun USER (layanan mandiri).
+	GetByUserID(ctx context.Context, userID string) (*domain.Anggota, error)
 }
 
 type anggotaRepo struct {
@@ -56,7 +60,7 @@ const anggotaColumns = `id, nia, nama_lengkap, nik_hash, nik_encrypted,
 	tempat_lahir, tanggal_lahir, jenis_kelamin, agama, pendidikan, pekerjaan,
 	alamat, provinsi_id, kabupaten_id, kecamatan, desa, kode_pos, email,
 	whatsapp, foto_key, ktp_key, cv_key, sk_key, surat_pernyataan_key,
-	surat_sehat_key, status, angkatan, kta_qr_hash, kta_pdf_key,
+	surat_sehat_key, status, tipe, angkatan, kta_qr_hash, kta_pdf_key,
 	pendaftaran_id, user_id, tanggal_daftar, tanggal_angkat,
 	created_at, updated_at`
 
@@ -93,6 +97,37 @@ func (r *anggotaRepo) GetByNIA(ctx context.Context, nia string) (*domain.Anggota
 	var a domain.Anggota
 	query := `SELECT ` + anggotaColumns + ` FROM anggota WHERE nia = $1`
 	if err := r.db.GetContext(ctx, &a, query, strings.TrimSpace(nia)); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+// SetUserID menghubungkan anggota ke akun USER. Idempoten (update biasa).
+func (r *anggotaRepo) SetUserID(ctx context.Context, id int, userID string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE anggota SET user_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+		strings.TrimSpace(userID), id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// GetByUserID mengambil anggota milik satu akun USER (satu user = satu kader).
+func (r *anggotaRepo) GetByUserID(ctx context.Context, userID string) (*domain.Anggota, error) {
+	var a domain.Anggota
+	query := `SELECT ` + anggotaColumns + ` FROM anggota WHERE user_id = $1`
+	if err := r.db.GetContext(ctx, &a, query, strings.TrimSpace(userID)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}

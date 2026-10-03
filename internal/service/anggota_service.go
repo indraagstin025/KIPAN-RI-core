@@ -6,32 +6,55 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/alexedwards/argon2id"
+	"github.com/rs/zerolog/log"
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/pkg/keyset"
 )
+
+// maxInt4 = nilai maksimum tipe integer Postgres; dipakai sebagai sentinel id
+// saat keyset pagination tanpa cursor agar cocok dengan tipe kolom id.
+const maxInt4 = 2147483647
 
 type AnggotaService interface {
 	// ListAnggota mengembalikan daftar sesuai jurisdiction aktor.
 	ListAnggota(ctx context.Context, actor domain.ActorContext, status, search string, page, limit int) ([]domain.AnggotaListItem, int, error)
+	// ListAnggotaCursor varian keyset (tanpa COUNT) untuk daftar besar.
+	ListAnggotaCursor(ctx context.Context, actor domain.ActorContext, status, search, cursor string, limit int) ([]domain.AnggotaListItem, string, error)
 	// GetAnggotaDetail melayani admin: tolak objek di luar wilayah aktor.
 	GetAnggotaDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Anggota, error)
 	// GetPublicAnggota adalah jalur publik by NIA (tanpa pencarian NIK:
 	// NIK mentah dari publik adalah oracle PII — ditolak by design).
 	GetPublicAnggota(ctx context.Context, nia string) (*domain.AnggotaPublicInfo, error)
+	// ResetMemberPassword (T1) menerbitkan password baru untuk akun USER
+	// anggota dalam yurisdiksi aktor. Password dikembalikan SEKALI; seluruh
+	// sesi anggota dicabut dan aksi tercatat di audit.
+	ResetMemberPassword(ctx context.Context, anggotaID int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
 }
 
 type AnggotaDeps struct {
 	AnggotaRepo repository.AnggotaRepository
 	WilayahRepo repository.WilayahRepository
+	UserRepo    repository.UserRepository
+	AuditRepo   repository.AuditLogRepository
+	ListRepo    repository.ListKeysetRepository
 }
 
 type anggotaService struct {
 	cfg         *config.Config
 	anggotaRepo repository.AnggotaRepository
 	wilayahRepo repository.WilayahRepository
+	userRepo    repository.UserRepository
+	auditRepo   repository.AuditLogRepository
+	listRepo    repository.ListKeysetRepository
 }
 
 func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
@@ -39,6 +62,9 @@ func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
 		cfg:         cfg,
 		anggotaRepo: deps.AnggotaRepo,
 		wilayahRepo: deps.WilayahRepo,
+		userRepo:    deps.UserRepo,
+		auditRepo:   deps.AuditRepo,
+		listRepo:    deps.ListRepo,
 	}
 }
 
@@ -49,7 +75,7 @@ func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
 func normalizeNIA(nia string) (string, error) {
 	code := strings.ToUpper(strings.TrimSpace(nia))
 	if code == "" || len(code) > 50 || !strings.HasPrefix(code, "KIPAN-") {
-		return "", domain.NewValidationError("NIA tidak valid (gunakan Nomor Induk Anggota, cth KIPAN-32-3273-2026-00001)")
+		return "", domain.NewValidationError("NIA tidak valid (gunakan Nomor Induk Anggota, cth KIPAN-IND-3204-2026-000001)")
 	}
 	return code, nil
 }
@@ -119,6 +145,63 @@ func (s *anggotaService) ListAnggota(ctx context.Context, actor domain.ActorCont
 	return items, total, nil
 }
 
+// validAnggotaListStatus memvalidasi filter status daftar anggota.
+func validAnggotaListStatus(st string) bool {
+	switch st {
+	case "", string(domain.AnggotaStatusAktif), string(domain.AnggotaStatusNonaktif),
+		string(domain.AnggotaStatusDemisioner), string(domain.AnggotaStatusDiberhentikan),
+		string(domain.AnggotaStatusMeninggal):
+		return true
+	}
+	return false
+}
+
+// ListAnggotaCursor varian keyset (tanpa COUNT + tanpa OFFSET besar).
+func (s *anggotaService) ListAnggotaCursor(ctx context.Context, actor domain.ActorContext, status, search, cursor string, limit int) ([]domain.AnggotaListItem, string, error) {
+	if s.listRepo == nil {
+		return nil, "", unavailable("anggota")
+	}
+	st := strings.TrimSpace(status)
+	if !validAnggotaListStatus(st) {
+		return nil, "", domain.NewValidationError("Filter status tidak valid")
+	}
+	q := strings.TrimSpace(search)
+	if len([]rune(q)) > 100 {
+		return nil, "", domain.NewValidationError("Kata kunci pencarian maksimal 100 karakter")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	provID, kabID, err := s.scopeOf(actor)
+	if err != nil {
+		return nil, "", err
+	}
+	// Tanpa cursor: mulai dari "sekarang" (semua baris eligible) agar memakai
+	// indeks komposit (created_at, id) alih-alih OFFSET.
+	at := time.Now().UTC().Add(time.Hour)
+	id := maxInt4
+	if strings.TrimSpace(cursor) != "" {
+		at, id, err = keyset.Decode(cursor)
+		if err != nil {
+			return nil, "", domain.NewValidationError("Cursor tidak valid")
+		}
+	}
+	items, err := s.listRepo.ListAnggotaKeyset(ctx, provID, kabID, st, q, at, id, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[len(items)-1]
+		next = keyset.Encode(last.CreatedAt, last.ID)
+	}
+	return items, next, nil
+}
+
 func (s *anggotaService) GetAnggotaDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Anggota, error) {
 	if id <= 0 {
 		return nil, domain.NewValidationError("ID anggota tidak valid")
@@ -161,4 +244,64 @@ func (s *anggotaService) GetPublicAnggota(ctx context.Context, nia string) (*dom
 		ProvinsiNama:  provNama,
 		KabupatenNama: kabNama,
 	}, nil
+}
+
+// ResetMemberPassword (T1) menerbitkan password awal baru untuk akun USER
+// milik anggota. Langkah: scope wilayah → pastikan akun terhubung & jabatan
+// role USER → hash Argon2id → simpan → cabut semua sesi → audit (tanpa
+// password). Plaintext dikembalikan SEKALI ke pemanggil (admin) untuk
+// diteruskan ke anggota via kanal resmi.
+func (s *anggotaService) ResetMemberPassword(ctx context.Context, anggotaID int, actor domain.ActorContext, audit domain.AuditContext) (string, error) {
+	if anggotaID <= 0 {
+		return "", domain.NewValidationError("ID anggota tidak valid")
+	}
+	if s.anggotaRepo == nil {
+		return "", unavailable("anggota")
+	}
+	if s.userRepo == nil {
+		return "", unavailable("akun user")
+	}
+
+	member, err := s.anggotaRepo.GetByID(ctx, anggotaID)
+	if err != nil {
+		return "", err
+	}
+	if !actor.CanAccessWilayah(member.ProvinsiID, member.KabupatenID) {
+		return "", domain.NewForbiddenError("Anggota di luar wilayah kerja Anda")
+	}
+	if member.UserID == nil || strings.TrimSpace(*member.UserID) == "" {
+		return "", domain.NewConflictError("Anggota belum memiliki akun yang terhubung")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, *member.UserID)
+	if err != nil {
+		return "", err
+	}
+	// Jalur ini KHUSUS akun anggota; jangan pernah reset password akun
+	// admin/verifikator lewat data anggota.
+	if user.Role != domain.RoleUser {
+		return "", domain.NewConflictError("Akun terhubung bukan akun anggota (role " + string(user.Role) + ")")
+	}
+
+	password, err := generateMemberPassword(16)
+	if err != nil {
+		return "", fmt.Errorf("gagal membuat password baru: %w", err)
+	}
+	hash, err := argon2id.CreateHash(password, argon2Params)
+	if err != nil {
+		return "", fmt.Errorf("gagal hash password baru: %w", err)
+	}
+	if err := s.userRepo.UpdatePassword(ctx, user.ID, hash); err != nil {
+		return "", fmt.Errorf("gagal menyimpan password baru: %w", err)
+	}
+	if err := s.userRepo.RevokeAllUserTokens(ctx, user.ID); err != nil {
+		log.Warn().Err(err).Str("user_id", user.ID).
+			Msg("Gagal mencabut sesi setelah reset password anggota")
+	}
+
+	actorID := actor.UserID
+	meta := `{"event":"member_password_reset","sessions_revoked":true}`
+	writeAudit(ctx, s.auditRepo, audit, &actorID, actor.Name, string(actor.Role),
+		"anggota", strconv.Itoa(member.ID), "PASSWORD_RESET", &meta)
+	return password, nil
 }

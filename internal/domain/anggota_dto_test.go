@@ -12,7 +12,7 @@ import (
 
 func TestAnggotaPublicInfoWhitelistOnly(t *testing.T) {
 	blob, err := json.Marshal(AnggotaPublicInfo{
-		NIA:           "KIPAN-32-3273-2026-00001",
+		NIA:           "KIPAN-IND-3273-2026-000001",
 		NamaLengkap:   "Rizki Pratama",
 		Status:        "AKTIF",
 		ProvinsiNama:  "JAWA BARAT",

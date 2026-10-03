@@ -13,6 +13,7 @@ func TestNormalizeNomor(t *testing.T) {
 		"REG-202609-00001",   // baru 5 digit
 		"reg-202609-00001",   // normalisasi case
 		"  REG-202609-0001 ", // normalisasi spasi
+		"REG-202609-000001",  // >5 digit (periode padat, T10)
 	}
 	for _, nomor := range valid {
 		if _, err := normalizeNomor(nomor); err != nil {
@@ -22,9 +23,8 @@ func TestNormalizeNomor(t *testing.T) {
 	invalid := []string{
 		"",
 		"asal",
-		"REG-202609-001",    // 3 digit
-		"REG-202609-000001", // 6 digit
-		"REG-2026-00001",    // periode pendek
+		"REG-202609-001", // 3 digit
+		"REG-2026-00001", // periode pendek
 		"REG-202609-00001-EXTRA-MUATAN-PANJANG-LEBIH-DARI-30",
 	}
 	for _, nomor := range invalid {
@@ -52,8 +52,8 @@ func TestAnggotaListInvalidStatus(t *testing.T) {
 
 func TestGetPublicAnggota(t *testing.T) {
 	repo := &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{
-		"KIPAN-32-3273-2026-00001": {
-			ID: 7, NIA: "KIPAN-32-3273-2026-00001", NamaLengkap: "Rizki Pratama",
+		"KIPAN-IND-3273-2026-000001": {
+			ID: 7, NIA: "KIPAN-IND-3273-2026-000001", NamaLengkap: "Rizki Pratama",
 			ProvinsiID: 2, KabupatenID: 3, Status: domain.AnggotaStatusAktif,
 		},
 	}}
@@ -62,10 +62,10 @@ func TestGetPublicAnggota(t *testing.T) {
 	if _, err := svc.GetPublicAnggota(context.Background(), "asal"); err == nil {
 		t.Fatal("expected invalid NIA to be rejected")
 	}
-	if _, err := svc.GetPublicAnggota(context.Background(), "KIPAN-32-3273-2026-99999"); err == nil {
+	if _, err := svc.GetPublicAnggota(context.Background(), "KIPAN-IND-3273-2026-099999"); err == nil {
 		t.Fatal("expected unknown NIA to return not found")
 	}
-	info, err := svc.GetPublicAnggota(context.Background(), "kipan-32-3273-2026-00001")
+	info, err := svc.GetPublicAnggota(context.Background(), "kipan-ind-3273-2026-000001")
 	if err != nil {
 		t.Fatalf("expected known NIA to pass: %v", err)
 	}

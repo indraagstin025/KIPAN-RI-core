@@ -49,14 +49,17 @@ var mimeToExt = map[string]string{
 	"application/pdf": "pdf",
 }
 
-// PresignUploadResult adalah tiket upload langsung ke S3.
+// PresignUploadResult adalah tiket upload langsung ke S3 (POST policy).
+// Fields WAJIB dikirim apa adanya sebagai form-data bersama berkas (field
+// "file"), dengan urutan fields lebih dulu, berkas terakhir.
 type PresignUploadResult struct {
-	UploadURL  string `json:"upload_url"`
-	ObjectKey  string `json:"object_key"`
-	Bucket     string `json:"bucket"`
-	ExpiresIn  int64  `json:"expires_in"`
-	MIMEType   string `json:"mime_type"`
-	MaxSize    int64  `json:"max_size_bytes"`
+	UploadURL string            `json:"upload_url"`
+	Fields    map[string]string `json:"fields"`
+	ObjectKey string            `json:"object_key"`
+	Bucket    string            `json:"bucket"`
+	ExpiresIn int64             `json:"expires_in"`
+	MIMEType  string            `json:"mime_type"`
+	MaxSize   int64             `json:"max_size_bytes"`
 }
 
 // PresignViewResult adalah tiket unduh sementara dokumen privat.
@@ -118,9 +121,12 @@ func policyFor(category string) (CategoryPolicy, error) {
 	return p, nil
 }
 
-// RequestUploadPresign menerbitkan tiket upload langsung (browser → S3).
-// Validasi: kategori dikenal, MIME allowlist, ukuran dalam batas.
-func (s *StorageService) RequestUploadPresign(_ context.Context, category, fileName, mimeType string, fileSize int64) (*PresignUploadResult, error) {
+// RequestUploadPresign menerbitkan tiket upload langsung (browser → S3)
+// berupa POST policy dengan batas ukuran KERAS (content-length-range) —
+// S3/MinIO menolak body di luar batas, menutup DoS storage yang mungkin
+// pada presigned PUT. Validasi awal: kategori dikenal, MIME allowlist,
+// ukuran dalam batas (pertahanan berlapis; penegakan sebenarnya di storage).
+func (s *StorageService) RequestUploadPresign(ctx context.Context, category, fileName, mimeType string, fileSize int64) (*PresignUploadResult, error) {
 	policy, err := policyFor(category)
 	if err != nil {
 		return nil, err
@@ -149,22 +155,19 @@ func (s *StorageService) RequestUploadPresign(_ context.Context, category, fileN
 		time.Now().Format("200601"), uuid.NewString(), ext)
 
 	ttl := s.putTTL()
-	url, err := s.client.PresignPut(context.Background(), s.uploadsBucket(), key, mime, ttl)
+	url, fields, err := s.client.PresignPostUpload(ctx, s.uploadsBucket(), key, policy.MaxSize, ttl)
 	if err != nil {
 		return nil, fmt.Errorf("gagal menerbitkan tiket upload: %w", err)
 	}
-	// BE-002: catat penerbitan untuk deteksi abuse (banjir tiket tanpa
-	// submit). Penegakan ukuran keras TIDAK mungkin di presigned PUT
-	// (SigV4 tak punya kondisi content-length — hanya POST policy yang
-	// punya); ukuran ditegakkan saat submit via HeadObject + magic bytes.
 	// Objek yatim (upload tanpa submit) dibersihkan lifecycle rule bucket:
 	// hapus objek uploads/ berumur > 7 hari tanpa referensi DB (infra,
 	// mis. `mc ilm rule add --expire-days 7`). ClamAV pra-approval Fase 6.
 	log.Info().Str("category", category).Str("bucket", s.uploadsBucket()).
-		Msg("Tiket upload diterbitkan")
+		Msg("Tiket upload (POST policy, ukuran dibatasi storage) diterbitkan")
 	_ = fileName // nama file client tidak dipakai (key server-generated)
 	return &PresignUploadResult{
 		UploadURL: url,
+		Fields:    fields,
 		ObjectKey: key,
 		Bucket:    s.uploadsBucket(),
 		ExpiresIn: int64(ttl.Seconds()),
@@ -222,6 +225,18 @@ func (s *StorageService) VerifySubmittedObject(ctx context.Context, key, categor
 	}
 	if err := storage.ValidateMagicBytes(head, ctype); err != nil {
 		return domain.NewValidationError("Isi dokumen tidak cocok dengan tipenya (file rusak atau dimanipulasi)")
+	}
+	// L8: PDF terkunci password ditolak sejak submit — admin tidak boleh
+	// menerima berkas yang tak bisa dibuka. Kebijakan: tolak (bukan minta
+	// password: kredensial dokumen tidak pernah dikumpulkan/disimpan).
+	if ctype == "application/pdf" {
+		tail, err := s.client.SniffTail(ctx, s.uploadsBucket(), k, 4096)
+		if err != nil {
+			return fmt.Errorf("gagal membaca ekor dokumen: %w", err)
+		}
+		if storage.LooksEncryptedPDF(tail) {
+			return domain.NewValidationError("Dokumen " + category + " terkunci password (kata sandi). Unggah versi tanpa password agar dapat diverifikasi")
+		}
 	}
 	return nil
 }
