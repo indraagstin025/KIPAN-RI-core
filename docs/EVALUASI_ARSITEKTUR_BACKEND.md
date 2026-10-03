@@ -52,7 +52,10 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 
 ### S — Single Responsibility
 - ✅ Pemisahan layer konsisten; fitur besar sudah dipecah (auth, otp, password_reset, verification, revision, kta, storage, kepengurusan, wilayah, user, outbox, dashboard).
-- 🟡 Beberapa **god-service**: `service/pendaftaran_service.go` **861 baris**, `service/kepengurusan_service.go` **811 baris** menggabungkan beberapa tanggung jawab (submit, tracking, queue, validasi wilayah, notifikasi, expiry; dan SK vs pengurus vs jabatan).
+- ✅ **DIPERBAIKI (A4):** dua god-service dipecah menjadi service fokus yang berbagi `base`:
+  - `kepengurusan_service.go` (863 baris) → `jabatan_service.go` (JabatanService), `sk_service.go` (SKService), `pengurus_service.go` (PengurusService), + agregat & shared base di `kepengurusan_service.go`.
+  - `pendaftaran_service.go` (864 baris) → `pendaftaran_submit_service.go` (PendaftaranSubmitService) + `pendaftaran_query_service.go` (PendaftaranQueryService), + agregat & helper validasi di `pendaftaran_service.go`.
+  - Handler tetap bergantung pada agregat (`KepengurusanService`/`PendaftaranService`) sehingga wiring tak berubah.
 
 ### O — Open/Closed
 - 🟡 Menambah aksi/status baru menuntut mengedit beberapa `switch` (mis. `ApproveSK`, `mapStatusForAction`, `IsAllowedTransition`). Bukan pelanggaran fatal, tetapi kurang "terbuka untuk ekstensi".
@@ -109,12 +112,12 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 | **A1** | `ActorContext.Scope() (*int,*int,error)` di `domain`; ganti semua resolve scope manual | DRY + S | Tinggi | Rendah | ✅ Selesai |
 | **A2** | Allowlist status di `domain` (`PendaftaranStatus.IsValid`, `AnggotaStatus.IsValid`) dipakai service/repo | DRY | Tinggi | Rendah | ✅ Selesai |
 | **A3** | ISP: pecah interface repo gemuk menjadi per-use-case (Read/Write) + perbarui fakes | I | Sedang | Sedang | ✅ Selesai |
-| **A4** | Pecah god-service (`pendaftaran`, `kepengurusan`) menjadi beberapa service fokus | S | Sedang | Sedang–Tinggi | Belum |
+| **A4** | Pecah god-service (`pendaftaran`, `kepengurusan`) menjadi beberapa service fokus | S | Sedang | Sedang–Tinggi | ✅ Selesai |
 | **A5** | `StorageHandler` bergantung pada interface `StorageService` | D | Sedang | Rendah | Belum |
 | **A6** | Pindahkan `sendAppointmentEmail` ke outbox (tambah jenis `PENGANGKATAN`) | DRY | Rendah | Sedang | Belum |
 
-**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1, A2 & A3 telah dikerjakan**;
-A4/A5/A6 belum.
+**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1, A2, A3 & A4 telah dikerjakan**;
+A5/A6 belum.
 
 ---
 
