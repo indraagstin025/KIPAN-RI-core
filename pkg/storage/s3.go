@@ -232,6 +232,19 @@ func (c *Client) Put(ctx context.Context, bucket, key string, data []byte, conte
 	return err
 }
 
+// Delete menghapus object (mis. backup lama). Idempoten: object yang tidak ada
+// tidak dianggap error oleh S3 DeleteObject.
+func (c *Client) Delete(ctx context.Context, bucket, key string) error {
+	if err := ValidateObjectKey(key); err != nil {
+		return err
+	}
+	_, err := c.s3.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
 // EnsureBucket membuat bucket bila belum ada. Dipakai saat startup di
 // non-production agar dev tidak perlu provisioning manual.
 func (c *Client) EnsureBucket(ctx context.Context, bucket string) error {

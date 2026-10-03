@@ -1,0 +1,3 @@
+-- ROLLBACK 000030_backups
+
+DROP TABLE IF EXISTS backups;

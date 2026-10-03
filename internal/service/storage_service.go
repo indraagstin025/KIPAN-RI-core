@@ -330,6 +330,51 @@ func (s *StorageService) PresignKTADocument(ctx context.Context, key string) (st
 	return url, nil
 }
 
+// PutPrivateObject mengunggah artefak server-generated ke bucket privat
+// dengan key eksplisit (mis. backup database).
+func (s *StorageService) PutPrivateObject(ctx context.Context, key string, data []byte, contentType string) error {
+	if s.client == nil {
+		return unavailable("storage")
+	}
+	if err := storage.ValidateObjectKey(key); err != nil {
+		return domain.NewValidationError("Object key tidak valid")
+	}
+	if err := s.client.Put(ctx, s.privateBucket(), key, data, contentType); err != nil {
+		return fmt.Errorf("gagal menyimpan objek privat: %w", err)
+	}
+	return nil
+}
+
+// PresignPrivateObject menerbitkan tiket baca sementara objek privat.
+func (s *StorageService) PresignPrivateObject(ctx context.Context, key string) (string, error) {
+	k := strings.TrimSpace(key)
+	if err := storage.ValidateObjectKey(k); err != nil {
+		return "", domain.NewValidationError("Object key tidak valid")
+	}
+	if s.client == nil {
+		return "", unavailable("storage")
+	}
+	url, err := s.client.PresignGet(ctx, s.privateBucket(), k, s.putTTL())
+	if err != nil {
+		return "", fmt.Errorf("gagal menerbitkan tiket baca objek: %w", err)
+	}
+	return url, nil
+}
+
+// DeletePrivateObject menghapus objek privat (idempoten).
+func (s *StorageService) DeletePrivateObject(ctx context.Context, key string) error {
+	if s.client == nil {
+		return unavailable("storage")
+	}
+	if err := storage.ValidateObjectKey(key); err != nil {
+		return domain.NewValidationError("Object key tidak valid")
+	}
+	if err := s.client.Delete(ctx, s.privateBucket(), key); err != nil {
+		return fmt.Errorf("gagal menghapus objek privat: %w", err)
+	}
+	return nil
+}
+
 func (s *StorageService) privateBucket() string {
 	if s.cfg != nil && s.cfg.Storage.BucketPrivate != "" {
 		return s.cfg.Storage.BucketPrivate

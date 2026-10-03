@@ -23,6 +23,14 @@ type Config struct {
 	Mail     MailConfig
 	Outbox   OutboxConfig
 	Worker   WorkerConfig
+	Backup   BackupConfig
+}
+
+// BackupConfig mengatur fitur backup database (pg_dump server-side).
+type BackupConfig struct {
+	Enabled    bool          // BACKUP_ENABLED
+	PgDumpPath string        // BACKUP_PG_DUMP_PATH (default "pg_dump")
+	Timeout    time.Duration // BACKUP_TIMEOUT (default 10m)
 }
 
 type AppConfig struct {
@@ -197,6 +205,11 @@ func Load() (*Config, error) {
 	v.SetDefault("WORKER_TIMEZONE", "Asia/Jakarta")
 	v.SetDefault("WORKER_EXPIRY_INTERVAL", "24h")
 
+	// Backup database (pg_dump server-side; default nonaktif).
+	v.SetDefault("BACKUP_ENABLED", false)
+	v.SetDefault("BACKUP_PG_DUMP_PATH", "pg_dump")
+	v.SetDefault("BACKUP_TIMEOUT", "10m")
+
 	v.SetDefault("STORAGE_REGION", "auto")
 	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
 	v.SetDefault("STORAGE_BUCKET_PRIVATE", "kipan-private")
@@ -212,6 +225,7 @@ func Load() (*Config, error) {
 	presignedTTL := mustParseDuration(v.GetString("STORAGE_PRESIGNED_TTL"), 5*time.Minute, "STORAGE_PRESIGNED_TTL")
 	emailInterval := mustParseDuration(v.GetString("EMAIL_WORKER_INTERVAL"), 10*time.Second, "EMAIL_WORKER_INTERVAL")
 	expiryInterval := mustParseDuration(v.GetString("WORKER_EXPIRY_INTERVAL"), 24*time.Hour, "WORKER_EXPIRY_INTERVAL")
+	backupTimeout := mustParseDuration(v.GetString("BACKUP_TIMEOUT"), 10*time.Minute, "BACKUP_TIMEOUT")
 	setupTTL := mustParseDuration(v.GetString("SETUP_TOKEN_TTL"), 168*time.Hour, "SETUP_TOKEN_TTL")
 
 	// ============================================================
@@ -318,6 +332,11 @@ func Load() (*Config, error) {
 		Worker: WorkerConfig{
 			Timezone:       strings.TrimSpace(v.GetString("WORKER_TIMEZONE")),
 			ExpiryInterval: expiryInterval,
+		},
+		Backup: BackupConfig{
+			Enabled:    v.GetBool("BACKUP_ENABLED"),
+			PgDumpPath: strings.TrimSpace(v.GetString("BACKUP_PG_DUMP_PATH")),
+			Timeout:    backupTimeout,
 		},
 	}
 

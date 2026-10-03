@@ -60,6 +60,7 @@ func Register(
 	registerAuditRoutes(v1, d.authMiddleware, d.auditHandler)
 	registerRoleRoutes(v1, d.authMiddleware, d.roleHandler)
 	registerOrganisasiRoutes(v1, rdb, d.authMiddleware, d.organisasiHandler)
+	registerBackupRoutes(v1, rdb, d.authMiddleware, d.backupHandler)
 	registerAdminRoutes(v1, cfg.App.Env, d.authMiddleware)
 }
 

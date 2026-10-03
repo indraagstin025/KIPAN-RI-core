@@ -46,7 +46,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - C3 Manajemen User scope Nasional ✅ **Selesai**.
 - C4 Role & Wewenang (katalog read-only) ✅ **Selesai**.
 - C5 Profil Organisasi — migrasi `000029` ✅ **Selesai**.
-- C6 Database Backup (`pg_dump`, terenkripsi) — migrasi `000030`.
+- C6 Database Backup (`pg_dump`) — migrasi `000030` ✅ **Selesai**.
 
 ---
 
@@ -314,3 +314,27 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
   via storage = penyempurnaan lanjutan.
 - **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E:
   GET publik 200; PUT Super 200 / Nasional 403; konten `<script>` → 422.
+
+## 19. Catatan Fase C — C6 Database Backup (TDD §8)
+
+- **Migrasi `000030`**: tabel `backups` (riwayat) — filename, object_key, size,
+  status, error, created_by.
+- **Storage**: `pkg/storage.Client.Delete` + `StorageService` `PutPrivateObject`
+  /`PresignPrivateObject`/`DeletePrivateObject` (bucket privat).
+- **Service** `backup_service.go`: `Create` (jalankan `pg_dump --format=custom`
+  via `exec` dengan timeout, unggah ke `backups/`, catat riwayat, audit;
+  **DSN tidak pernah di-log**, fail-closed bila pg_dump/storage tak ada),
+  `List`, `DownloadURL` (presign), `Delete` (objek + riwayat).
+- **Config**: `BACKUP_ENABLED` (default false), `BACKUP_PG_DUMP_PATH`,
+  `BACKUP_TIMEOUT`.
+- **Endpoints** (capability `manage_backup` = Super, policy `bak_mut`):
+  `POST/GET /admin/backups`, `GET /admin/backups/:id/download`,
+  `DELETE /admin/backups/:id`.
+- **Frontend**: halaman `/admin/backup` (Buat Backup, tabel, Unduh, Hapus) +
+  menu **Database Backup** (Super).
+- **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E:
+  CREATE (pg_dump ~170KB → bucket privat) → LIST → DOWNLOAD (presign) → DELETE.
+
+> **Fase C SELESAI.** Seluruh rencana **TDD Alignment (Batch 0 · Fase A · B · C)
+> tuntas**. Tersisa (ditunda): **Fase KTA** — kartu/e-KTA PNG+PDF + tanda tangan
+> statis, serta Tracking & Validasi KTA.
