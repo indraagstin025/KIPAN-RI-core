@@ -25,6 +25,35 @@ const (
 	CapManageBackup        Capability = "manage_backup"         // backup database
 )
 
+// RoleInfo adalah metadata satu role untuk katalog Role & Wewenang.
+type RoleInfo struct {
+	Key         Role   `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+// RoleCatalog adalah katalog read-only role + matriks wewenang.
+type RoleCatalog struct {
+	Roles        []RoleInfo       `json:"roles"`
+	Capabilities []CapabilityInfo `json:"capabilities"`
+}
+
+// roleRegistry adalah daftar role (termasuk USER) untuk katalog.
+var roleRegistry = []RoleInfo{
+	{RoleSuperAdmin, "Super Admin", "Akses penuh seluruh Indonesia termasuk konfigurasi sistem."},
+	{RoleAdminNasional, "Admin Nasional (DPN)", "Cakupan seluruh Indonesia; tanpa pengaturan sistem (Super eksklusif)."},
+	{RoleAdminProvinsi, "Admin Provinsi (DPD)", "Cakupan satu provinsi + kab/kota di bawahnya."},
+	{RoleAdminKabupaten, "Admin Kabupaten/Kota (DPC)", "Cakupan satu kabupaten/kota."},
+	{RoleUser, "Anggota", "Akun kader: profil & e-KTA sendiri."},
+}
+
+// AllRoles mengembalikan katalog role (salinan).
+func AllRoles() []RoleInfo {
+	out := make([]RoleInfo, len(roleRegistry))
+	copy(out, roleRegistry)
+	return out
+}
+
 // CapabilityInfo adalah metadata satu capability untuk katalog UI & audit.
 type CapabilityInfo struct {
 	Key         Capability `json:"key"`

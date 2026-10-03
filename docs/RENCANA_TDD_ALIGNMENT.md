@@ -44,7 +44,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - C1 Laporan & Statistik (+ demografi + anomali NIA) ✅ **Selesai**.
 - C2 Penelusur Audit + CSV ✅ **Selesai**.
 - C3 Manajemen User scope Nasional ✅ **Selesai**.
-- C4 Role & Wewenang (katalog read-only).
+- C4 Role & Wewenang (katalog read-only) ✅ **Selesai**.
 - C5 Profil Organisasi — migrasi `000029`.
 - C6 Database Backup (`pg_dump`, terenkripsi) — migrasi `000030`.
 
@@ -290,3 +290,13 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E:
   GET users nas=200 / kab=403 / super=200; nas filter SUPER_ADMIN=403;
   nas POST Provinsi=201; nas POST Nasional=403.
+
+## 17. Catatan Fase C — C4 Role & Wewenang (katalog read-only, TDD §3.3)
+
+- **Domain**: `RoleInfo` + `RoleCatalog` + `AllRoles()` (5 role, termasuk USER).
+- **Service** `role_service.go` (katalog dari `AllCapabilities()` + `AllRoles()`),
+  **handler/routes** `GET /admin/roles` (Super Admin saja) — read-only, tanpa migrasi.
+- **Frontend**: halaman `/admin/roles` (kartu role + tabel matriks wewenang
+  capability × role, Cetak) + menu **Role & Wewenang** (Super).
+- **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E
+  Super 200 / Nasional 403; 5 role & 15 capability.

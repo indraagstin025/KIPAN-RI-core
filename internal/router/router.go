@@ -58,6 +58,7 @@ func Register(
 	registerDashboardRoutes(v1, rdb, d.authMiddleware, d.dashboardHandler)
 	registerLaporanRoutes(v1, rdb, d.authMiddleware, d.laporanHandler)
 	registerAuditRoutes(v1, d.authMiddleware, d.auditHandler)
+	registerRoleRoutes(v1, d.authMiddleware, d.roleHandler)
 	registerAdminRoutes(v1, cfg.App.Env, d.authMiddleware)
 }
 
