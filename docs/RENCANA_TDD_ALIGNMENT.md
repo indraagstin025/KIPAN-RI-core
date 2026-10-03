@@ -27,7 +27,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 | 0.1 | Worker terpisah (`cmd/worker`) + scheduler + advisory lock | ✅ Selesai |
 | 0.2 | Status efektif tunggal (fungsi + view) — migrasi `000025` | ✅ Selesai |
 | 0.3 | Capability matrix (`domain/capabilities.go`) + `RequireCapability` + test | ✅ Selesai |
-| 0.4 | Tooling migrasi (preflight + snapshot + klon) + state-machine tersurat | Belum |
+| 0.4 | Tooling migrasi (preflight + snapshot + klon) + state-machine SK tersurat | ✅ Selesai |
 
 ### Fase A — Kepengurusan
 - A1 Master Jabatan TDD — migrasi `000026` (expand→dedupe→contract).
@@ -88,3 +88,23 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - Capability untuk fitur mendatang (`view_audit`, `manage_organisasi`,
   `manage_backup`) sudah dideklarasikan agar **C2/C4/C5/C6** langsung
   memakainya.
+
+## 6. Catatan Batch 0.4
+
+- **State machine SK tersurat** (`internal/domain/sk_transition.go`):
+  `SKApprovalTransitionRules` + `ResolveSKApprovalTransition(action, level)`.
+  `ApproveSK` kini **memakai resolver** ini (bukan switch tersebar); perilaku
+  identik. Golden test mengunci transisi per tingkat + rantai lanjutan.
+- State machine **pendaftaran** sudah tersurat sejak sebelumnya
+  (`PendaftaranStatusTransitionRules`).
+- **Tooling migrasi** `scripts/migrate-preflight.ps1`:
+  - Cek **HARD** (harus 0) sebelum migrasi partial unique: pengurus `Aktif`
+    ganda lintas SK; `nik_hash` non-`DITOLAK` ganda. Gagal → exit 1.
+  - Cek **INFO**: jabatan nama ganda (akan didedupe A1) & SK `DISETUJUI` aktif
+    ganda per wilayah.
+  - `-Snapshot` → `pg_dump -Fc`; `-CloneTo <db>` → `createdb` + `pg_restore`.
+  - Jalankan sebelum migrasi destruktif: `pwsh -File scripts/migrate-preflight.ps1 -Snapshot`
+    lalu uji migrasi di klon.
+
+> **Fondasi (Batch 0) SELESAI.** Lanjut ke **Fase A** (mulai A1 Master Jabatan,
+> migrasi `000026`) — ingat: jalankan preflight + snapshot dulu.

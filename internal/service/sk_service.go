@@ -195,41 +195,23 @@ func (s *skSvc) ApproveSK(ctx context.Context, id int, action domain.SKApprovalA
 		return err
 	}
 
-	var from, to domain.SKApprovalStatus
-	var approvedBy *string
-	var approvedAt *time.Time
 	var note *string
-	now := time.Now()
 
+	// 1) Otorisasi + validasi khas aksi (sebelum menyentuh transisi).
 	switch action {
 	case domain.SKActionAjukan:
 		if !canAjukanSK(actor, sk) {
 			return domain.NewForbiddenError("Anda tidak berwenang mengajukan SK ini")
-		}
-		from = domain.SKApprovalStatusDraft
-		switch sk.Level {
-		case domain.LevelKabupaten:
-			to = domain.SKApprovalStatusMenungguProvinsi
-		case domain.LevelProvinsi:
-			to = domain.SKApprovalStatusMenungguNasional
-		case domain.LevelNasional:
-			to = domain.SKApprovalStatusDisetujui
-			approvedBy, approvedAt = &actor.UserID, &now
-		default:
-			return domain.NewValidationError("Level SK tidak valid")
 		}
 	case domain.SKActionTeruskan:
 		if actor.Role != domain.RoleAdminProvinsi || actor.ProvinsiID == nil ||
 			sk.ProvinsiID == nil || *actor.ProvinsiID != *sk.ProvinsiID {
 			return domain.NewForbiddenError("Penerusan SK hanya oleh Admin Provinsi wilayah SK")
 		}
-		from, to = domain.SKApprovalStatusMenungguProvinsi, domain.SKApprovalStatusMenungguNasional
 	case domain.SKActionSahkan:
 		if !isNasionalOrSuper(actor.Role) {
 			return domain.NewForbiddenError("Pengesahan SK hanya oleh Nasional/Super Admin")
 		}
-		from, to = domain.SKApprovalStatusMenungguNasional, domain.SKApprovalStatusDisetujui
-		approvedBy, approvedAt = &actor.UserID, &now
 	case domain.SKActionTolak:
 		if !isNasionalOrSuper(actor.Role) {
 			return domain.NewForbiddenError("Penolakan SK hanya oleh Nasional/Super Admin")
@@ -239,10 +221,22 @@ func (s *skSvc) ApproveSK(ctx context.Context, id int, action domain.SKApprovalA
 			return domain.NewValidationError("Catatan wajib diisi untuk menolak SK")
 		}
 		note = &n
-		from, to = domain.SKApprovalStatusMenungguNasional, domain.SKApprovalStatusDitolak
-		approvedBy, approvedAt = &actor.UserID, &now
 	default:
 		return domain.NewValidationError("Aksi persetujuan SK tidak valid")
+	}
+
+	// 2) Transisi dari state machine tersurat (domain.sk_transition.go).
+	from, to, ok := domain.ResolveSKApprovalTransition(action, sk.Level)
+	if !ok {
+		return domain.NewValidationError("Level/status SK tidak valid untuk aksi ini")
+	}
+
+	// 3) Kolom pengesah diisi saat hasil final DISETUJUI atau saat penolakan.
+	var approvedBy *string
+	var approvedAt *time.Time
+	if to == domain.SKApprovalStatusDisetujui || action == domain.SKActionTolak {
+		now := time.Now()
+		approvedBy, approvedAt = &actor.UserID, &now
 	}
 
 	if sk.ApprovalStatus != from {
