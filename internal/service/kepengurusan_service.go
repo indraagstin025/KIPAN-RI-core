@@ -13,7 +13,6 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 )
 
@@ -40,7 +39,7 @@ type KepengurusanDeps struct {
 	UserRepo     repository.UserRepository
 	AuditRepo    repository.AuditLogRepository
 	WilayahRepo  repository.WilayahRepository
-	Mail         gateway.MailSender
+	OutboxRepo   repository.EmailOutboxRepository
 }
 
 // kepengurusanBase menampung dependensi bersama + helper lintas sub-service
@@ -54,7 +53,7 @@ type kepengurusanBase struct {
 	userRepo    repository.UserRepository
 	auditRepo   repository.AuditLogRepository
 	wilayahRepo repository.WilayahRepository
-	mail        gateway.MailSender
+	outboxRepo  repository.EmailOutboxRepository
 }
 
 // audit mencatat jejak audit aksi kepengurusan (best-effort).
@@ -63,19 +62,27 @@ func (b *kepengurusanBase) audit(ctx context.Context, audit domain.AuditContext,
 	writeAudit(ctx, b.auditRepo, audit, &id, actor.Name, string(actor.Role), entity, entityID, action, metadata)
 }
 
-// sendAppointmentEmail mengirim notifikasi pengangkatan (async best-effort).
-func (b *kepengurusanBase) sendAppointmentEmail(nama, email, nia, jabatan, nomorSK string) {
-	if b.mail == nil || strings.TrimSpace(email) == "" {
+// enqueueEmail menulis satu baris antrian email kepengurusan (best-effort,
+// non-fatal) agar pengiriman konsisten lewat worker outbox. Cakupan wilayah
+// diambil dari SK (bila ada) untuk keperluan monitoring admin.
+func (b *kepengurusanBase) enqueueEmail(ctx context.Context, jenis domain.EmailOutboxKind, sk *domain.SuratKeputusan, userID *string, toEmail string, c EmailContent) {
+	if b.outboxRepo == nil || strings.TrimSpace(toEmail) == "" {
 		return
 	}
-	content := PengangkatanEmail(nama, nia, jabatan, nomorSK, publicURLFrom(b.cfg))
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if err := b.mail.Send(ctx, email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
-			log.Warn().Err(err).Str("nia", nia).Msg("Gagal mengirim email pengangkatan")
-		}
-	}()
+	html := c.HTMLBody
+	entry := &domain.EmailOutbox{
+		Jenis: jenis, UserID: userID, ToEmail: toEmail,
+		Subject: c.Subject, TextBody: c.TextBody, HTMLBody: &html,
+	}
+	if sk != nil {
+		entry.ProvinsiID = sk.ProvinsiID
+		entry.KabupatenID = sk.KabupatenID
+	}
+	enqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := b.outboxRepo.Enqueue(enqCtx, entry); err != nil {
+		log.Warn().Err(err).Str("jenis", string(jenis)).Msg("Gagal enqueue email outbox kepengurusan")
+	}
 }
 
 // kepengurusanAggregate menyalurkan pemanggilan method ke sub-service terkait
@@ -92,7 +99,7 @@ func NewKepengurusanService(cfg *config.Config, deps KepengurusanDeps) Kepenguru
 		cfg: cfg, jabatanRepo: deps.JabatanRepo, skRepo: deps.SKRepo,
 		pengurus: deps.PengurusRepo, anggotaRepo: deps.AnggotaRepo,
 		userRepo: deps.UserRepo, auditRepo: deps.AuditRepo,
-		wilayahRepo: deps.WilayahRepo, mail: deps.Mail,
+		wilayahRepo: deps.WilayahRepo, outboxRepo: deps.OutboxRepo,
 	}
 	return &kepengurusanAggregate{
 		JabatanService:  &jabatanSvc{kepengurusanBase: base},

@@ -119,7 +119,14 @@ func (s *pengurusSvc) AddPengurus(ctx context.Context, skID int, in domain.AddPe
 		uMeta := `{"event":"tipe_user_promote","to":"PENGURUS","sessions_revoked":true}`
 		s.audit(ctx, audit, actor, "users", userID, "UPDATE", &uMeta)
 	}
-	s.sendAppointmentEmail(member.NamaLengkap, member.Email, member.NIA, jabatan.Nama, sk.NomorSK)
+	// Notifikasi pengangkatan via outbox (konsisten dengan email lain & tahan
+	// gagal sementara). userID hanya terisi bila anggota sudah punya akun.
+	var uidPtr *string
+	if userID != "" {
+		uidPtr = &userID
+	}
+	s.enqueueEmail(ctx, domain.EmailOutboxPengangkatan, sk, uidPtr, member.Email,
+		PengangkatanEmail(member.NamaLengkap, member.NIA, jabatan.Nama, sk.NomorSK, publicURLFrom(s.cfg)))
 
 	list, err := s.pengurus.ListBySK(ctx, skID)
 	if err != nil {

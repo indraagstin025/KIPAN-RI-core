@@ -15,6 +15,7 @@ const (
 	EmailOutboxStatusPerbaikan EmailOutboxKind = "STATUS_PERBAIKAN"
 	EmailOutboxSetPassword     EmailOutboxKind = "SET_PASSWORD"
 	EmailOutboxAkunTerhubung   EmailOutboxKind = "AKUN_TERHUBUNG"
+	EmailOutboxPengangkatan    EmailOutboxKind = "PENGANGKATAN"
 )
 
 // EmailOutboxStatus kondisi baris antrian.

@@ -91,7 +91,7 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 **Duplikasi tersisa:**
 - **Resolusi scope wilayah** — ✅ **DIPERBAIKI (A1)**: kini lewat satu sumber `domain.ActorContext.Scope()`.
 - **Allowlist status** — ✅ **DIPERBAIKI (A2)**: kini `domain.PendaftaranStatus.IsValid()` / `domain.AnggotaStatus.IsValid()`.
-- **Dua jalur email**: aktivitas kepengurusan memakai `sendAppointmentEmail` (goroutine) di luar outbox — belum konsisten dengan worker.
+- **Dua jalur email** — ✅ **DIPERBAIKI (A6)**: email pengangkatan kini masuk outbox (jenis `PENGANGKATAN`) lewat worker; tidak ada lagi goroutine kirim langsung.
 - Meta pagination masih manual di sebagian handler lama (sebagian sudah memakai `paginationMeta`).
 
 ---
@@ -114,10 +114,10 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 | **A3** | ISP: pecah interface repo gemuk menjadi per-use-case (Read/Write) + perbarui fakes | I | Sedang | Sedang | ✅ Selesai |
 | **A4** | Pecah god-service (`pendaftaran`, `kepengurusan`) menjadi beberapa service fokus | S | Sedang | Sedang–Tinggi | ✅ Selesai |
 | **A5** | `StorageHandler` bergantung pada interface `StorageService` | D | Sedang | Rendah | ✅ Selesai |
-| **A6** | Pindahkan `sendAppointmentEmail` ke outbox (tambah jenis `PENGANGKATAN`) | DRY | Rendah | Sedang | Belum |
+| **A6** | Pindahkan `sendAppointmentEmail` ke outbox (tambah jenis `PENGANGKATAN`) | DRY | Rendah | Sedang | ✅ Selesai |
 
-**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1, A2, A3, A4 & A5 telah dikerjakan**;
-A6 belum.
+**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1, A2, A3, A4, A5 & A6 telah dikerjakan**;
+seluruh rekomendasi arsitektur (A1–A6) **SELESAI**.
 
 ---
 

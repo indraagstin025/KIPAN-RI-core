@@ -469,6 +469,49 @@ func TestListPengurusScopeAndFilter(t *testing.T) {
 	}
 }
 
+// TestAddPengurusEnqueuePengangkatan memastikan A6: pengangkatan pengurus
+// menulis email ke outbox (jenis PENGANGKATAN), bukan kirim goroutine langsung.
+func TestAddPengurusEnqueuePengangkatan(t *testing.T) {
+	ctx := context.Background()
+	sk := &domain.SuratKeputusan{
+		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi,
+		FileSKKey: "uploads/sk/a.pdf", NomorSK: "001/SK/2026",
+	}
+	member := &domain.Anggota{
+		ID: 9, NIA: "KIPAN-IND-3273-2026-000001", NamaLengkap: "Budi Kader",
+		Email: "budi@example.com", Status: domain.AnggotaStatusAktif,
+		ProvinsiID: 32, KabupatenID: 3273,
+	}
+	jab := &domain.Jabatan{ID: 1, Nama: "Ketua", Level: domain.LevelKabupaten, IsActive: true}
+	outbox := &fakeOutboxRepo{}
+	svc := NewKepengurusanService(nil, KepengurusanDeps{
+		SKRepo: sk2Repo(sk), JabatanRepo: &fakeJabatanRepo{jab: jab},
+		PengurusRepo: &fakePengurusRepo{}, AnggotaRepo: &fakeAnggotaRepo{byID: map[int]*domain.Anggota{9: member}},
+		OutboxRepo: outbox,
+	})
+
+	if _, err := svc.AddPengurus(ctx, 1, domain.AddPengurusRequest{AnggotaID: 9, JabatanID: 1, Konfirmasi: true}, kabActor(), domain.AuditContext{}); err != nil {
+		t.Fatalf("AddPengurus gagal: %v", err)
+	}
+	if len(outbox.enqueued) != 1 {
+		t.Fatalf("harus ada 1 email outbox, dapat %d", len(outbox.enqueued))
+	}
+	got := outbox.enqueued[0]
+	if got.Jenis != domain.EmailOutboxPengangkatan {
+		t.Fatalf("jenis email salah: %s", got.Jenis)
+	}
+	if got.ToEmail != member.Email {
+		t.Fatalf("penerima salah: %s", got.ToEmail)
+	}
+	if got.KabupatenID == nil || *got.KabupatenID != 3273 {
+		t.Fatalf("cakupan wilayah outbox salah: %+v", got.KabupatenID)
+	}
+}
+
+// sk2Repo membungkus satu SK untuk fakeSKRepo.
+func sk2Repo(sk *domain.SuratKeputusan) *fakeSKRepo { return &fakeSKRepo{sk: sk} }
+
 func TestActorScope(t *testing.T) {
 	prov, kab := 32, 3273
 	kabCtx := domain.ActorContext{Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &kab}

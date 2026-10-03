@@ -102,7 +102,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 		SKRepo:       repository.NewSKRepository(db),
 		PengurusRepo: repository.NewPengurusRepository(db),
 		AnggotaRepo:  anggotaRepo, UserRepo: userRepo, AuditRepo: auditRepo,
-		WilayahRepo: wilayahRepo, Mail: mailSender,
+		WilayahRepo: wilayahRepo, OutboxRepo: emailOutboxRepo,
 	})
 
 	// --- Worker antrian email (outbox) ---
