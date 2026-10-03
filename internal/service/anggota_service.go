@@ -38,36 +38,48 @@ type AnggotaService interface {
 	// anggota dalam yurisdiksi aktor. Password dikembalikan SEKALI; seluruh
 	// sesi anggota dicabut dan aksi tercatat di audit.
 	ResetMemberPassword(ctx context.Context, anggotaID int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
+
+	// CreateAnggota menambah anggota langsung (di luar alur pendaftaran).
+	CreateAnggota(ctx context.Context, in domain.AnggotaCreateRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.Anggota, error)
+	// UpdateAnggota menyunting data anggota (NIK/NIA tidak diubah).
+	UpdateAnggota(ctx context.Context, id int, in domain.AnggotaUpdateRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.Anggota, error)
+	// SetAnggotaStatus mengubah status keanggotaan (soft; mis. NONAKTIF).
+	SetAnggotaStatus(ctx context.Context, id int, in domain.AnggotaStatusRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.Anggota, error)
+	// ExportCSV mengekspor daftar anggota ter-scope (NIA, Nama, Pekerjaan, Riwayat, wilayah, status).
+	ExportCSV(ctx context.Context, actor domain.ActorContext, status, search string) ([]byte, error)
 }
 
 type AnggotaDeps struct {
-	AnggotaRepo repository.AnggotaRepository
-	WilayahRepo repository.WilayahRepository
-	UserRepo    repository.UserAccountRepository
-	AuditRepo   repository.AuditLogRepository
-	ListRepo    repository.ListKeysetRepository
-	OutboxRepo  repository.EmailOutboxRepository
+	AnggotaRepo     repository.AnggotaRepository
+	WilayahRepo     repository.WilayahRepository
+	UserRepo        repository.UserAccountRepository
+	AuditRepo       repository.AuditLogRepository
+	ListRepo        repository.ListKeysetRepository
+	OutboxRepo      repository.EmailOutboxRepository
+	PendaftaranRepo repository.PendaftaranCoreRepository
 }
 
 type anggotaService struct {
-	cfg         *config.Config
-	anggotaRepo repository.AnggotaRepository
-	wilayahRepo repository.WilayahRepository
-	userRepo    repository.UserAccountRepository
-	auditRepo   repository.AuditLogRepository
-	listRepo    repository.ListKeysetRepository
-	outboxRepo  repository.EmailOutboxRepository
+	cfg             *config.Config
+	anggotaRepo     repository.AnggotaRepository
+	wilayahRepo     repository.WilayahRepository
+	userRepo        repository.UserAccountRepository
+	auditRepo       repository.AuditLogRepository
+	listRepo        repository.ListKeysetRepository
+	outboxRepo      repository.EmailOutboxRepository
+	pendaftaranRepo repository.PendaftaranCoreRepository
 }
 
 func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
 	return &anggotaService{
-		cfg:         cfg,
-		anggotaRepo: deps.AnggotaRepo,
-		wilayahRepo: deps.WilayahRepo,
-		userRepo:    deps.UserRepo,
-		auditRepo:   deps.AuditRepo,
-		listRepo:    deps.ListRepo,
-		outboxRepo:  deps.OutboxRepo,
+		cfg:             cfg,
+		anggotaRepo:     deps.AnggotaRepo,
+		wilayahRepo:     deps.WilayahRepo,
+		userRepo:        deps.UserRepo,
+		auditRepo:       deps.AuditRepo,
+		listRepo:        deps.ListRepo,
+		outboxRepo:      deps.OutboxRepo,
+		pendaftaranRepo: deps.PendaftaranRepo,
 	}
 }
 

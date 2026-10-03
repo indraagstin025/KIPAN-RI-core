@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/pkg/nia"
 )
 
 // AnggotaRepository menangani query minimal kader resmi untuk kebutuhan
@@ -38,6 +39,12 @@ type AnggotaRepository interface {
 	SetStatus(ctx context.Context, id int, status domain.AnggotaStatus) error
 	// RiwayatByAnggotaIDs menghitung kolom RIWAYAT (TDD §5.5) per anggota.
 	RiwayatByAnggotaIDs(ctx context.Context, ids []int) (map[int]string, error)
+	// AllocateNIA mengalokasikan NIA baru (KIPAN-IND-...) secara atomik.
+	AllocateNIA(ctx context.Context, provinsiID, kabupatenID, year int) (string, error)
+	// Create menyimpan anggota baru (NIA/NIK telah disiapkan service).
+	Create(ctx context.Context, a *domain.Anggota) (*domain.Anggota, error)
+	// Update menyimpan perubahan data anggota (NIK/NIA tidak diubah).
+	Update(ctx context.Context, a *domain.Anggota) error
 }
 
 type anggotaRepo struct {
@@ -184,6 +191,77 @@ func (r *anggotaRepo) RiwayatByAnggotaIDs(ctx context.Context, ids []int) (map[i
 		}
 	}
 	return out, nil
+}
+
+// AllocateNIA mengalokasikan NIA baru: kode kabupaten (BPS) + sequence per
+// kabupaten/tahun secara atomik (UPSERT ... RETURNING). Aman terhadap race.
+func (r *anggotaRepo) AllocateNIA(ctx context.Context, provinsiID, kabupatenID, year int) (string, error) {
+	var kabKode string
+	if err := r.db.GetContext(ctx, &kabKode, `SELECT kode FROM wilayah_kabupaten WHERE id = $1`, kabupatenID); err != nil {
+		return "", fmt.Errorf("gagal mengambil kode kabupaten: %w", err)
+	}
+	var seq int
+	if err := r.db.GetContext(ctx, &seq, `
+		INSERT INTO anggota_nia_sequence (provinsi_id, kabupaten_id, tahun, next_value)
+		VALUES ($1, $2, $3, 2)
+		ON CONFLICT (provinsi_id, kabupaten_id, tahun)
+		DO UPDATE SET next_value = anggota_nia_sequence.next_value + 1
+		RETURNING next_value - 1`,
+		provinsiID, kabupatenID, year); err != nil {
+		return "", fmt.Errorf("gagal menghasilkan sequence NIA: %w", err)
+	}
+	return nia.GenerateNIA(kabKode, year, seq)
+}
+
+// Create menyimpan anggota baru (di luar alur pendaftaran) dan mengembalikan
+// baris tersimpan. NIK/NIA duplikat dipetakan ke 409.
+func (r *anggotaRepo) Create(ctx context.Context, a *domain.Anggota) (*domain.Anggota, error) {
+	var out domain.Anggota
+	query := `INSERT INTO anggota (
+		nia, nama_lengkap, nik_hash, nik_encrypted, tempat_lahir, tanggal_lahir,
+		jenis_kelamin, agama, pendidikan, pekerjaan, alamat, provinsi_id, kabupaten_id,
+		kecamatan, desa, kode_pos, email, whatsapp,
+		foto_key, ktp_key, cv_key, sk_key, surat_pernyataan_key, surat_sehat_key,
+		status, tipe, angkatan,
+		tanggal_daftar, tanggal_angkat, created_at, updated_at
+	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+		$19,$20,$21,$22,$23,$24,$25,$26,$27,
+		CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	RETURNING ` + anggotaColumns
+	if err := r.db.GetContext(ctx, &out, query,
+		a.NIA, strings.TrimSpace(a.NamaLengkap), a.NIKHash, a.NIKEncrypted, strings.TrimSpace(a.TempatLahir),
+		a.TanggalLahir, strings.TrimSpace(a.JenisKelamin), a.Agama, a.Pendidikan, a.Pekerjaan,
+		a.Alamat, a.ProvinsiID, a.KabupatenID, a.Kecamatan, a.Desa, a.KodePos, a.Email,
+		a.Whatsapp, a.FotoKey, a.KTPKey, a.CVKey, a.SKKey, a.SuratPernyataanKey, a.SuratSehatKey,
+		a.Status, a.Tipe, a.Angkatan); err != nil {
+		return nil, mapDBError(err, "Data anggota sudah terdaftar (NIK/NIA duplikat)")
+	}
+	return &out, nil
+}
+
+// Update menyimpan perubahan data anggota (NIK/NIA identitas tidak diubah).
+func (r *anggotaRepo) Update(ctx context.Context, a *domain.Anggota) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE anggota SET
+		nama_lengkap = $2, tempat_lahir = $3, tanggal_lahir = $4, jenis_kelamin = $5,
+		agama = $6, pendidikan = $7, pekerjaan = $8, alamat = $9, provinsi_id = $10,
+		kabupaten_id = $11, kecamatan = $12, desa = $13, kode_pos = $14, email = $15,
+		whatsapp = $16, angkatan = $17, status = $18, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1`,
+		a.ID, strings.TrimSpace(a.NamaLengkap), strings.TrimSpace(a.TempatLahir), a.TanggalLahir,
+		strings.TrimSpace(a.JenisKelamin), a.Agama, a.Pendidikan, a.Pekerjaan, a.Alamat,
+		a.ProvinsiID, a.KabupatenID, a.Kecamatan, a.Desa, a.KodePos, a.Email, a.Whatsapp,
+		a.Angkatan, a.Status)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // GetByUserID mengambil anggota milik satu akun USER (satu user = satu kader).

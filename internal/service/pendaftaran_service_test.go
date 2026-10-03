@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -14,13 +15,14 @@ import (
 
 // fakeAnggotaRepo adalah anggotaRepo in-memory untuk uji VerifyKTA.
 type fakeAnggotaRepo struct {
-	byNIA map[string]*domain.Anggota
-	byID  map[int]*domain.Anggota
-	links map[int]string
+	byNIA     map[string]*domain.Anggota
+	byID      map[int]*domain.Anggota
+	links     map[int]string
+	nikExists bool
 }
 
 func (f *fakeAnggotaRepo) ExistsByNikHash(_ context.Context, _ string) (bool, error) {
-	return false, nil
+	return f.nikExists, nil
 }
 
 func (f *fakeAnggotaRepo) GetByNIA(_ context.Context, nia string) (*domain.Anggota, error) {
@@ -54,6 +56,21 @@ func (f *fakeAnggotaRepo) RiwayatByAnggotaIDs(_ context.Context, ids []int) (map
 		out[id] = "-"
 	}
 	return out, nil
+}
+
+func (f *fakeAnggotaRepo) AllocateNIA(_ context.Context, _, _, year int) (string, error) {
+	return fmt.Sprintf("KIPAN-IND-9999-%d-000001", year), nil
+}
+
+func (f *fakeAnggotaRepo) Create(_ context.Context, a *domain.Anggota) (*domain.Anggota, error) {
+	if a.ID == 0 {
+		a.ID = 100
+	}
+	return a, nil
+}
+
+func (f *fakeAnggotaRepo) Update(_ context.Context, _ *domain.Anggota) error {
+	return nil
 }
 
 func (f *fakeAnggotaRepo) SetUserID(_ context.Context, id int, userID string) error {

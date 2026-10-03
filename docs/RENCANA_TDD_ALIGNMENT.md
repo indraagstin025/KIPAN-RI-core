@@ -38,7 +38,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 ### Fase B — Pendaftaran & Keanggotaan
 - B1 Retensi DITOLAK + unique NIK parsial — migrasi `000028` ✅ **Selesai**.
 - B2 Kolom RIWAYAT ✅ **Selesai**.
-- B3 Tambah/Edit Anggota.
+- B3 Tambah/Edit Anggota ✅ **Selesai**.
 
 ### Fase C — Fitur Admin
 - C1 Laporan & Statistik (+ demografi + anomali NIA).
@@ -219,3 +219,25 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
   E2E list & detail menampilkan riwayat benar.
 
 > **Fase B tersisa: B3 Tambah/Edit Anggota.**
+
+## 13. Catatan Fase B — B3 Tambah/Edit Anggota (TDD §6.5)
+
+- **Endpoints** (semua admin, `ScopeWilayah`; mutasi `MutatingRateLimit("agt_mut")`):
+  - `POST /admin/anggota` — tambah langsung (NIK enkripsi+blind index, NIA
+    auto, cek duplikat anggota & pendaftaran aktif, validasi wilayah).
+  - `PUT /admin/anggota/:id` — sunting (field opsional; NIK/NIA tetap).
+  - `PATCH /admin/anggota/:id/status` — ubah status (soft).
+  - `DELETE /admin/anggota/:id` — soft delete (status NONAKTIF).
+  - `GET /admin/anggota/export.csv` — ekspor CSV ter-scope (NIA, Nama, Pekerjaan,
+    Riwayat, Provinsi, Kabupaten, Status; maks 5000 baris).
+- **Repository**: `AllocateNIA` (sequence per kab/tahun), `Create`, `Update`.
+- **Service** `anggota_admin.go`: `CreateAnggota/UpdateAnggota/SetAnggotaStatus/ExportCSV`.
+- **Frontend**: modal `AnggotaFormModal` (tambah/edit, pilih wilayah), tombol
+  Tambah/Edit/Nonaktifkan/Ekspor CSV di Data Anggota & detail.
+- **Catatan**: pembuatan **akun login** (buat_akun) belum termasuk batch ini —
+  akun anggota dibuat via alur pendaftaran atau `reset-password`. Kandidat
+  penyempurnaan kecil.
+- **Verifikasi**: `build`/`vet`/`test` hijau (test service create/dup/scope/
+  update/status/CSV); `tsc`/`lint`/`build` hijau; E2E create→edit→status→export.
+
+> **Fase B SELESAI.** Lanjut **Fase C** (C1 Laporan & Statistik).

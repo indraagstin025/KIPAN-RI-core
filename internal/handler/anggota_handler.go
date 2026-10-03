@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
@@ -109,4 +110,95 @@ func (h *AnggotaHandler) ResetPassword(c *fiber.Ctx) error {
 		return response.FromError(c, err)
 	}
 	return response.Success(c, "Reset kata sandi: tautan set-password dikirim ke email anggota", nil)
+}
+
+// Create menambah anggota langsung (POST /admin/anggota).
+func (h *AnggotaHandler) Create(c *fiber.Ctx) error {
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	var body domain.AnggotaCreateRequest
+	if err := c.BodyParser(&body); err != nil {
+		return response.BadRequest(c, "Format permintaan tidak valid")
+	}
+	out, err := h.service.CreateAnggota(c.Context(), body, actor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Created(c, "Anggota ditambahkan", out)
+}
+
+// Update menyunting anggota (PUT /admin/anggota/:id).
+func (h *AnggotaHandler) Update(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID anggota tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	var body domain.AnggotaUpdateRequest
+	if err := c.BodyParser(&body); err != nil {
+		return response.BadRequest(c, "Format permintaan tidak valid")
+	}
+	out, err := h.service.UpdateAnggota(c.Context(), id, body, actor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Anggota diperbarui", out)
+}
+
+// SetStatus mengubah status keanggotaan (PATCH /admin/anggota/:id/status).
+func (h *AnggotaHandler) SetStatus(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID anggota tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	var body domain.AnggotaStatusRequest
+	if err := c.BodyParser(&body); err != nil {
+		return response.BadRequest(c, "Format permintaan tidak valid")
+	}
+	out, err := h.service.SetAnggotaStatus(c.Context(), id, body, actor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Status anggota diperbarui", out)
+}
+
+// Delete menonaktifkan anggota (soft delete) via status NONAKTIF.
+func (h *AnggotaHandler) Delete(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID anggota tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	body := domain.AnggotaStatusRequest{Status: string(domain.AnggotaStatusNonaktif), Keterangan: "Dinonaktifkan admin"}
+	if _, err := h.service.SetAnggotaStatus(c.Context(), id, body, actor, auditContextOf(c)); err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Anggota dinonaktifkan", nil)
+}
+
+// Export mengunduh daftar anggota sebagai CSV (GET /admin/anggota/export.csv).
+func (h *AnggotaHandler) Export(c *fiber.Ctx) error {
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	data, err := h.service.ExportCSV(c.Context(), actor, c.Query("status"), c.Query("search"))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	c.Set("Content-Type", "text/csv; charset=utf-8")
+	c.Set("Content-Disposition", `attachment; filename="data-anggota.csv"`)
+	return c.Send(data)
 }

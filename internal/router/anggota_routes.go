@@ -34,8 +34,17 @@ func registerAnggotaRoutes(
 		),
 	)
 	adminAnggota.Get("", middleware.ScopeWilayah(), h.List)
+	adminAnggota.Get("/export.csv", middleware.ScopeWilayah(), h.Export)
 	adminAnggota.Get("/:id", middleware.ScopeWilayah(), h.Detail)
 	adminAnggota.Get("/:id/kta", middleware.ScopeWilayah(), ktaHandler.DownloadKTA)
 	// Reset kata sandi akun USER anggota (tautan set-password via antrian email).
 	adminAnggota.Post("/:id/reset-password", middleware.ScopeWilayah(), h.ResetPassword)
+
+	// Mutasi anggota langsung (tambah/sunting/status/nonaktif) — semua admin,
+	// yurisdiksi wilayah ditegakkan di service.
+	mut := middleware.MutatingRateLimit(rdb, "agt_mut")
+	adminAnggota.Post("", middleware.ScopeWilayah(), mut, h.Create)
+	adminAnggota.Put("/:id", middleware.ScopeWilayah(), mut, h.Update)
+	adminAnggota.Patch("/:id/status", middleware.ScopeWilayah(), mut, h.SetStatus)
+	adminAnggota.Delete("/:id", middleware.ScopeWilayah(), mut, h.Delete)
 }
