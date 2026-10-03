@@ -77,7 +77,7 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 
 ### D — Dependency Inversion
 - ✅ Service bergantung pada **interface** repository; handler pada **interface** service; wiring terpusat (kini di paket `router`).
-- 🟡 `StorageHandler` menyimpan `*service.StorageService` **konkret** (bukan interface) → mempersulit substitusi/fake.
+- ✅ **DIPERBAIKI (A5):** `StorageHandler` kini bergantung pada interface konsumen `handler.PresignService` (bukan `*service.StorageService` konkret).
 
 ---
 
@@ -113,11 +113,11 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 | **A2** | Allowlist status di `domain` (`PendaftaranStatus.IsValid`, `AnggotaStatus.IsValid`) dipakai service/repo | DRY | Tinggi | Rendah | ✅ Selesai |
 | **A3** | ISP: pecah interface repo gemuk menjadi per-use-case (Read/Write) + perbarui fakes | I | Sedang | Sedang | ✅ Selesai |
 | **A4** | Pecah god-service (`pendaftaran`, `kepengurusan`) menjadi beberapa service fokus | S | Sedang | Sedang–Tinggi | ✅ Selesai |
-| **A5** | `StorageHandler` bergantung pada interface `StorageService` | D | Sedang | Rendah | Belum |
+| **A5** | `StorageHandler` bergantung pada interface `StorageService` | D | Sedang | Rendah | ✅ Selesai |
 | **A6** | Pindahkan `sendAppointmentEmail` ke outbox (tambah jenis `PENGANGKATAN`) | DRY | Rendah | Sedang | Belum |
 
-**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1, A2, A3 & A4 telah dikerjakan**;
-A5/A6 belum.
+**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1, A2, A3, A4 & A5 telah dikerjakan**;
+A6 belum.
 
 ---
 

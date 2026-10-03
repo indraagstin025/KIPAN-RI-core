@@ -1,24 +1,33 @@
 package handler
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
+// PresignService adalah kontrak yang dibutuhkan handler ini (consumer-side
+// interface / DIP). Diimplementasikan oleh *service.StorageService.
+type PresignService interface {
+	RequestUploadPresign(ctx context.Context, category, fileName, mimeType string, fileSize int64) (*service.PresignUploadResult, error)
+	RequestViewPresign(ctx context.Context, key string, actor domain.ActorContext, audit domain.AuditContext) (*service.PresignViewResult, error)
+}
+
 // StorageHandler menangani tiket presigned upload/view (RULES 14).
-// Thin-handler: validasi DTO lalu delegasi ke StorageService.
+// Thin-handler: validasi DTO lalu delegasi ke PresignService.
 type StorageHandler struct {
-	service   *service.StorageService
+	service   PresignService
 	validator *validator.CustomValidator
 }
 
 func NewStorageHandler(
-	service *service.StorageService,
+	service PresignService,
 	validator *validator.CustomValidator,
 ) *StorageHandler {
 	return &StorageHandler{service: service, validator: validator}
