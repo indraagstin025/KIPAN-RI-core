@@ -30,6 +30,7 @@ type EmailWorker struct {
 	mail        gateway.MailSender
 	rdb         *redis.Client
 	userRepo    repository.UserRepository
+	anggotaRepo repository.AnggotaRepository
 	cfg         *config.Config
 	interval    time.Duration
 	batch       int
@@ -43,6 +44,7 @@ func NewEmailWorker(
 	mail gateway.MailSender,
 	rdb *redis.Client,
 	userRepo repository.UserRepository,
+	anggotaRepo repository.AnggotaRepository,
 ) *EmailWorker {
 	interval, batch, maxAttempts, setupTTL := 10*time.Second, 25, 5, 168*time.Hour
 	if cfg != nil {
@@ -60,7 +62,7 @@ func NewEmailWorker(
 		}
 	}
 	return &EmailWorker{
-		outbox: outbox, mail: mail, rdb: rdb, userRepo: userRepo, cfg: cfg,
+		outbox: outbox, mail: mail, rdb: rdb, userRepo: userRepo, anggotaRepo: anggotaRepo, cfg: cfg,
 		interval: interval, batch: batch, maxAttempts: maxAttempts, setupTTL: setupTTL,
 	}
 }
@@ -133,7 +135,13 @@ func (w *EmailWorker) processOne(ctx context.Context, it domain.EmailOutbox) {
 			return
 		}
 		link := publicURLFrom(w.cfg) + "/set-password?token=" + token
-		c := AccountSetupEmail(user.Name, link)
+		nia := ""
+		if w.anggotaRepo != nil {
+			if member, err := w.anggotaRepo.GetByUserID(ctx, user.ID); err == nil && member != nil {
+				nia = member.NIA
+			}
+		}
+		c := AccountSetupEmail(user.Name, nia, link)
 		subject, text, html = c.Subject, c.TextBody, c.HTMLBody
 	}
 

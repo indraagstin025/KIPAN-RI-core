@@ -105,11 +105,8 @@ func (h *AnggotaHandler) ResetPassword(c *fiber.Ctx) error {
 	if !ok {
 		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
-	password, err := h.service.ResetMemberPassword(c.Context(), id, actor, auditContextOf(c))
-	if err != nil {
+	if _, err := h.service.ResetMemberPassword(c.Context(), id, actor, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
-	return response.Success(c, "Password anggota direset — tampilkan sekali ke anggota", fiber.Map{
-		"one_time_password": password,
-	})
+	return response.Success(c, "Reset kata sandi: tautan set-password dikirim ke email anggota", nil)
 }

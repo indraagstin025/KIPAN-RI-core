@@ -20,7 +20,7 @@ func TestProvinsiDitolakSemuaAksiVerifikasi(t *testing.T) {
 	} {
 		item, member := approveFixture()
 		repo := &fakeApproveRepo{item: item, member: member}
-		svc := approveSvc(repo, &fakeMemberUserRepo{}, &fakeAnggotaRepo{})
+		svc := approveSvc(repo, &fakeMemberUserRepo{}, &fakeAnggotaRepo{}, &fakeOutboxRepo{})
 		prov := 32
 		actor := domain.ActorContext{
 			UserID: "admin-prov", Name: "Admin Prov",

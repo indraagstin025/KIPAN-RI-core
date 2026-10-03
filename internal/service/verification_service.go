@@ -31,12 +31,10 @@ type VerificationService interface {
 	RevealNIK(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
 }
 
-// ApprovalResult adalah hasil proses approval. OneTimePassword hanya terisi
-// saat akun USER baru dibuat (SETUJI): ditampilkan SEKALI ke admin penyetuju
-// untuk diteruskan ke anggota via kanal resmi. Tidak pernah masuk audit/log.
+// ApprovalResult adalah hasil proses approval. Kredensial awal TIDAK lagi
+// dikembalikan ke admin — dikirim ke email anggota via antrian (outbox).
 type ApprovalResult struct {
-	OneTimePassword string `json:"one_time_password,omitempty"`
-	NIA             string `json:"nia,omitempty"`
+	NIA string `json:"nia,omitempty"`
 }
 
 // VerificationDeps adalah dependensi service verifikasi (R1: pola deps).
@@ -48,6 +46,7 @@ type VerificationDeps struct {
 	KTASvc      KTAService
 	NotifRepo   repository.NotificationRepository
 	Mail        gateway.MailSender
+	OutboxRepo  repository.EmailOutboxRepository
 }
 
 type verificationSvc struct {
@@ -59,6 +58,7 @@ type verificationSvc struct {
 	ktaSvc      KTAService
 	notifRepo   repository.NotificationRepository
 	mail        gateway.MailSender
+	outboxRepo  repository.EmailOutboxRepository
 }
 
 func NewVerificationService(cfg *config.Config, deps VerificationDeps) VerificationService {
@@ -66,7 +66,7 @@ func NewVerificationService(cfg *config.Config, deps VerificationDeps) Verificat
 		cfg: cfg, repo: deps.Repo, anggotaRepo: deps.AnggotaRepo,
 		userRepo:  deps.UserRepo,
 		auditRepo: deps.AuditRepo, ktaSvc: deps.KTASvc, notifRepo: deps.NotifRepo,
-		mail: deps.Mail,
+		mail: deps.Mail, outboxRepo: deps.OutboxRepo,
 	}
 }
 
@@ -144,9 +144,18 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 		}
 		// Terbitkan akun USER anggota (idempoten: email sudah ada = link).
 		// Gagal di sini = admin retry (jalur heal melengkapi sisanya).
-		otp, err := s.ensureMemberAccount(ctx, member, actor, audit)
+		userID, isNew, err := s.ensureMemberAccount(ctx, member, actor, audit)
 		if err != nil {
 			return nil, err
+		}
+		// Kredensial via antrian email (Opsi A): tautan set-password untuk
+		// akun baru; notifikasi akun tertaut untuk akun yang sudah ada.
+		if isNew {
+			s.enqueueContent(ctx, domain.EmailOutboxSetPassword, item, &userID, item.Email,
+				EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
+		} else {
+			s.enqueueContent(ctx, domain.EmailOutboxAkunTerhubung, item, nil, item.Email,
+				AccountLinkedEmail(item.NamaLengkap, member.NIA, publicURLFrom(s.cfg)))
 		}
 		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 			"pendaftaran", strconv.Itoa(id), string(action), &meta)
@@ -154,9 +163,7 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 			"Pendaftaran "+item.NamaLengkap+" disetujui menjadi Anggota.",
 			domain.NotifTypeVerifikasi, "#admin?page=verifikasi",
 			item.ProvinsiID, item.KabupatenID)
-		// Batch 3: notifikasi DISETUJUI + NIA via email (async best-effort).
-		s.sendStatusEmail(item.NamaLengkap, item.Email, item.NomorPendaftaran, "DISETUJUI", "", member.NIA)
-		return &ApprovalResult{OneTimePassword: otp, NIA: member.NIA}, nil
+		return &ApprovalResult{NIA: member.NIA}, nil
 	}
 
 	if err := s.repo.UpdateStatusWithHistory(ctx, id, targetStatus, string(action), &actorID, &actorName, &actorRole, note); err != nil {
@@ -168,27 +175,40 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 		"Pendaftaran "+item.NamaLengkap+" diperbarui menjadi "+string(targetStatus)+".",
 		domain.NotifTypeVerifikasi, "#admin?page=verifikasi",
 		item.ProvinsiID, item.KabupatenID)
-	// Batch 3: PERBAIKAN & DITOLAK dikirim via email (async best-effort).
+	// Batch 3: PERBAIKAN & DITOLAK via antrian email (outbox).
 	if targetStatus == domain.PendaftaranStatusPerbaikan || targetStatus == domain.PendaftaranStatusDitolak {
-		s.sendStatusEmail(item.NamaLengkap, item.Email, item.NomorPendaftaran, string(targetStatus), note, "")
+		jenis := domain.EmailOutboxStatusPerbaikan
+		if targetStatus == domain.PendaftaranStatusDitolak {
+			jenis = domain.EmailOutboxStatusDitolak
+		}
+		s.enqueueContent(ctx, jenis, item, nil, item.Email,
+			StatusEmail(string(targetStatus), item.NamaLengkap, item.NomorPendaftaran, note, "", publicURLFrom(s.cfg)))
 	}
 	return &ApprovalResult{}, nil
 }
 
-// sendStatusEmail mengirim notifikasi perubahan status ke pendaftar via
-// email secara async best-effort (approve tidak boleh gagal karena SMTP).
-func (s *verificationSvc) sendStatusEmail(nama, email, nomor, status, catatan, nia string) {
-	if s.mail == nil || strings.TrimSpace(email) == "" {
+// enqueueContent menulis satu baris antrian email (best-effort, non-fatal).
+func (s *verificationSvc) enqueueContent(ctx context.Context, jenis domain.EmailOutboxKind, item *domain.Pendaftaran, userID *string, toEmail string, c EmailContent) {
+	if s.outboxRepo == nil || strings.TrimSpace(toEmail) == "" {
 		return
 	}
-	content := StatusEmail(status, nama, nomor, catatan, nia, publicURLFrom(s.cfg))
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if err := s.mail.Send(ctx, email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
-			log.Warn().Err(err).Str("nomor", nomor).Msg("Gagal mengirim notifikasi status via email")
-		}
-	}()
+	html := c.HTMLBody
+	entry := &domain.EmailOutbox{
+		Jenis: jenis, UserID: userID, ToEmail: toEmail,
+		Subject: c.Subject, TextBody: c.TextBody, HTMLBody: &html,
+	}
+	if item != nil {
+		id := item.ID
+		entry.PendaftaranID = &id
+		p, k := item.ProvinsiID, item.KabupatenID
+		entry.ProvinsiID = &p
+		entry.KabupatenID = &k
+	}
+	enqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.outboxRepo.Enqueue(enqCtx, entry); err != nil {
+		log.Warn().Err(err).Str("jenis", string(jenis)).Msg("Gagal enqueue email outbox")
+	}
 }
 
 // healKTADocument menyelesaikan PDF KTA untuk approve yang sebelumnya gagal
@@ -213,26 +233,34 @@ func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor dom
 	if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
 		return nil, err
 	}
-	otp, err := s.ensureMemberAccount(ctx, member, actor, audit)
+	userID, isNew, err := s.ensureMemberAccount(ctx, member, actor, audit)
 	if err != nil {
 		return nil, err
+	}
+	// Kredensial via antrian email (Opsi A).
+	if isNew {
+		s.enqueueContent(ctx, domain.EmailOutboxSetPassword, item, &userID, member.Email,
+			EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
+	} else {
+		s.enqueueContent(ctx, domain.EmailOutboxAkunTerhubung, item, nil, member.Email,
+			AccountLinkedEmail(member.NamaLengkap, member.NIA, publicURLFrom(s.cfg)))
 	}
 	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 		"pendaftaran", strconv.Itoa(id), string(domain.PendaftaranActionSetujui), &meta)
-	return &ApprovalResult{OneTimePassword: otp, NIA: member.NIA}, nil
+	return &ApprovalResult{NIA: member.NIA}, nil
 }
 
 // ensureMemberAccount menerbitkan akun USER untuk anggota (Batch 2).
-// Idempoten: email sudah terdaftar = hubungkan anggota ke akun existing
-// (tanpa password baru). Password awal acak 16 karakter, yang disimpan
-// hanya hash Argon2id — plaintext dikembalikan sekali ke pemanggil.
-func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domain.Anggota, actor domain.ActorContext, audit domain.AuditContext) (string, error) {
+// Idempoten: email sudah terdaftar = hubungkan anggota ke akun existing.
+// Mengembalikan (userID, akunBaru). Password acak dibuat HANYA untuk hash
+// (Opsi A): plaintext TIDAK dikembalikan — login via tautan set-password.
+func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domain.Anggota, actor domain.ActorContext, audit domain.AuditContext) (string, bool, error) {
 	if s.userRepo == nil || s.anggotaRepo == nil {
-		return "", unavailable("akun user")
+		return "", false, unavailable("akun user")
 	}
 	if member == nil || strings.TrimSpace(member.Email) == "" {
-		return "", domain.NewValidationError("Email anggota tidak valid untuk penerbitan akun")
+		return "", false, domain.NewValidationError("Email anggota tidak valid untuk penerbitan akun")
 	}
 
 	if existing, err := s.userRepo.GetByEmail(ctx, member.Email); err == nil && existing != nil {
@@ -241,29 +269,29 @@ func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domai
 		// anggota (pendaftar bisa menulis email orang lain) — minta admin
 		// menyelesaikan manual (mis. perbaiki email pendaftar).
 		if existing.Role != domain.RoleUser {
-			return "", domain.NewConflictError(
+			return "", false, domain.NewConflictError(
 				"Email pendaftar sudah dipakai akun non-anggota (" + string(existing.Role) +
 					"). Perbaiki email pendaftaran sebelum menyetujui")
 		}
 		if err := s.anggotaRepo.SetUserID(ctx, member.ID, existing.ID); err != nil {
-			return "", err
+			return "", false, err
 		}
 		actorID := actor.UserID
 		linkMeta := `{"event":"member_account_linked"}`
 		s.auditEvent(ctx, audit, &actorID, actor.Name, string(actor.Role),
 			"anggota", strconv.Itoa(member.ID), "LINK_USER", &linkMeta)
-		return "", nil
+		return existing.ID, false, nil
 	} else if !errors.Is(err, domain.ErrUserNotFound) {
-		return "", err
+		return "", false, err
 	}
 
 	password, err := generateMemberPassword(16)
 	if err != nil {
-		return "", fmt.Errorf("gagal membuat password awal: %w", err)
+		return "", false, fmt.Errorf("gagal membuat password awal: %w", err)
 	}
 	hash, err := argon2id.CreateHash(password, argon2Params)
 	if err != nil {
-		return "", fmt.Errorf("gagal hash password awal: %w", err)
+		return "", false, fmt.Errorf("gagal hash password awal: %w", err)
 	}
 	// Tipe akun mengikuti jalur pendaftaran (KADER/PENGURUS); legacy
 	// tanpa tipe dianggap KADER (selaras DEFAULT migrasi 000011).
@@ -283,16 +311,16 @@ func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domai
 		KabupatenID:  &member.KabupatenID,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return "", err
+		return "", false, err
 	}
 	if err := s.anggotaRepo.SetUserID(ctx, member.ID, user.ID); err != nil {
-		return "", err
+		return "", false, err
 	}
 	actorID := actor.UserID
 	createMeta := `{"event":"member_account_created","role":"USER","tipe":"` + string(tipeUser) + `"}`
 	s.auditEvent(ctx, audit, &actorID, actor.Name, string(actor.Role),
 		"users", user.ID, "CREATE", &createMeta)
-	return password, nil
+	return user.ID, true, nil
 }
 
 // memberPasswordAlphabet aman untuk shell/.env (tanpa kutip, backslash,

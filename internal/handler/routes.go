@@ -94,7 +94,7 @@ func RegisterRoutes(
 	// Host kosong = LogMailSender (HANYA dev; produksi fail-fast).
 	mailSender := wireMailSender(cfg)
 	// Worker antrian email (outbox): kirim status & tautan set-password.
-	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo)
+	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo)
 	go emailWorker.Run(context.Background())
 	revisionSvc := service.NewRevisionService(cfg, service.RevisionDeps{
 		Repo: pendaftaranRepo, StorageSvc: storageService, AuditRepo: auditRepo,
@@ -103,7 +103,7 @@ func RegisterRoutes(
 	verificationSvc := service.NewVerificationService(cfg, service.VerificationDeps{
 		Repo: pendaftaranRepo, AnggotaRepo: anggotaRepo, UserRepo: userRepo,
 		AuditRepo: auditRepo, KTASvc: ktaSvc,
-		NotifRepo: notifRepo, Mail: mailSender,
+		NotifRepo: notifRepo, Mail: mailSender, OutboxRepo: emailOutboxRepo,
 	})
 	pendaftaranHandler := NewPendaftaranHandler(pendaftaranService, revisionSvc, verificationSvc, val)
 	otpHandler := NewOTPHandler(otpSvc)
@@ -125,7 +125,8 @@ func RegisterRoutes(
 	anggotaService := service.NewAnggotaService(cfg, service.AnggotaDeps{
 		AnggotaRepo: anggotaRepo, WilayahRepo: wilayahRepo,
 		UserRepo: userRepo, AuditRepo: auditRepo,
-		ListRepo: repository.NewListKeysetRepository(db),
+		ListRepo:   repository.NewListKeysetRepository(db),
+		OutboxRepo: emailOutboxRepo,
 	})
 	anggotaHandler := NewAnggotaHandler(anggotaService)
 	notifHandler := NewNotificationHandler(service.NewNotificationService(cfg, notifRepo))

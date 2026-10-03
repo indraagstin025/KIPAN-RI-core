@@ -231,16 +231,11 @@ func (h *PendaftaranHandler) processApproval(c *fiber.Ctx, action domain.Pendaft
 	if err != nil {
 		return response.FromError(c, err)
 	}
-	// Password awal akun USER hanya ada di respons SETUJI saat akun baru
-	// dibuat: admin wajib meneruskannya ke anggota via kanal resmi.
-	// Tidak pernah dicatat di log/audit oleh service.
+	// Kredensial dikirim ke email anggota via antrian (tautan set-password);
+	// tidak ada password di respons admin.
 	var data interface{}
 	if action == domain.PendaftaranActionSetujui && res != nil {
-		out := fiber.Map{"nia": res.NIA}
-		if res.OneTimePassword != "" {
-			out["one_time_password"] = res.OneTimePassword
-		}
-		data = out
+		data = fiber.Map{"nia": res.NIA}
 	}
 	return response.Success(c, successMsg, data)
 }

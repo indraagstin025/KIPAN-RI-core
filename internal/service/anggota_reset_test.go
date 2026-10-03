@@ -6,8 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexedwards/argon2id"
-
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 )
 
@@ -31,21 +29,25 @@ func superActor32() domain.ActorContext {
 
 func TestResetMemberPasswordSukses(t *testing.T) {
 	member, user, anggotaRepo, userRepo := resetFixture()
-	svc := NewAnggotaService(nil, AnggotaDeps{AnggotaRepo: anggotaRepo, UserRepo: userRepo})
+	outbox := &fakeOutboxRepo{}
+	svc := NewAnggotaService(nil, AnggotaDeps{AnggotaRepo: anggotaRepo, UserRepo: userRepo, OutboxRepo: outbox})
 
 	pw, err := svc.ResetMemberPassword(context.Background(), member.ID, superActor32(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("reset gagal: %v", err)
 	}
-	if len(pw) < 12 {
-		t.Fatalf("password terlalu pendek: %d", len(pw))
+	if pw != "" {
+		t.Fatalf("tidak boleh mengembalikan password plaintext, dapat %q", pw)
 	}
-	match, err := argon2id.ComparePasswordAndHash(pw, user.PasswordHash)
-	if err != nil || !match {
-		t.Fatal("password baru tidak cocok dengan hash tersimpan")
+	if user.PasswordHash == "" {
+		t.Fatal("hash password baru harus tersimpan")
 	}
 	if len(userRepo.revoked) != 1 || userRepo.revoked[0] != user.ID {
 		t.Fatalf("seluruh sesi anggota harus dicabut, dapat %v", userRepo.revoked)
+	}
+	// Opsi A: kirim tautan set-password via antrian.
+	if len(outbox.enqueued) != 1 || outbox.enqueued[0].Jenis != domain.EmailOutboxSetPassword {
+		t.Fatalf("harap 1 outbox SET_PASSWORD, dapat %+v", outbox.enqueued)
 	}
 }
 

@@ -46,6 +46,7 @@ type AnggotaDeps struct {
 	UserRepo    repository.UserRepository
 	AuditRepo   repository.AuditLogRepository
 	ListRepo    repository.ListKeysetRepository
+	OutboxRepo  repository.EmailOutboxRepository
 }
 
 type anggotaService struct {
@@ -55,6 +56,7 @@ type anggotaService struct {
 	userRepo    repository.UserRepository
 	auditRepo   repository.AuditLogRepository
 	listRepo    repository.ListKeysetRepository
+	outboxRepo  repository.EmailOutboxRepository
 }
 
 func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
@@ -65,6 +67,7 @@ func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
 		userRepo:    deps.UserRepo,
 		auditRepo:   deps.AuditRepo,
 		listRepo:    deps.ListRepo,
+		outboxRepo:  deps.OutboxRepo,
 	}
 }
 
@@ -298,10 +301,28 @@ func (s *anggotaService) ResetMemberPassword(ctx context.Context, anggotaID int,
 		log.Warn().Err(err).Str("user_id", user.ID).
 			Msg("Gagal mencabut sesi setelah reset password anggota")
 	}
+	// Opsi A: kirim tautan set-password via antrian; admin TIDAK melihat password.
+	if s.outboxRepo != nil {
+		html := ""
+		entry := &domain.EmailOutbox{
+			Jenis:      domain.EmailOutboxSetPassword,
+			UserID:     &user.ID,
+			ToEmail:    user.Email,
+			Subject:    "Buat Kata Sandi Akun KIPAN",
+			TextBody:   "Buat kata sandi akun Anda melalui tautan pada email ini.",
+			HTMLBody:   &html,
+			ProvinsiID: &member.ProvinsiID, KabupatenID: &member.KabupatenID,
+		}
+		enqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := s.outboxRepo.Enqueue(enqCtx, entry); err != nil {
+			log.Warn().Err(err).Str("user_id", user.ID).Msg("Gagal enqueue email set-password")
+		}
+		cancel()
+	}
 
 	actorID := actor.UserID
-	meta := `{"event":"member_password_reset","sessions_revoked":true}`
+	meta := `{"event":"member_password_reset","sessions_revoked":true,"email_queued":true}`
 	writeAudit(ctx, s.auditRepo, audit, &actorID, actor.Name, string(actor.Role),
 		"anggota", strconv.Itoa(member.ID), "PASSWORD_RESET", &meta)
-	return password, nil
+	return "", nil
 }

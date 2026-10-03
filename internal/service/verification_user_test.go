@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexedwards/argon2id"
-
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
@@ -118,11 +116,23 @@ func approveFixture() (*domain.Pendaftaran, *domain.Anggota) {
 	return item, member
 }
 
-func approveSvc(repo *fakeApproveRepo, users *fakeMemberUserRepo, anggota *fakeAnggotaRepo) VerificationService {
+// fakeOutboxRepo merekam email yang di-enqueue (outbox).
+type fakeOutboxRepo struct {
+	repository.EmailOutboxRepository
+	enqueued []*domain.EmailOutbox
+}
+
+func (f *fakeOutboxRepo) Enqueue(_ context.Context, it *domain.EmailOutbox) error {
+	f.enqueued = append(f.enqueued, it)
+	return nil
+}
+
+func approveSvc(repo *fakeApproveRepo, users *fakeMemberUserRepo, anggota *fakeAnggotaRepo, outbox repository.EmailOutboxRepository) VerificationService {
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = testKTASigningKey
 	return NewVerificationService(cfg, VerificationDeps{
 		Repo: repo, AnggotaRepo: anggota, UserRepo: users, KTASvc: &fakeApproveKTASvc{},
+		OutboxRepo: outbox,
 	})
 }
 
@@ -136,35 +146,36 @@ func TestApproveCreatesUserAccount(t *testing.T) {
 	repo := &fakeApproveRepo{item: item, member: member}
 	users := &fakeMemberUserRepo{}
 	anggota := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{member.ID: member}}
-	svc := approveSvc(repo, users, anggota)
+	outbox := &fakeOutboxRepo{}
+	svc := approveSvc(repo, users, anggota, outbox)
 
 	res, err := svc.ProcessApproval(context.Background(), item.ID, domain.PendaftaranActionSetujui, "", superActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("approve gagal: %v", err)
 	}
-	if res == nil || res.OneTimePassword == "" {
-		t.Fatal("harap one-time password dikembalikan sekali")
-	}
-	if res.NIA != member.NIA {
-		t.Fatalf("harap NIA %q, dapat %q", member.NIA, res.NIA)
+	if res == nil || res.NIA != member.NIA {
+		t.Fatalf("harap NIA %q, dapat %+v", member.NIA, res)
 	}
 
 	u, err := users.GetByEmail(context.Background(), member.Email)
 	if err != nil {
 		t.Fatalf("akun USER tidak tercipta: %v", err)
 	}
-	if u.Role != domain.RoleUser || u.TipeUser != domain.UserTipeKader {
-		t.Fatalf("role/tipe salah: %+v", u)
+	if u.Role != domain.RoleUser || u.TipeUser != domain.UserTipeKader || u.Status != domain.UserStatusAktif {
+		t.Fatalf("akun salah: %+v", u)
 	}
-	if u.Status != domain.UserStatusAktif {
-		t.Fatalf("status harus Aktif: %+v", u)
-	}
-	match, err := argon2id.ComparePasswordAndHash(res.OneTimePassword, u.PasswordHash)
-	if err != nil || !match {
-		t.Fatal("password awal tidak cocok dengan hash tersimpan")
+	if u.PasswordHash == "" {
+		t.Fatal("harap hash password tersimpan (walau tak ditampilkan)")
 	}
 	if got := anggota.links[member.ID]; got != u.ID {
 		t.Fatalf("anggota tidak terhubung ke akun: %q", got)
+	}
+	// Opsi A: kredensial via antrian SET_PASSWORD (bukan plaintext).
+	if len(outbox.enqueued) != 1 || outbox.enqueued[0].Jenis != domain.EmailOutboxSetPassword {
+		t.Fatalf("harap 1 outbox SET_PASSWORD, dapat %+v", outbox.enqueued)
+	}
+	if outbox.enqueued[0].UserID == nil || *outbox.enqueued[0].UserID != u.ID {
+		t.Fatalf("outbox harus menunjuk user_id akun baru")
 	}
 }
 
@@ -174,14 +185,15 @@ func TestApprovePengurusCreatesPengurusUser(t *testing.T) {
 	repo := &fakeApproveRepo{item: item, member: member}
 	users := &fakeMemberUserRepo{}
 	anggota := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{member.ID: member}}
-	svc := approveSvc(repo, users, anggota)
+	outbox := &fakeOutboxRepo{}
+	svc := approveSvc(repo, users, anggota, outbox)
 
 	res, err := svc.ProcessApproval(context.Background(), item.ID, domain.PendaftaranActionSetujui, "", superActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("approve gagal: %v", err)
 	}
-	if res == nil || res.OneTimePassword == "" {
-		t.Fatal("harap one-time password dikembalikan sekali")
+	if res == nil {
+		t.Fatal("hasil nil")
 	}
 	u, err := users.GetByEmail(context.Background(), member.Email)
 	if err != nil {
@@ -189,6 +201,9 @@ func TestApprovePengurusCreatesPengurusUser(t *testing.T) {
 	}
 	if u.TipeUser != domain.UserTipePengurus {
 		t.Fatalf("harap tipe PENGURUS mengikuti pendaftaran, dapat %q", u.TipeUser)
+	}
+	if len(outbox.enqueued) != 1 || outbox.enqueued[0].Jenis != domain.EmailOutboxSetPassword {
+		t.Fatalf("harap outbox SET_PASSWORD, dapat %+v", outbox.enqueued)
 	}
 }
 
@@ -200,7 +215,7 @@ func TestApprovalWajibCatatan(t *testing.T) {
 	} {
 		item, member := approveFixture()
 		repo := &fakeApproveRepo{item: item, member: member}
-		svc := approveSvc(repo, &fakeMemberUserRepo{}, &fakeAnggotaRepo{})
+		svc := approveSvc(repo, &fakeMemberUserRepo{}, &fakeAnggotaRepo{}, &fakeOutboxRepo{})
 		_, err := svc.ProcessApproval(context.Background(), item.ID, action, "   ", superActor(), domain.AuditContext{})
 		appErr, ok := err.(*domain.AppError)
 		if !ok || appErr.Code != 422 {
@@ -216,7 +231,7 @@ func TestApproveRejectsNonUserEmail(t *testing.T) {
 	repo := &fakeApproveRepo{item: item, member: member}
 	users := &fakeMemberUserRepo{byEmail: map[string]*domain.User{member.Email: admin}}
 	anggota := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{member.ID: member}}
-	svc := approveSvc(repo, users, anggota)
+	svc := approveSvc(repo, users, anggota, &fakeOutboxRepo{})
 
 	_, err := svc.ProcessApproval(context.Background(), item.ID, domain.PendaftaranActionSetujui, "", superActor(), domain.AuditContext{})
 	appErr, ok := err.(*domain.AppError)
@@ -234,20 +249,25 @@ func TestApproveLinksExistingUser(t *testing.T) {
 	repo := &fakeApproveRepo{item: item, member: member}
 	users := &fakeMemberUserRepo{byEmail: map[string]*domain.User{member.Email: existing}}
 	anggota := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{member.ID: member}}
-	svc := approveSvc(repo, users, anggota)
+	outbox := &fakeOutboxRepo{}
+	svc := approveSvc(repo, users, anggota, outbox)
 
 	res, err := svc.ProcessApproval(context.Background(), item.ID, domain.PendaftaranActionSetujui, "", superActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("approve gagal: %v", err)
 	}
-	if res == nil || res.OneTimePassword != "" {
-		t.Fatal("email existing: tidak boleh ada password baru")
+	if res == nil {
+		t.Fatal("hasil nil")
 	}
 	if len(users.created) != 0 {
 		t.Fatalf("tidak boleh buat user baru, tercipta %d", len(users.created))
 	}
 	if got := anggota.links[member.ID]; got != existing.ID {
 		t.Fatalf("anggota harus terhubung ke akun existing: %q", got)
+	}
+	// Akun tertaut: outbox AKUN_TERHUBUNG (tanpa set-password).
+	if len(outbox.enqueued) != 1 || outbox.enqueued[0].Jenis != domain.EmailOutboxAkunTerhubung {
+		t.Fatalf("harap 1 outbox AKUN_TERHUBUNG, dapat %+v", outbox.enqueued)
 	}
 }
 

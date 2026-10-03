@@ -154,19 +154,48 @@ func catatanBlock(catatan string) string {
 
 // AccountSetupEmail menyusun email tautan "buat kata sandi" untuk akun anggota
 // baru (Opsi A: tanpa password plaintext di email/DB).
-func AccountSetupEmail(nama, link string) EmailContent {
+func AccountSetupEmail(nama, nia, link string) EmailContent {
 	if strings.TrimSpace(nama) == "" {
 		nama = "Anggota"
 	}
 	lines := []string{
 		"Halo " + nama + ",",
 		"Akun keanggotaan KIPAN Anda telah aktif.",
-		"Buat kata sandi Anda melalui tautan berikut (berlaku 7 hari dan hanya dapat dipakai sekali).",
 	}
+	if strings.TrimSpace(nia) != "" {
+		lines = append(lines, "Nomor Induk Anggota (NIA): "+nia)
+	}
+	lines = append(lines, "Buat kata sandi Anda melalui tautan berikut (berlaku 7 hari dan hanya dapat dipakai sekali).")
+	text := "Halo " + nama + ",\n\nAkun keanggotaan KIPAN Anda aktif.\n"
+	if strings.TrimSpace(nia) != "" {
+		text += "NIA Anda: " + nia + "\n"
+	}
+	text += "Buat kata sandi melalui tautan berikut (berlaku 7 hari, sekali pakai):\n" + link + emailSignature
 	return EmailContent{
 		Subject:  "Buat Kata Sandi Akun KIPAN",
-		TextBody: "Halo " + nama + ",\n\nAkun keanggotaan KIPAN Anda aktif.\nBuat kata sandi melalui tautan berikut (berlaku 7 hari, sekali pakai):\n" + link + emailSignature,
+		TextBody: text,
 		HTMLBody: emailHTML("Buat Kata Sandi Akun", lines, "Buat Kata Sandi", link),
+	}
+}
+
+// AccountLinkedEmail menyusun email saat akun anggota sudah ada (tertaut),
+// tanpa password/tautan (gunakan kredensial yang sudah dimiliki).
+func AccountLinkedEmail(nama, nia, publicURL string) EmailContent {
+	if strings.TrimSpace(nama) == "" {
+		nama = "Anggota"
+	}
+	lines := []string{
+		"Halo " + nama + ",",
+		"Pendaftaran Anda telah disetujui dan akun keanggotaan KIPAN Anda telah tertaut.",
+	}
+	if strings.TrimSpace(nia) != "" {
+		lines = append(lines, "Nomor Induk Anggota (NIA): "+nia)
+	}
+	lines = append(lines, "Silakan login menggunakan kredensial akun yang sudah Anda miliki.")
+	return EmailContent{
+		Subject:  "Pendaftaran Disetujui — Akun Tertaut",
+		TextBody: "Halo " + nama + ",\n\nPendaftaran Anda disetujui dan akun KIPAN telah tertaut.\nNIA: " + nia + "\nLogin dengan kredensial yang sudah Anda miliki.\n" + emailSignature,
+		HTMLBody: emailHTML("Pendaftaran Disetujui", lines, "Masuk ke Akun", publicURL+"/login"),
 	}
 }
 
