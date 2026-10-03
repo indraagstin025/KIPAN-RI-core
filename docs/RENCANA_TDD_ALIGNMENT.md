@@ -42,7 +42,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 
 ### Fase C — Fitur Admin
 - C1 Laporan & Statistik (+ demografi + anomali NIA) ✅ **Selesai**.
-- C2 Penelusur Audit + CSV.
+- C2 Penelusur Audit + CSV ✅ **Selesai**.
 - C3 Manajemen User scope Nasional.
 - C4 Role & Wewenang (katalog read-only).
 - C5 Profil Organisasi — migrasi `000029`.
@@ -259,3 +259,17 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E
   `GET /admin/laporan` & `export.csv` mengembalikan data benar (termasuk 1
   anomali NIA pada data dev).
+
+## 15. Catatan Fase C — C2 Penelusur Audit + CSV (TDD §7.2)
+
+- **Repository** `AuditLogRepository.List(ctx, domain.AuditFilter)` — filter aksi,
+  entitas, aktor (ILIKE), rentang `created_at`, pagination offset, total
+  opsional. Tetap **append-only** (hanya baca, tak ada update/delete).
+- **Service** `audit_service.go`: `List` + `ExportCSV` (maks 5000 baris) +
+  `ParseAuditFilter` (terima RFC3339 atau `YYYY-MM-DD`).
+- **Endpoints** (capability `view_audit` = Super/Nasional):
+  `GET /admin/audit` dan `GET /admin/audit/export.csv`.
+- **Frontend**: halaman `/admin/audit` (filter aksi/entitas/aktor/tanggal,
+  tabel, pagination, Ekspor CSV, Cetak) + menu **Jejak Audit** (Super/Nasional).
+- **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E
+  Nasional got 200/200, **Kabupaten 403**, total 199 baris.

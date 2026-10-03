@@ -36,6 +36,7 @@ type deps struct {
 	kepengurusanHandler *handler.KepengurusanHandler
 	dashboardHandler    *handler.DashboardHandler
 	laporanHandler      *handler.LaporanHandler
+	auditHandler        *handler.AuditHandler
 }
 
 // newDeps membangun semua dependensi aplikasi (repo → service → handler) dan
@@ -99,6 +100,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	notifService := service.NewNotificationService(cfg, notifRepo)
 	dashboardService := service.NewDashboardService(repository.NewDashboardRepository(db))
 	laporanService := service.NewLaporanService(cfg, repository.NewLaporanRepository(db))
+	auditService := service.NewAuditService(auditRepo)
 	kepengurusanService := service.NewKepengurusanService(cfg, service.KepengurusanDeps{
 		JabatanRepo:  repository.NewJabatanRepository(db),
 		SKRepo:       repository.NewSKRepository(db),
@@ -130,5 +132,6 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 		kepengurusanHandler: handler.NewKepengurusanHandler(kepengurusanService),
 		dashboardHandler:    handler.NewDashboardHandler(dashboardService),
 		laporanHandler:      handler.NewLaporanHandler(laporanService),
+		auditHandler:        handler.NewAuditHandler(auditService),
 	}
 }
