@@ -346,3 +346,13 @@ Seluruh batch **selesai & terverifikasi** (backend `build`/`vet`/`test` hijau, f
 - **B1D**: **Nonaktifkan SK** mendemosi pengurus aktif (Demisioner/Diberhentikan + keterangan) secara atomik.
 - Diadopsi dari project lama; perbandingan lengkap ada di catatan diskusi (project lama: SK dulu lalu tambah pengurus, tanpa DRAFT).
 
+### Tindak lanjut (P1–P7) — Antrian Email & Kredensial (Opsi A)
+- **P1**: antrean `/admin/pendaftaran` mengecualikan `DISETUJUI` (pindah ke Data Anggota).
+- **P2**: migrasi `000023_email_outbox` + domain + repository + test.
+- **P3**: worker email + config (`EMAIL_WORKER_*`, `SETUP_TOKEN_TTL`) + template `AccountSetupEmail`/`AccountLinkedEmail`.
+- **P4**: enqueue di `verification_service` (kredensial via tautan), `one_time_password` dihapus dari respons/UI; reset password anggota → antrian.
+- **P5**: `POST /auth/set-password` + admin `/admin/email-outbox` (list/retry/retry-pending/batch).
+- **P6**: FE hapus tampilan password, halaman `/set-password`, menu **Antrian Email**.
+- **P7**: regresi + docs. Email dev via **Mailtrap sandbox** (worker otomatis + tombol manual).
+- Detail: `docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md` (§13).
+

@@ -1,6 +1,6 @@
 # Implementasi Antrian Email Status & Distribusi Kredensial Awal Anggota
 
-> Status: **Rancangan implementasi (belum dieksekusi)**
+> Status: **SELESAI (terimplementasi)** — 04 Oktober 2026
 > Tanggal: 02 Oktober 2026
 > Ruang lingkup: backend Go (`backend/`) + frontend React (`frontend/`)
 > Kode dokumen: `IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md`
@@ -360,3 +360,24 @@ Bila Anda tetap memilih password statis (bukan tautan):
    - Token revisi (`revision_service.go`) dan reset password (`password_reset_service.go`) **tetap dikirim langsung** (tidak masuk outbox pada iterasi ini).
 
 > Status dokumen: rancangan final untuk dieksekusi nanti (belum ada perubahan kode).
+
+---
+
+## 13. Status Implementasi (Batch P1–P7, 04 Okt 2026) — SELESAI
+
+Dibangun sesuai keputusan: **Opsi A** (tautan set-password), worker otomatis + tombol manual "Kirim Semua Pending" + kirim-ulang terpilih, layar ter-scope wilayah. Email via **Mailtrap sandbox** (SMTP yang sama).
+
+| Batch | Isi |
+|---|---|
+| **P1** | Antrean `/admin/pendaftaran` **mengecualikan DISETUJUI** (backend `queueWhere` + tab FE dihapus) |
+| **P2** | Migrasi **`000023_email_outbox`** + `domain.EmailOutbox` + `repository.EmailOutboxRepository` + test |
+| **P3** | **Worker** `internal/service/email_worker.go` + config (`EMAIL_WORKER_*`, `SETUP_TOKEN_TTL`) + template `AccountSetupEmail`/`AccountLinkedEmail` + wiring di `routes.go` |
+| **P4** | Enqueue di `verification_service` (SETUJUI → `SET_PASSWORD`/`AKUN_TERHUBUNG`; PERBAIKAN/DITOLAK → `STATUS_*`); **hapus** `one_time_password` dari respons/UI; reset password anggota → enqueue |
+| **P5** | `POST /auth/set-password` (prefix `pwsetup:`) + admin `GET /admin/email-outbox`, `POST /admin/email-outbox/:id/retry`, `/retry-pending`, `/retry` (batch) |
+| **P6** | FE: hapus tampilan password; halaman `/set-password`; menu **Antrian Email** (tabel + filter + pilih-banyak kirim ulang + Kirim Semua Pending) |
+| **P7** | Regresi (`go test/vet` dgn integration, `tsc/lint/build`) + E2E worker→Mailtrap (`sent`) |
+
+Catatan implementasi:
+- Migrasi memakai nomor **`000023`** (rencana awal menyebut `000014` — sudah usang).
+- Worker: interval 10s, batch 25, maks 5 percobaan (DLQ), token set-password TTL 168h (Redis `pwsetup:`).
+- Tidak ada password/token plaintext di tabel outbox.

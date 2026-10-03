@@ -83,7 +83,7 @@ Frontend berjalan di `http://localhost:5173`
 | [`docs/IMPLEMENTASI_SK_MULTILEVEL.md`](docs/IMPLEMENTASI_SK_MULTILEVEL.md) | Lanjutan SK: multi-level, Single Active SK, ganti jabatan pengurus |
 | [`docs/Document/IMPLEMENTASI_SUPER_ADMIN_LANJUTAN.md`](docs/Document/IMPLEMENTASI_SUPER_ADMIN_LANJUTAN.md) | **SELESAI (B0–B9)**: SK Draft→Ajukan, jabatan berlevel, pengurus, pendaftaran draft/kedaluwarsa, master wilayah, admin nasional, manajemen pengguna, optimisasi skala |
 | [`docs/IMPLEMENTASI_WILAYAH_NASIONAL.md`](docs/IMPLEMENTASI_WILAYAH_NASIONAL.md) | Master wilayah 38 provinsi + 514 kab/kota |
-| [`docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md`](docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md) | Antrean email & status pengiriman |
+| [`docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md`](docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md) | **SELESAI**: antrean email (outbox) + kredensial via tautan set-password |
 | [`docs/IMPLEMENTASI_KTA_CARD_DESIGN_LAMA.md`](docs/IMPLEMENTASI_KTA_CARD_DESIGN_LAMA.md) | Desain & output KTA (PDF + QR) |
 | [`docs/audit-security/`](docs/audit-security/) | Laporan audit keamanan OWASP (S1–S9) |
 

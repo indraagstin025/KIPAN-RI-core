@@ -104,20 +104,16 @@ Akun yang dibuat (email sama dengan `pentest_suite.ps1`):
   - Tiket unduh PDF KTA milik sendiri. Otorisasi = `anggota.user_id`
     (bukan wilayah). Tanpa anggota terhubung → `404`.
   - Akun `USER` dibuat otomatis saat admin menyetujui pendaftaran
-    (`POST /admin/pendaftaran/:id/setujui`): respons sukses memuat
-    `one_time_password` **sekali** (password awal acak untuk diteruskan
-    ke anggota via kanal resmi; tidak pernah masuk log/audit).
-    Email yang sudah punya akun **ber-role `USER`** → dihubungkan tanpa
-    password baru. Email milik akun non-anggota (admin, dsb) → `409`
+    (`POST /admin/pendaftaran/:id/setujui`). **Kredensial dikirim ke email
+    anggota via antrian** (tautan set-password, `POST /auth/set-password`); respons admin **tanpa password**.
+    Email yang sudah punya akun **ber-role `USER`** → dihubungkan (email `AKUN_TERHUBUNG`, tanpa set-password). Email milik akun non-anggota (admin, dsb) → `409`
     (admin harus memperbaiki email pendaftar; mencegah data anggota
     "dimiliki" akun orang lain).
 
 * **`POST /api/v1/admin/anggota/:id/reset-password`** (Batch T1)
-  - Admin (dalam yurisdiksi anggota) menerbitkan password awal **baru**
-    untuk akun `USER` anggota. Respons memuat `one_time_password` **sekali**.
+  - Admin (dalam yurisdiksi anggota) memicu **tautan set-password** ke email anggota (via antrian); respons **tanpa** password.
   - Seluruh sesi anggota dicabut; aksi tercatat di audit (`PASSWORD_RESET`,
     tanpa password). Anggota belum punya akun → `409`.
-  - Dipakai saat password awal hasil approve hilang/terlewat.
 
 ### 5. OTP WhatsApp Submit Pendaftaran (Publik, Anti-Bot)
 * **`POST /api/v1/pendaftaran/otp/whatsapp/request`** `{"whatsapp":"081234567890"}`
@@ -199,6 +195,16 @@ satu wilayah dengan SK; SK `DISETUJUI` **terkunci** (buat SK baru untuk perubaha
 * Keyset pagination (opt-in `?paginate=cursor` + `meta.next_cursor`) untuk **Anggota** & **Pendaftaran**.
 * `with_total=0` (lewati COUNT) untuk SK/Pengurus; SK list memakai `LEFT JOIN LATERAL` untuk hitungan pengurus.
 * Frontend: debounce 300 ms; pager keyset. Monitoring: `pg_stat_statements` + log request >200 ms.
+
+### 13. Antrian Email (Outbox) & Set-Password (P1–P7)
+* **`POST /api/v1/auth/set-password`** `{token,new_password}` — tukar token "buat kata sandi" (dari email) dengan sandi baru (prefix Redis `pwsetup:`, TTL 7 hari, sekali pakai).
+* **`GET /api/v1/admin/email-outbox?jenis=&status=&page=&limit=`** — daftar antrian email (ter-scope wilayah).
+* **`POST /api/v1/admin/email-outbox/:id/retry`** — kirim ulang satu email.
+* **`POST /api/v1/admin/email-outbox/retry-pending`** — jadwalkan semua pending segera.
+* **`POST /api/v1/admin/email-outbox/retry`** `{ids:[...]}` — kirim ulang terpilih (batch).
+* Worker otomatis (interval 10s, batch 25, maks 5 percobaan) mengirim via SMTP; di dev memakai **Mailtrap sandbox**. Jenis: `STATUS_DISETUJUI`, `STATUS_DITOLAK`, `STATUS_PERBAIKAN`, `SET_PASSWORD`, `AKUN_TERHUBUNG`.
+* **Antrean `/admin/pendaftaran` mengecualikan `DISETUJUI`** (data yang disetujui tampil di Data Anggota).
+* Detail: `docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md`.
 
 ---
 
