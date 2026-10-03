@@ -331,3 +331,10 @@ Seluruh batch **selesai & terverifikasi** (backend `build`/`vet`/`test` hijau, f
 - **B-W4**: FE **modal bersama** (`components/ui/modal.tsx`) dengan ESC/backdrop-close/scroll-lock + loading di modal Detail.
 - Di luar cakupan (sesuai keputusan): URL sync & Export/Cetak.
 
+### Tindak lanjut (B-P1–B-P6) — UX Pengangkatan Kader → Pengurus
+- **Wizard terpadu** `PromotePengurusWizard` (Stepper: SK → Anggota → Jabatan → Konfirmasi) dipakai di **3 pintu masuk**: halaman Pengurus, detail SK (preset SK), detail Anggota (preset Anggota).
+- **UX**: jabatan inti terisi = disabled; empty-state informatif; ringkasan efek (tipe→PENGURUS, sesi dicabut, email) + konfirmasi kelayakan; busy per-aksi (bukan Overlay global); state sukses.
+- **Panduan aturan SK** ditampilkan: "Buat → Susun Pengurus → Ajukan → Sahkan" + penjelasan **Single Active SK** (di detail SK & form buat SK). Ajukan SK butuh minimal 1 pengurus.
+- Helper `canPromotePengurus` (roles.ts) + tombol "Jadikan Pengurus" di `AnggotaDetailPage`.
+- **Tanpa perubahan backend** (endpoint & validasi sudah ada).
+

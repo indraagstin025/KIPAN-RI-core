@@ -173,6 +173,8 @@ PROV→`MENUNGGU_NASIONAL`, NAS→`DISETUJUI` final) → PROV `TERUSKAN` → NAS
 Aturan: jabatan **inti** maksimum satu pemegang per SK; anggota wajib `AKTIF` &
 satu wilayah dengan SK; SK `DISETUJUI` **terkunci** (buat SK baru untuk perubahan).
 
+> **UI:** pengangkatan memakai **wizard terpadu** (`PromotePengurusWizard`) via tombol di halaman **Pengurus**, **detail SK**, dan **detail Anggota** ("Jadikan Pengurus"). Urutan langkah: **SK → Anggota → Jabatan → Konfirmasi**; jabatan inti yang sudah terisi otomatis non-aktif. Susun pengurus **sebelum** SK diajukan.
+
 ### 9. Dasbor Analitik
 * **`GET /api/v1/admin/dashboard`** — ringkasan ter-scope: Nasional → per Provinsi; Provinsi → per Kabupaten/Kota; Kabupaten → per Kecamatan. Akses `USER` ditolak (403).
 

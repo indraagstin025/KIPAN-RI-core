@@ -185,11 +185,20 @@ Semua: `Authenticate` + `RequireRoles` + `ScopeWilayah` + `CanAccessWilayah` + a
 
 ## 5. Perubahan Frontend (admin)
 
-- Halaman **SK**: daftar + filter, buat (nomor/judul/tanggal/file), detail + panel approval per rantai, **dialog Tambah Pengurus** (pilih jabatan → cari anggota nama/NIA → checkbox konfirmasi → tambah).
-- Halaman **Pengurus**: daftar + search + ubah status/nonaktifkan.
+> **Revisi UX (B-P1…B-P6, 03 Okt 2026):** pengangkatan disatukan menjadi
+> **satu wizard** `PromotePengurusWizard` (Stepper: **SK → Anggota → Jabatan →
+> Konfirmasi**) yang dipakai di **tiga pintu masuk**: halaman Pengurus, detail
+> SK (preset SK terkunci), dan detail Anggota (preset Anggota). Wizard menandai
+> **jabatan inti yang sudah terisi (disabled)**, punya empty-state informatif,
+> ringkasan efek (tipe KADER→PENGURUS, sesi dicabut, email), dan busy per-aksi.
+> Aturan SK ditampilkan sebagai panduan (Buat → Susun Pengurus → Ajukan →
+> Sahkan) beserta penjelasan *Single Active SK*.
+
+- Halaman **SK**: daftar + filter, buat (nomor/judul/tanggal/file), detail + panel approval per rantai, **wizard Angkat Pengurus** (dipicu tombol di panel Susunan Pengurus, SK terpreset).
+- Halaman **Pengurus**: daftar + filter/stats + **wizard Angkat Pengurus** (pilih SK lebih dulu).
+- Halaman **Anggota detail**: tombol **"Jadikan Pengurus"** (tampil untuk KADER + admin) → wizard dengan anggota terpreset.
 - Halaman **Jabatan** (master, Super/Nasional).
 - Notifikasi sukses/gagal + loading per aksi (pola `Spinner`/`Overlay` existing).
-- `AnggotaDetailPage`: tampilkan badge `tipe` + tombol "Jadikan Pengurus" (deep-link ke dialog SK) — opsional, bila disetujui.
 
 ---
 
