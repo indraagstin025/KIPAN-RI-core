@@ -35,6 +35,8 @@ var ratePolicies = map[string]ratePolicy{
 	"out_mut":  {max: 30, window: time.Minute},     // mutasi antrian email (retry/kirim ulang)
 	"agt_pub":  {max: 30, window: time.Minute},     // cek anggota publik (anti scraping NIA)
 	"agt_mut":  {max: 30, window: time.Minute},     // mutasi anggota admin (tambah/sunting/status)
+	"org_pub":  {max: 60, window: time.Minute},     // baca profil organisasi publik
+	"org_mut":  {max: 20, window: time.Minute},     // sunting profil organisasi (Super)
 }
 
 // RateLimit mengembalikan limiter per-IP sesuai nama kebijakan terdaftar.

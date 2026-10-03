@@ -59,6 +59,7 @@ func Register(
 	registerLaporanRoutes(v1, rdb, d.authMiddleware, d.laporanHandler)
 	registerAuditRoutes(v1, d.authMiddleware, d.auditHandler)
 	registerRoleRoutes(v1, d.authMiddleware, d.roleHandler)
+	registerOrganisasiRoutes(v1, rdb, d.authMiddleware, d.organisasiHandler)
 	registerAdminRoutes(v1, cfg.App.Env, d.authMiddleware)
 }
 

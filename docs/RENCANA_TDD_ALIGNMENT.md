@@ -45,7 +45,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - C2 Penelusur Audit + CSV ✅ **Selesai**.
 - C3 Manajemen User scope Nasional ✅ **Selesai**.
 - C4 Role & Wewenang (katalog read-only) ✅ **Selesai**.
-- C5 Profil Organisasi — migrasi `000029`.
+- C5 Profil Organisasi — migrasi `000029` ✅ **Selesai**.
 - C6 Database Backup (`pg_dump`, terenkripsi) — migrasi `000030`.
 
 ---
@@ -300,3 +300,17 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
   capability × role, Cetak) + menu **Role & Wewenang** (Super).
 - **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E
   Super 200 / Nasional 403; 5 role & 15 capability.
+
+## 18. Catatan Fase C — C5 Profil Organisasi (TDD §2.1)
+
+- **Migrasi `000029`**: tabel 1-baris `organisasi_profile` (+ seed default) —
+  nama, singkatan, deskripsi, visi/misi, kontak, sosmed, `logo_url`, `updated_by`.
+- **Endpoints**: `GET /organisasi` (publik, policy `org_pub`),
+  `PUT /admin/organisasi` (capability `manage_organisasi` = Super, policy `org_mut`).
+- **Service**: sanitasi konten (tolak `<`/`>` → anti stored-XSS) + audit.
+- **Frontend**: halaman admin `/admin/organisasi` (Super) & halaman publik
+  `/profil`; menu **Profil Organisasi** (Super).
+- **Catatan**: `logo_url` berupa URL teks (admin menempelkan URL). Upload logo
+  via storage = penyempurnaan lanjutan.
+- **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E:
+  GET publik 200; PUT Super 200 / Nasional 403; konten `<script>` → 422.
