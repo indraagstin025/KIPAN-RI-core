@@ -324,3 +324,10 @@ Seluruh batch **selesai & terverifikasi** (backend `build`/`vet`/`test` hijau, f
 - **Tambah/Edit Anggota** (URD §8.1/8.2) belum memiliki endpoint — kandidat batch lanjutan.
 - `pg_stat_statements` perlu `shared_preload_libraries` untuk data penuh.
 
+### Tindak lanjut (B-W1–B-W4) — Master Wilayah
+- **B-W1**: paginasi **offset** daftar admin wilayah (`page`/`limit`/`total`) untuk Provinsi & Kabupaten/Kota.
+- **B-W2**: FE pakai komponen `Pagination` + "Menampilkan X dari Y" + penomoran baris mengikuti halaman.
+- **B-W3**: FE **skeleton tabel**, `EmptyState`, error + "Coba lagi", **per-row busy** (toggle status) tanpa overlay global.
+- **B-W4**: FE **modal bersama** (`components/ui/modal.tsx`) dengan ESC/backdrop-close/scroll-lock + loading di modal Detail.
+- Di luar cakupan (sesuai keputusan): URL sync & Export/Cetak.
+

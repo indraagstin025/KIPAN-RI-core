@@ -178,7 +178,7 @@ satu wilayah dengan SK; SK `DISETUJUI` **terkunci** (buat SK baru untuk perubaha
 
 ### 10. Master Wilayah (Super/Nasional)
 * **`GET /api/v1/admin/wilayah/cards`** — total provinsi/kabupaten/pengurus.
-* **`GET /api/v1/admin/wilayah?type=provinsi|kabupaten&search=&status=&provinsi_id=`** — daftar + `jml_kabupaten`/`jml_pengurus`/`ketua`.
+* **`GET /api/v1/admin/wilayah?type=provinsi|kabupaten&search=&status=&provinsi_id=&page=&limit=`** — daftar **ter-paginasi** (offset) + `jml_kabupaten`/`jml_pengurus`/`ketua`; meta memuat `total`/`total_pages` (limit maks 100).
 * **`GET /api/v1/admin/wilayah/:type/:id/detail`** — info + pengurus + statistik (total/aktif, total kabupaten, tren 6 bulan) + **activity** (`activity_logs`).
 * **`GET /api/v1/admin/wilayah/:type/:id/pengurus?all=`** — pengurus level sesuai.
 * **`PATCH /api/v1/admin/wilayah/:type/:id`** `{is_active}` — aktif/nonaktifkan + audit.
