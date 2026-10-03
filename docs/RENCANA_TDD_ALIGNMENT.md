@@ -25,18 +25,18 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 | Batch | Isi | Status |
 |---|---|---|
 | 0.1 | Worker terpisah (`cmd/worker`) + scheduler + advisory lock | ✅ Selesai |
-| 0.2 | Status efektif tunggal (view/fungsi) | Belum |
+| 0.2 | Status efektif tunggal (fungsi + view) — migrasi `000025` | ✅ Selesai |
 | 0.3 | Capability matrix + test RBAC | Belum |
 | 0.4 | Tooling migrasi (preflight + snapshot + klon) + state-machine tersurat | Belum |
 
 ### Fase A — Kepengurusan
-- A1 Master Jabatan TDD — migrasi `000025` (expand→dedupe→contract).
-- A2 Jabatan ganda lintas tingkat — migrasi `000026` (partial unique).
+- A1 Master Jabatan TDD — migrasi `000026` (expand→dedupe→contract).
+- A2 Jabatan ganda lintas tingkat — migrasi `000027` (partial unique).
 - A3 PAW + Mutasi.
-- A4 Kedaluwarsa dinamis (status efektif + job harian).
+- A4 Kedaluwarsa dinamis (pakai `pengurus_status_efektif` + job harian).
 
 ### Fase B — Pendaftaran & Keanggotaan
-- B1 Retensi DITOLAK + unique NIK parsial — migrasi `000027`.
+- B1 Retensi DITOLAK + unique NIK parsial — migrasi `000028`.
 - B2 Kolom RIWAYAT.
 - B3 Tambah/Edit Anggota.
 
@@ -45,8 +45,8 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - C2 Penelusur Audit + CSV.
 - C3 Manajemen User scope Nasional.
 - C4 Role & Wewenang (katalog read-only).
-- C5 Profil Organisasi — migrasi `000028`.
-- C6 Database Backup (`pg_dump`, terenkripsi) — migrasi `000029`.
+- C5 Profil Organisasi — migrasi `000029`.
+- C6 Database Backup (`pg_dump`, terenkripsi) — migrasi `000030`.
 
 ---
 
@@ -59,3 +59,15 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - **Infra bersama** (`internal/infra`): pabrik `MailSender`/`WAGateway` dipakai API & worker.
 - **Logging bersama** (`internal/logging`): `Setup()` dipakai `cmd/api` & `cmd/worker`.
 - Config baru: `WORKER_TIMEZONE` (default `Asia/Jakarta`).
+
+## 4. Catatan Batch 0.2
+
+- **Fungsi** `pengurus_status_efektif(pengurus_status, sk_status, sk_tanggal_berakhir, ref_date)`
+  (migrasi `000025`): `Aktif` hanya bila record `Aktif` **dan** SK `Aktif`
+  **dan** masa bakti belum lewat; selain itu `Demisioner`. Non-`Aktif`
+  dikembalikan apa adanya. `IMMUTABLE` + parameter `ref_date` → deterministik.
+- **View** `v_pengurus_efektif`: proyeksi `pengurus` + kolom `status_efektif`
+  (menyuntik `CURRENT_DATE`). Satu sumber kebenaran untuk daftar/riwayat (B2).
+- Test integrasi (gated `TEST_DATABASE_URL`): 7 kasus fungsi + view queryable.
+- Konsumen menyusul: **A4** (materialisasi) & **B2** (kolom RIWAYAT) memakai
+  fungsi/view ini, bukan logika ad-hoc.
