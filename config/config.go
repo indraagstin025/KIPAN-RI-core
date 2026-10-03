@@ -22,6 +22,7 @@ type Config struct {
 	WA       WAConfig
 	Mail     MailConfig
 	Outbox   OutboxConfig
+	Worker   WorkerConfig
 }
 
 type AppConfig struct {
@@ -70,6 +71,13 @@ type OutboxConfig struct {
 	Batch         int           // jumlah email per siklus
 	MaxAttempts   int           // batas percobaan sebelum gagal (DLQ)
 	SetupTokenTTL time.Duration // masa berlaku tautan set-password
+}
+
+// WorkerConfig mengatur biner worker terpisah (cmd/worker): penjadwal tugas
+// berkala + zona waktu lokal organisasi (dipakai jadwal harian, mis. deteksi
+// kedaluwarsa masa bakti). Zona waktu tidak valid akan fallback ke UTC.
+type WorkerConfig struct {
+	Timezone string // IANA, mis. "Asia/Jakarta"
 }
 
 type DatabaseConfig struct {
@@ -182,6 +190,9 @@ func Load() (*Config, error) {
 	v.SetDefault("EMAIL_WORKER_BATCH", 25)
 	v.SetDefault("EMAIL_WORKER_MAX_ATTEMPTS", 5)
 	v.SetDefault("SETUP_TOKEN_TTL", "168h")
+
+	// Worker terpisah (cmd/worker).
+	v.SetDefault("WORKER_TIMEZONE", "Asia/Jakarta")
 
 	v.SetDefault("STORAGE_REGION", "auto")
 	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
@@ -299,6 +310,9 @@ func Load() (*Config, error) {
 			Batch:         v.GetInt("EMAIL_WORKER_BATCH"),
 			MaxAttempts:   v.GetInt("EMAIL_WORKER_MAX_ATTEMPTS"),
 			SetupTokenTTL: setupTTL,
+		},
+		Worker: WorkerConfig{
+			Timezone: strings.TrimSpace(v.GetString("WORKER_TIMEZONE")),
 		},
 	}
 

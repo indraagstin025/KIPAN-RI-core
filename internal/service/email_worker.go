@@ -67,36 +67,21 @@ func NewEmailWorker(
 	}
 }
 
-// Run menjalankan loop poll sampai ctx dibatalkan.
-func (w *EmailWorker) Run(ctx context.Context) {
+// ProcessOnce mengirim satu batch item yang siap dalam sekali jalan. Penjadwalan
+// (interval) diserahkan ke pemanggil — biner worker (cmd/worker) memakainya via
+// scheduler singleton. Aman dipanggil meski dependensi tidak lengkap (no-op).
+func (w *EmailWorker) ProcessOnce(ctx context.Context) error {
 	if w == nil || w.outbox == nil || w.mail == nil {
-		log.Warn().Msg("Email worker tidak dijalankan (dependensi tidak lengkap)")
-		return
+		return nil
 	}
-	log.Info().Dur("interval", w.interval).Int("batch", w.batch).Msg("Email worker aktif (outbox)")
-	ticker := time.NewTicker(w.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info().Msg("Email worker berhenti")
-			return
-		case <-ticker.C:
-			w.drain(ctx)
-		}
-	}
-}
-
-// drain mengirim satu batch item yang siap.
-func (w *EmailWorker) drain(ctx context.Context) {
 	items, err := w.outbox.ClaimNext(ctx, w.batch)
 	if err != nil {
-		log.Warn().Err(err).Msg("Email worker: gagal claim antrian")
-		return
+		return err
 	}
 	for i := range items {
 		w.processOne(ctx, items[i])
 	}
+	return nil
 }
 
 func backoffFor(attempts int) time.Duration {

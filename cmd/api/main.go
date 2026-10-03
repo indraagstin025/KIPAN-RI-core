@@ -13,18 +13,18 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/database"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/logging"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/router"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
 func main() {
-	setupLogger()
+	logging.Setup()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -73,24 +73,6 @@ func main() {
 	router.Register(app, cfg, db, rdb, validator.New())
 
 	startServer(app, cfg.App.Port)
-}
-
-func setupLogger() {
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-
-	// Development: console writer berwarna
-	// Production: JSON output untuk aggregator (Loki, ELK, Datadog)
-	if os.Getenv("APP_ENV") == "production" {
-		log.Logger = zerolog.New(os.Stdout).
-			With().
-			Timestamp().
-			Logger()
-	} else {
-		log.Logger = log.Output(zerolog.ConsoleWriter{
-			Out:        os.Stderr,
-			TimeFormat: time.RFC3339,
-		})
-	}
 }
 
 func setupFiberApp(cfg *config.Config) *fiber.App {

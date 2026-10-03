@@ -49,10 +49,15 @@ Layanan yang aktif:
 ```bash
 cd backend
 cp .env.example .env
-go run ./cmd/api
+go run ./cmd/api        # API HTTP
+go run ./cmd/worker     # worker terpisah: antrian email + tugas terjadwal
 ```
 Server berjalan di `http://localhost:8080`  
 Health check: `http://localhost:8080/health`
+
+> **Worker terpisah:** pengiriman email (outbox) dan tugas terjadwal **tidak**
+> lagi berjalan di proses API. Jalankan `cmd/worker` (boleh >1 instance; tiap
+> tugas dilindungi kunci singleton PostgreSQL advisory lock).
 
 ### 3. Jalankan Frontend (React SPA)
 ```bash
@@ -82,6 +87,7 @@ Frontend berjalan di `http://localhost:5173`
 | [`docs/IMPLEMENTASI_PENGANGKATAN.md`](docs/IMPLEMENTASI_PENGANGKATAN.md) | Pengangkatan kader→pengurus via SK berjenjang |
 | [`docs/IMPLEMENTASI_SK_MULTILEVEL.md`](docs/IMPLEMENTASI_SK_MULTILEVEL.md) | Lanjutan SK: multi-level, Single Active SK, ganti jabatan pengurus |
 | [`docs/Document/IMPLEMENTASI_SUPER_ADMIN_LANJUTAN.md`](docs/Document/IMPLEMENTASI_SUPER_ADMIN_LANJUTAN.md) | **SELESAI (B0–B9)**: SK Draft→Ajukan, jabatan berlevel, pengurus, pendaftaran draft/kedaluwarsa, master wilayah, admin nasional, manajemen pengguna, optimisasi skala |
+| [`docs/RENCANA_TDD_ALIGNMENT.md`](docs/RENCANA_TDD_ALIGNMENT.md) | Rencana adopsi aturan bisnis TDD ke Go (batch per batch) + Batch 0 worker/scheduler |
 | [`docs/IMPLEMENTASI_WILAYAH_NASIONAL.md`](docs/IMPLEMENTASI_WILAYAH_NASIONAL.md) | Master wilayah 38 provinsi + 514 kab/kota |
 | [`docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md`](docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md) | **SELESAI**: antrean email (outbox) + kredensial via tautan set-password |
 | [`docs/IMPLEMENTASI_KTA_CARD_DESIGN_LAMA.md`](docs/IMPLEMENTASI_KTA_CARD_DESIGN_LAMA.md) | Desain & output KTA (PDF + QR) |

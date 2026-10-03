@@ -5,13 +5,12 @@ package router
 // (handler) sehingga handler tetap murni HTTP.
 
 import (
-	"context"
-
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/handler"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/infra"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
@@ -52,8 +51,8 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 
 	// --- Infrastruktur eksternal ---
 	storageService := wireStorageService(cfg, auditRepo, repository.NewDocumentRepository(db))
-	waGateway := wireWAGateway(cfg)
-	mailSender := wireMailSender(cfg)
+	waGateway := infra.WAGateway(cfg)
+	mailSender := infra.MailSender(cfg)
 
 	// --- Service ---
 	authService := service.NewAuthService(cfg, service.AuthDeps{
@@ -105,9 +104,9 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 		WilayahRepo: wilayahRepo, OutboxRepo: emailOutboxRepo,
 	})
 
-	// --- Worker antrian email (outbox) ---
-	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo)
-	go emailWorker.Run(context.Background())
+	// Catatan: worker antrian email TIDAK dijalankan di proses API. Worker
+	// berjalan di biner terpisah (cmd/worker) agar tidak dobel saat API
+	// di-scale >1 instance.
 
 	// --- Handler ---
 	secureCookie := cfg.App.Env != "development"
