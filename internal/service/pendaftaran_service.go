@@ -46,7 +46,7 @@ type PendaftaranService interface {
 // PendaftaranDeps adalah dependensi service pendaftaran inti (R1+R3).
 // Field nil-able; service memeriksa nil dan gagal fail-closed per fitur.
 type PendaftaranDeps struct {
-	Repo        repository.PendaftaranRepository
+	Repo        repository.PendaftaranCoreRepository
 	AnggotaRepo repository.AnggotaRepository
 	AuditRepo   repository.AuditLogRepository
 	StorageSvc  ObjectVerifier
@@ -59,7 +59,7 @@ type PendaftaranDeps struct {
 
 type pendaftaranService struct {
 	cfg         *config.Config
-	repo        repository.PendaftaranRepository
+	repo        repository.PendaftaranCoreRepository
 	anggotaRepo repository.AnggotaRepository
 	auditRepo   repository.AuditLogRepository
 	storageSvc  ObjectVerifier

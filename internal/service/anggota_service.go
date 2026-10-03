@@ -43,7 +43,7 @@ type AnggotaService interface {
 type AnggotaDeps struct {
 	AnggotaRepo repository.AnggotaRepository
 	WilayahRepo repository.WilayahRepository
-	UserRepo    repository.UserRepository
+	UserRepo    repository.UserAccountRepository
 	AuditRepo   repository.AuditLogRepository
 	ListRepo    repository.ListKeysetRepository
 	OutboxRepo  repository.EmailOutboxRepository
@@ -53,7 +53,7 @@ type anggotaService struct {
 	cfg         *config.Config
 	anggotaRepo repository.AnggotaRepository
 	wilayahRepo repository.WilayahRepository
-	userRepo    repository.UserRepository
+	userRepo    repository.UserAccountRepository
 	auditRepo   repository.AuditLogRepository
 	listRepo    repository.ListKeysetRepository
 	outboxRepo  repository.EmailOutboxRepository

@@ -39,9 +39,9 @@ type ApprovalResult struct {
 
 // VerificationDeps adalah dependensi service verifikasi (R1: pola deps).
 type VerificationDeps struct {
-	Repo        repository.PendaftaranRepository
+	Repo        repository.PendaftaranVerificationRepository
 	AnggotaRepo repository.AnggotaRepository
-	UserRepo    repository.UserRepository
+	UserRepo    repository.UserAccountRepository
 	AuditRepo   repository.AuditLogRepository
 	KTASvc      KTAService
 	NotifRepo   repository.NotificationRepository
@@ -51,9 +51,9 @@ type VerificationDeps struct {
 
 type verificationSvc struct {
 	cfg         *config.Config
-	repo        repository.PendaftaranRepository
+	repo        repository.PendaftaranVerificationRepository
 	anggotaRepo repository.AnggotaRepository
-	userRepo    repository.UserRepository
+	userRepo    repository.UserAccountRepository
 	auditRepo   repository.AuditLogRepository
 	ktaSvc      KTAService
 	notifRepo   repository.NotificationRepository

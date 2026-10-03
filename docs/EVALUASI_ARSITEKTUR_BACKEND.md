@@ -61,10 +61,16 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 - ✅ N/A untuk Go (tanpa pewarisan). Substitusi implementasi interface konsisten.
 
 ### I — Interface Segregation
-- 🔴 **Titik terlemah.** Interface repository gemuk (jumlah method):
-  - `WilayahAdminRepository` **17**, `PendaftaranRepository` **16**, `PengurusRepository` **11**, `UserRepository` **10**.
-  - Fakes pada test harus meng-`embed` interface lalu menimpa 2–3 method — sinyal interface terlalu besar.
-- ✅ Perbaikan yang sudah baik: interface kecil terpisah (`ListKeysetRepository` 2, `DashboardRepository` 1, `DocumentRepository` 1, `AuditLogRepository` 1, `JabatanRepository` 5).
+- ✅ **DIPERBAIKI (A3).** Interface repository gemuk kini dipecah menjadi capability kecil dan
+  dikomposisikan:
+  - `PendaftaranRepository` → `PendaftaranSubmissionRepository` + `PendaftaranQueryRepository` +
+    `PendaftaranStatusRepository` + `PendaftaranRevisionRepository` + `PendaftaranVerificationRepository`
+    (konsumen memakai `PendaftaranCoreRepository`, `PendaftaranVerificationRepository`, `PendaftaranRevisionRepository`).
+  - `UserRepository` → `UserAccountRepository` + `UserRefreshTokenRepository` (password-reset/anggota/user-admin/verifikasi bergantung pada `UserAccountRepository`).
+  - `PengurusRepository` → `PengurusWriteRepository` + `PengurusQueryRepository`.
+  - `WilayahAdminRepository` → `WilayahAdminQueryRepository` + `WilayahAdminWriteRepository`.
+- Interface kecil lain yang sudah ada: `ListKeysetRepository` (2), `DashboardRepository` (1),
+  `DocumentRepository` (1), `AuditLogRepository` (1).
 
 ### D — Dependency Inversion
 - ✅ Service bergantung pada **interface** repository; handler pada **interface** service; wiring terpusat (kini di paket `router`).
@@ -102,13 +108,13 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 |---|---|---|---|---|---|
 | **A1** | `ActorContext.Scope() (*int,*int,error)` di `domain`; ganti semua resolve scope manual | DRY + S | Tinggi | Rendah | ✅ Selesai |
 | **A2** | Allowlist status di `domain` (`PendaftaranStatus.IsValid`, `AnggotaStatus.IsValid`) dipakai service/repo | DRY | Tinggi | Rendah | ✅ Selesai |
-| **A3** | ISP: pecah interface repo gemuk menjadi per-use-case (Read/Write) + perbarui fakes | I | Sedang | Sedang | Belum |
+| **A3** | ISP: pecah interface repo gemuk menjadi per-use-case (Read/Write) + perbarui fakes | I | Sedang | Sedang | ✅ Selesai |
 | **A4** | Pecah god-service (`pendaftaran`, `kepengurusan`) menjadi beberapa service fokus | S | Sedang | Sedang–Tinggi | Belum |
 | **A5** | `StorageHandler` bergantung pada interface `StorageService` | D | Sedang | Rendah | Belum |
 | **A6** | Pindahkan `sendAppointmentEmail` ke outbox (tambah jenis `PENGANGKATAN`) | DRY | Rendah | Sedang | Belum |
 
-**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1 & A2 telah dikerjakan**;
-A3/A4/A5/A6 belum.
+**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1, A2 & A3 telah dikerjakan**;
+A4/A5/A6 belum.
 
 ---
 

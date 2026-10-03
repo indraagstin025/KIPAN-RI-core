@@ -12,20 +12,20 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 )
 
-// WilayahAdminRepository operasi master wilayah untuk Super/Nasional.
-// Interface terpisah dari WilayahRepository (publik) agar konsumen read-only
-// tak ikut terpengaruh; implementasi sama-sama di *wilayahRepo.
+// WilayahAdminRepository (agregat) = baca + tulis. Disusun dari interface kecil (ISP).
 type WilayahAdminRepository interface {
+	WilayahAdminQueryRepository
+	WilayahAdminWriteRepository
+}
+
+// WilayahAdminQueryRepository — pembacaan master wilayah & statistik admin.
+type WilayahAdminQueryRepository interface {
 	ListProvinsiAdmin(ctx context.Context, search, status string, limit, offset int) ([]domain.WilayahAdminItem, error)
 	CountProvinsiAdmin(ctx context.Context, search, status string) (int, error)
 	ListKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string, limit, offset int) ([]domain.WilayahAdminItem, error)
 	CountKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string) (int, error)
 	GetProvinsi(ctx context.Context, id int) (*domain.WilayahProvinsi, error)
 	GetKabupaten(ctx context.Context, id int) (*domain.WilayahKabupaten, error)
-	SetProvinsiActive(ctx context.Context, id int, active bool) error
-	SetKabupatenActive(ctx context.Context, id int, active bool) error
-	EnsureProvinsiActive(ctx context.Context, id int) error
-	EnsureKabupatenActive(ctx context.Context, provinsiID, kabupatenID int) error
 	CountProvinsi(ctx context.Context) (int, error)
 	CountKabupaten(ctx context.Context, provinsiID *int) (int, error)
 	CountPengurusAktif(ctx context.Context) (int, error)
@@ -33,6 +33,14 @@ type WilayahAdminRepository interface {
 	StatsPengurusWilayah(ctx context.Context, level string, provinsiID, kabupatenID *int) (total, aktif int, err error)
 	TrenPengurusWilayah(ctx context.Context, level string, provinsiID, kabupatenID *int) ([]domain.TrenBulan, error)
 	ListActivityWilayah(ctx context.Context, entityName, entityID string, limit int) ([]domain.ActivityLog, error)
+}
+
+// WilayahAdminWriteRepository — perubahan status / aktivasi master wilayah.
+type WilayahAdminWriteRepository interface {
+	SetProvinsiActive(ctx context.Context, id int, active bool) error
+	SetKabupatenActive(ctx context.Context, id int, active bool) error
+	EnsureProvinsiActive(ctx context.Context, id int) error
+	EnsureKabupatenActive(ctx context.Context, provinsiID, kabupatenID int) error
 }
 
 // NewWilayahAdminRepository membangun repo admin di atas *wilayahRepo.

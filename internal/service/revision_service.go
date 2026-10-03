@@ -26,7 +26,7 @@ type RevisionService interface {
 
 // RevisionDeps adalah dependensi service revisi (R1: pola deps).
 type RevisionDeps struct {
-	Repo       repository.PendaftaranRepository
+	Repo       repository.PendaftaranRevisionRepository
 	StorageSvc ObjectVerifier
 	AuditRepo  repository.AuditLogRepository
 	Mail       gateway.MailSender
@@ -34,7 +34,7 @@ type RevisionDeps struct {
 
 type revisionSvc struct {
 	cfg        *config.Config
-	repo       repository.PendaftaranRepository
+	repo       repository.PendaftaranRevisionRepository
 	storageSvc ObjectVerifier
 	auditRepo  repository.AuditLogRepository
 	mail       gateway.MailSender

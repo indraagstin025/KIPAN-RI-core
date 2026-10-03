@@ -23,18 +23,30 @@ type RefreshTokenRecord struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
+// UserRepository (agregat) = akun + refresh token. Disusun dari interface
+// kecil agar konsumen bergantung pada capability yang dipakai (ISP).
 type UserRepository interface {
+	UserAccountRepository
+	UserRefreshTokenRepository
+}
+
+// UserAccountRepository — data akun & lifecycle password/sesi.
+type UserAccountRepository interface {
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	Create(ctx context.Context, u *domain.User) error
 	UpdateLastLogin(ctx context.Context, id string) error
 	UpdatePassword(ctx context.Context, id string, newPasswordHash string) error
+	// RevokeAllUserTokens mencabut SEMUA refresh token milik user (semua family).
+	RevokeAllUserTokens(ctx context.Context, userID string) error
+}
 
+// UserRefreshTokenRepository — manajemen refresh token (rotasi & deteksi reuse).
+type UserRefreshTokenRepository interface {
 	// Refresh token management
 	SaveRefreshToken(ctx context.Context, userID, tokenHash, familyID string, expiresAt time.Time) error
 	FindRefreshToken(ctx context.Context, tokenHash string) (*RefreshTokenRecord, error)
 	RevokeFamilyTokens(ctx context.Context, familyID string) error
-	RevokeAllUserTokens(ctx context.Context, userID string) error
 	RotateRefreshToken(ctx context.Context, oldTokenID, userID, newTokenHash, familyID string, expiresAt time.Time) error
 }
 

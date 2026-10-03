@@ -438,16 +438,26 @@ type PromoteInput struct {
 	Keterangan     string
 }
 
-// PengurusRepository mengelola keanggotaan pengurus.
+// PengurusRepository (agregat) = tulis + baca. Disusun dari interface kecil (ISP).
 type PengurusRepository interface {
+	PengurusWriteRepository
+	PengurusQueryRepository
+}
+
+// PengurusWriteRepository — mutasi kepengurusan.
+type PengurusWriteRepository interface {
 	AddWithPromotion(ctx context.Context, in PromoteInput) (int, error)
 	Remove(ctx context.Context, pengurusID int) error
+	UpdateStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string) error
+	UpdateJabatan(ctx context.Context, id int, jabatanID int) error
+}
+
+// PengurusQueryRepository — pembacaan & validasi kepengurusan.
+type PengurusQueryRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.PengurusDetail, error)
 	ListBySK(ctx context.Context, skID int) ([]domain.PengurusDetail, error)
 	List(ctx context.Context, f PengurusFilter) ([]domain.PengurusDetail, int, error)
 	Stats(ctx context.Context, f PengurusFilter) (domain.PengurusStats, error)
-	UpdateStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string) error
-	UpdateJabatan(ctx context.Context, id int, jabatanID int) error
 	ExistsInSK(ctx context.Context, skID, anggotaID int) (bool, error)
 	CountJabatanInSK(ctx context.Context, skID, jabatanID, excludeAnggotaID int) (int, error)
 	// ListPromosi kandidat promosi: anggota AKTIF ber-riwayat pengurus yang

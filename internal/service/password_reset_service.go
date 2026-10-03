@@ -39,7 +39,7 @@ type PasswordResetService interface {
 
 // PasswordResetDeps adalah dependensi service reset password.
 type PasswordResetDeps struct {
-	UserRepo  repository.UserRepository
+	UserRepo  repository.UserAccountRepository
 	RDB       *redis.Client
 	Mail      gateway.MailSender
 	AuditRepo repository.AuditLogRepository
@@ -47,7 +47,7 @@ type PasswordResetDeps struct {
 
 type passwordResetService struct {
 	cfg       *config.Config
-	userRepo  repository.UserRepository
+	userRepo  repository.UserAccountRepository
 	rdb       *redis.Client
 	mail      gateway.MailSender
 	auditRepo repository.AuditLogRepository

@@ -29,14 +29,14 @@ type UserAdminService interface {
 
 // UserAdminDeps dependensi service manajemen pengguna.
 type UserAdminDeps struct {
-	UserRepo    repository.UserRepository
+	UserRepo    repository.UserAccountRepository
 	AdminRepo   repository.UserAdminRepository
 	WilayahRepo repository.WilayahRepository
 	AuditRepo   repository.AuditLogRepository
 }
 
 type userAdminSvc struct {
-	userRepo    repository.UserRepository
+	userRepo    repository.UserAccountRepository
 	adminRepo   repository.UserAdminRepository
 	wilayahRepo repository.WilayahRepository
 	auditRepo   repository.AuditLogRepository

@@ -16,8 +16,19 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/nia"
 )
 
-// PendaftaranRepository menangani persistence data pendaftaran calon anggota.
+// PendaftaranRepository (agregat) mempertemukan seluruh capability pendaftaran.
+// Ia disusun dari interface-interface kecil agar konsumen dapat bergantung pada
+// capability yang benar-benar dipakai (Interface Segregation Principle).
 type PendaftaranRepository interface {
+	PendaftaranSubmissionRepository
+	PendaftaranQueryRepository
+	PendaftaranStatusRepository
+	PendaftaranRevisionRepository
+	PendaftaranVerificationRepository
+}
+
+// PendaftaranSubmissionRepository — penulisan pendaftaran baru & expiry draf.
+type PendaftaranSubmissionRepository interface {
 	Create(ctx context.Context, p *domain.Pendaftaran) error
 	// CreateWithHistory menyimpan pendaftaran + riwayat SUBMIT dalam satu
 	// transaksi dan mengisi p.ID dari RETURNING id.
@@ -25,35 +36,54 @@ type PendaftaranRepository interface {
 	// NextRegistrationSequence mengalokasikan nomor urut periode (tahun,
 	// bulan) secara atomik via UPSERT ... RETURNING. Aman terhadap race.
 	NextRegistrationSequence(ctx context.Context, year, month int) (int, error)
+	// ExpireStaleDrafts menandai pendaftaran DRAFT yang lebih lama dari
+	// olderThanDays hari menjadi KEDALUWARSA (lazy-on-access).
+	ExpireStaleDrafts(ctx context.Context, olderThanDays int) error
+}
+
+// PendaftaranQueryRepository — pembacaan data & antrean (proyeksi non-PII).
+type PendaftaranQueryRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.Pendaftaran, error)
 	GetByNomorPendaftaran(ctx context.Context, nomor string) (*domain.Pendaftaran, error)
 	GetByNikHash(ctx context.Context, nikHash string) (*domain.Pendaftaran, error)
-	// ListHistory mengambil riwayat kronologis untuk timeline publik:
-	// hanya aksi + catatan + waktu (tanpa identitas aktor).
+	// ListHistory mengambil riwayat kronologis untuk timeline publik.
 	ListHistory(ctx context.Context, pendaftaranID int) ([]domain.PendaftaranRiwayat, error)
-	// ListQueue mengambil antrean terfilter wilayah + status dengan
-	// proyeksi kolom non-PII. limit dibatasi 1-100 oleh implementasi.
+	// ListQueue mengambil antrean terfilter wilayah + status (non-PII).
 	ListQueue(ctx context.Context, provinsiID, kabupatenID *int, status string, limit, offset int) ([]domain.PendaftaranQueueItem, error)
-	// CountQueue menghitung total baris filter yang sama untuk meta pagination.
+	// CountQueue menghitung total baris filter yang sama (meta pagination).
 	CountQueue(ctx context.Context, provinsiID, kabupatenID *int, status string) (int, error)
-	// SetRevisiToken menyimpan hash token revisi + expiry (token mentah
-	// tidak pernah disimpan).
-	SetRevisiToken(ctx context.Context, id int, tokenHash string, expiresAt time.Time) error
-	// SubmitRevisionTx mengganti dokumen + status DRAFT + hapus token
-	// dalam satu transaksi. rows==0 berarti token salah/kedaluwarsa atau
-	// state bukan PERBAIKAN (tanpa oracle: satu error generik).
-	SubmitRevisionTx(ctx context.Context, id int, tokenHash string, keys map[string]string, catatan string) error
+}
+
+// PendaftaranStatusRepository — perubahan status & riwayat beraktor.
+type PendaftaranStatusRepository interface {
 	UpdateStatus(ctx context.Context, id int, status domain.PendaftaranStatus, catatan string) error
 	AppendHistory(ctx context.Context, pendaftaranID int, aksi string, actorID, actorName, actorRole *string, catatan string) error
 	// UpdateStatusWithHistory mengubah status + mencatat riwayat beraktor
 	// dalam satu transaksi (tidak ada riwayat yatim).
 	UpdateStatusWithHistory(ctx context.Context, id int, status domain.PendaftaranStatus, aksi string, actorID, actorName, actorRole *string, catatan string) error
-	// IssueMember menerbitkan anggota + NIA + signature KTA dalam satu
-	// transaksi. ktaKey adalah KTA_SIGNING_KEY dari config (dipasok service).
+}
+
+// PendaftaranRevisionRepository — alur revisi (status PERBAIKAN).
+type PendaftaranRevisionRepository interface {
+	GetByNomorPendaftaran(ctx context.Context, nomor string) (*domain.Pendaftaran, error)
+	// SetRevisiToken menyimpan hash token revisi + expiry (token mentah tidak disimpan).
+	SetRevisiToken(ctx context.Context, id int, tokenHash string, expiresAt time.Time) error
+	// SubmitRevisionTx mengganti dokumen + status DRAFT + hapus token (satu transaksi).
+	SubmitRevisionTx(ctx context.Context, id int, tokenHash string, keys map[string]string, catatan string) error
+}
+
+// PendaftaranVerificationRepository — verifikasi/approval (terbitkan anggota).
+type PendaftaranVerificationRepository interface {
+	GetByID(ctx context.Context, id int) (*domain.Pendaftaran, error)
+	// IssueMember menerbitkan anggota + NIA + signature KTA dalam satu transaksi.
 	IssueMember(ctx context.Context, pendaftaranID int, year int, ktaKey string) (*domain.Anggota, error)
-	// ExpireStaleDrafts menandai pendaftaran DRAFT yang lebih lama dari
-	// olderThanDays hari menjadi KEDALUWARSA (lazy-on-access).
-	ExpireStaleDrafts(ctx context.Context, olderThanDays int) error
+	UpdateStatusWithHistory(ctx context.Context, id int, status domain.PendaftaranStatus, aksi string, actorID, actorName, actorRole *string, catatan string) error
+}
+
+// PendaftaranCoreRepository — kebutuhan service pendaftaran inti (submit + baca/antrean).
+type PendaftaranCoreRepository interface {
+	PendaftaranSubmissionRepository
+	PendaftaranQueryRepository
 }
 
 // mapDBError memetakan error Postgres ke domain error yang tepat agar klien
