@@ -81,6 +81,17 @@ const (
 	PendaftaranStatusKedaluwarsa  PendaftaranStatus = "KEDALUWARSA"
 )
 
+// IsValid memvalidasi nilai status pendaftaran (satu sumber, hindari
+// allowlist terduplikasi di service/repository).
+func (s PendaftaranStatus) IsValid() bool {
+	switch s {
+	case PendaftaranStatusDraft, PendaftaranStatusDiverifikasi, PendaftaranStatusPerbaikan,
+		PendaftaranStatusDisetujui, PendaftaranStatusDitolak, PendaftaranStatusKedaluwarsa:
+		return true
+	}
+	return false
+}
+
 // AnggotaStatus status resmi kader KIPAN
 type AnggotaStatus string
 
@@ -91,6 +102,17 @@ const (
 	AnggotaStatusDiberhentikan AnggotaStatus = "DIBERHENTIKAN"
 	AnggotaStatusMeninggal     AnggotaStatus = "MENINGGAL"
 )
+
+// IsValid memvalidasi nilai status anggota (satu sumber, hindari allowlist
+// terduplikasi di service/repository).
+func (s AnggotaStatus) IsValid() bool {
+	switch s {
+	case AnggotaStatusAktif, AnggotaStatusNonaktif, AnggotaStatusDemisioner,
+		AnggotaStatusDiberhentikan, AnggotaStatusMeninggal:
+		return true
+	}
+	return false
+}
 
 // SKStatus status Surat Keputusan
 type SKStatus string
@@ -455,6 +477,33 @@ func (a ActorContext) CanAccessWilayah(provID, kabID int) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// Scope mengembalikan batas wilayah (provinsiID, kabupatenID) untuk daftar/kueri
+// ter-scope. Ini adalah SATU-SATUNYA sumber resolusi scope agar tidak
+// diduplikasi di service:
+//   - SUPER_ADMIN / ADMIN_NASIONAL → (nil, nil) = tanpa batas (nasional).
+//   - ADMIN_PROVINSI               → (provinsi, nil).
+//   - ADMIN_KABUPATEN              → (provinsi, kabupaten).
+//
+// Role lain (mis. USER) atau admin tanpa wilayah → error.
+func (a ActorContext) Scope() (*int, *int, error) {
+	switch a.Role {
+	case RoleSuperAdmin, RoleAdminNasional:
+		return nil, nil, nil
+	case RoleAdminProvinsi:
+		if a.ProvinsiID == nil {
+			return nil, nil, NewForbiddenError("Akun Admin Provinsi belum terhubung ke wilayah")
+		}
+		return a.ProvinsiID, nil, nil
+	case RoleAdminKabupaten:
+		if a.KabupatenID == nil {
+			return nil, nil, NewForbiddenError("Akun Admin Kabupaten belum terhubung ke wilayah")
+		}
+		return a.ProvinsiID, a.KabupatenID, nil
+	default:
+		return nil, nil, NewForbiddenError("Role tidak diizinkan mengakses data wilayah")
 	}
 }
 

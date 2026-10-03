@@ -294,18 +294,6 @@ func (s *kepengurusanSvc) resolveSKScope(ctx context.Context, in domain.SKCreate
 	}
 }
 
-// scopeForActor mengembalikan batas wilayah daftar (nil = nasional).
-func scopeForActor(actor domain.ActorContext) (*int, *int) {
-	switch actor.Role {
-	case domain.RoleAdminProvinsi:
-		return actor.ProvinsiID, nil
-	case domain.RoleAdminKabupaten:
-		return actor.ProvinsiID, actor.KabupatenID
-	default:
-		return nil, nil
-	}
-}
-
 // levelAuthorityMatch menentukan kecocokan peran aktor dengan LEVEL SK
 // (tanpa Super): KABUPATEN -> Kabupaten sekab; PROVINSI -> Provinsi seprov;
 // NASIONAL -> Nasional.
@@ -385,7 +373,10 @@ func (s *kepengurusanSvc) ListSK(ctx context.Context, actor domain.ActorContext,
 	if s.skRepo == nil {
 		return nil, 0, unavailable("surat keputusan")
 	}
-	prov, kab := scopeForActor(actor)
+	prov, kab, err := actor.Scope()
+	if err != nil {
+		return nil, 0, err
+	}
 	if page < 1 {
 		page = 1
 	}
@@ -699,7 +690,10 @@ func (s *kepengurusanSvc) ListPengurus(ctx context.Context, actor domain.ActorCo
 	}
 	// Scope dari peran TIDAK bisa dilonggarkan klien; filter klien hanya
 	// berlaku bila server belum menetapkan batas (Nasional/Super).
-	prov, kab := scopeForActor(actor)
+	prov, kab, err := actor.Scope()
+	if err != nil {
+		return nil, 0, err
+	}
 	if prov == nil {
 		prov = provFilter
 	}
@@ -728,7 +722,10 @@ func (s *kepengurusanSvc) PengurusStats(ctx context.Context, actor domain.ActorC
 	if s.pengurus == nil {
 		return nil, unavailable("pengurus")
 	}
-	prov, kab := scopeForActor(actor)
+	prov, kab, err := actor.Scope()
+	if err != nil {
+		return nil, err
+	}
 	out, err := s.pengurus.Stats(ctx, repository.PengurusFilter{ProvinsiID: prov, KabupatenID: kab})
 	if err != nil {
 		return nil, err
@@ -742,7 +739,10 @@ func (s *kepengurusanSvc) ListPromosi(ctx context.Context, actor domain.ActorCon
 	if s.pengurus == nil {
 		return nil, unavailable("pengurus")
 	}
-	prov, kab := scopeForActor(actor)
+	prov, kab, err := actor.Scope()
+	if err != nil {
+		return nil, err
+	}
 	return s.pengurus.ListPromosi(ctx, prov, kab, strings.TrimSpace(search), limit)
 }
 

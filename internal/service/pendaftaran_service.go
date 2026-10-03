@@ -719,18 +719,8 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 	// Lazy expiry: tandai DRAFT yang sudah lewat 30 hari menjadi KEDALUWARSA.
 	_ = s.repo.ExpireStaleDrafts(ctx, 30)
 	st := strings.TrimSpace(status)
-	if st != "" {
-		allowed := map[string]bool{
-			string(domain.PendaftaranStatusDraft):        true,
-			string(domain.PendaftaranStatusDiverifikasi): true,
-			string(domain.PendaftaranStatusPerbaikan):    true,
-			string(domain.PendaftaranStatusDisetujui):    true,
-			string(domain.PendaftaranStatusDitolak):      true,
-			string(domain.PendaftaranStatusKedaluwarsa):  true,
-		}
-		if !allowed[st] {
-			return nil, 0, domain.NewValidationError("Filter status tidak valid")
-		}
+	if st != "" && !domain.PendaftaranStatus(st).IsValid() {
+		return nil, 0, domain.NewValidationError("Filter status tidak valid")
 	}
 	if page < 1 {
 		page = 1
@@ -743,22 +733,9 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 	}
 	offset := (page - 1) * limit
 
-	var provID, kabID *int
-	switch actor.Role {
-	case domain.RoleSuperAdmin, domain.RoleAdminNasional:
-		// tanpa filter
-	case domain.RoleAdminProvinsi:
-		if actor.ProvinsiID == nil {
-			return nil, 0, domain.NewForbiddenError("Akun Admin Provinsi belum terhubung ke wilayah")
-		}
-		provID = actor.ProvinsiID
-	case domain.RoleAdminKabupaten:
-		if actor.KabupatenID == nil {
-			return nil, 0, domain.NewForbiddenError("Akun Admin Kabupaten belum terhubung ke wilayah")
-		}
-		provID, kabID = actor.ProvinsiID, actor.KabupatenID
-	default:
-		return nil, 0, domain.NewForbiddenError("Role tidak diizinkan mengakses antrean")
+	provID, kabID, err := actor.Scope()
+	if err != nil {
+		return nil, 0, err
 	}
 
 	items, err := s.repo.ListQueue(ctx, provID, kabID, st, limit, offset)
@@ -772,17 +749,6 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 	return items, total, nil
 }
 
-// validQueueStatus memvalidasi filter status antrean.
-func validQueueStatus(st string) bool {
-	switch st {
-	case string(domain.PendaftaranStatusDraft), string(domain.PendaftaranStatusDiverifikasi),
-		string(domain.PendaftaranStatusPerbaikan), string(domain.PendaftaranStatusDisetujui),
-		string(domain.PendaftaranStatusDitolak), string(domain.PendaftaranStatusKedaluwarsa):
-		return true
-	}
-	return false
-}
-
 // ListQueueCursor varian keyset (tanpa COUNT + tanpa OFFSET besar).
 func (s *pendaftaranService) ListQueueCursor(ctx context.Context, actor domain.ActorContext, status, cursor string, limit int) ([]domain.PendaftaranQueueItem, string, error) {
 	if s.listRepo == nil {
@@ -790,7 +756,7 @@ func (s *pendaftaranService) ListQueueCursor(ctx context.Context, actor domain.A
 	}
 	_ = s.repo.ExpireStaleDrafts(ctx, 30)
 	st := strings.TrimSpace(status)
-	if st != "" && !validQueueStatus(st) {
+	if st != "" && !domain.PendaftaranStatus(st).IsValid() {
 		return nil, "", domain.NewValidationError("Filter status tidak valid")
 	}
 	if limit <= 0 {
@@ -799,22 +765,9 @@ func (s *pendaftaranService) ListQueueCursor(ctx context.Context, actor domain.A
 	if limit > 100 {
 		limit = 100
 	}
-	var provID, kabID *int
-	switch actor.Role {
-	case domain.RoleSuperAdmin, domain.RoleAdminNasional:
-		// tanpa filter
-	case domain.RoleAdminProvinsi:
-		if actor.ProvinsiID == nil {
-			return nil, "", domain.NewForbiddenError("Akun Admin Provinsi belum terhubung ke wilayah")
-		}
-		provID = actor.ProvinsiID
-	case domain.RoleAdminKabupaten:
-		if actor.KabupatenID == nil {
-			return nil, "", domain.NewForbiddenError("Akun Admin Kabupaten belum terhubung ke wilayah")
-		}
-		provID, kabID = actor.ProvinsiID, actor.KabupatenID
-	default:
-		return nil, "", domain.NewForbiddenError("Role tidak diizinkan mengakses antrean")
+	provID, kabID, err := actor.Scope()
+	if err != nil {
+		return nil, "", err
 	}
 	at := time.Now().UTC().Add(time.Hour)
 	id := maxInt4

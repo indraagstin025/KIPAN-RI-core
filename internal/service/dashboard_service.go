@@ -24,6 +24,9 @@ func (s *dashboardSvc) Load(ctx context.Context, actor domain.ActorContext) (*do
 	if s.repo == nil {
 		return nil, unavailable("dashboard")
 	}
-	prov, kab := scopeForActor(actor)
+	prov, kab, err := actor.Scope()
+	if err != nil {
+		return nil, err
+	}
 	return s.repo.Load(ctx, prov, kab)
 }

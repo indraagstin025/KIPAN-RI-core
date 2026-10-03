@@ -83,41 +83,13 @@ func normalizeNIA(nia string) (string, error) {
 	return code, nil
 }
 
-func (s *anggotaService) scopeOf(actor domain.ActorContext) (provID, kabID *int, err error) {
-	switch actor.Role {
-	case domain.RoleSuperAdmin, domain.RoleAdminNasional:
-		return nil, nil, nil
-	case domain.RoleAdminProvinsi:
-		if actor.ProvinsiID == nil {
-			return nil, nil, domain.NewForbiddenError("Akun Admin Provinsi belum terhubung ke wilayah")
-		}
-		return actor.ProvinsiID, nil, nil
-	case domain.RoleAdminKabupaten:
-		if actor.KabupatenID == nil {
-			return nil, nil, domain.NewForbiddenError("Akun Admin Kabupaten belum terhubung ke wilayah")
-		}
-		return actor.ProvinsiID, actor.KabupatenID, nil
-	default:
-		return nil, nil, domain.NewForbiddenError("Role tidak diizinkan mengakses data anggota")
-	}
-}
-
 func (s *anggotaService) ListAnggota(ctx context.Context, actor domain.ActorContext, status, search string, page, limit int) ([]domain.AnggotaListItem, int, error) {
 	if s.anggotaRepo == nil {
 		return nil, 0, unavailable("anggota")
 	}
 	st := strings.TrimSpace(status)
-	if st != "" {
-		allowed := map[string]bool{
-			string(domain.AnggotaStatusAktif):         true,
-			string(domain.AnggotaStatusNonaktif):      true,
-			string(domain.AnggotaStatusDemisioner):    true,
-			string(domain.AnggotaStatusDiberhentikan): true,
-			string(domain.AnggotaStatusMeninggal):     true,
-		}
-		if !allowed[st] {
-			return nil, 0, domain.NewValidationError("Filter status tidak valid")
-		}
+	if st != "" && !domain.AnggotaStatus(st).IsValid() {
+		return nil, 0, domain.NewValidationError("Filter status tidak valid")
 	}
 	if len([]rune(strings.TrimSpace(search))) > 100 {
 		return nil, 0, domain.NewValidationError("Kata kunci pencarian maksimal 100 karakter")
@@ -133,7 +105,7 @@ func (s *anggotaService) ListAnggota(ctx context.Context, actor domain.ActorCont
 	}
 	offset := (page - 1) * limit
 
-	provID, kabID, err := s.scopeOf(actor)
+	provID, kabID, err := actor.Scope()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -148,24 +120,13 @@ func (s *anggotaService) ListAnggota(ctx context.Context, actor domain.ActorCont
 	return items, total, nil
 }
 
-// validAnggotaListStatus memvalidasi filter status daftar anggota.
-func validAnggotaListStatus(st string) bool {
-	switch st {
-	case "", string(domain.AnggotaStatusAktif), string(domain.AnggotaStatusNonaktif),
-		string(domain.AnggotaStatusDemisioner), string(domain.AnggotaStatusDiberhentikan),
-		string(domain.AnggotaStatusMeninggal):
-		return true
-	}
-	return false
-}
-
 // ListAnggotaCursor varian keyset (tanpa COUNT + tanpa OFFSET besar).
 func (s *anggotaService) ListAnggotaCursor(ctx context.Context, actor domain.ActorContext, status, search, cursor string, limit int) ([]domain.AnggotaListItem, string, error) {
 	if s.listRepo == nil {
 		return nil, "", unavailable("anggota")
 	}
 	st := strings.TrimSpace(status)
-	if !validAnggotaListStatus(st) {
+	if st != "" && !domain.AnggotaStatus(st).IsValid() {
 		return nil, "", domain.NewValidationError("Filter status tidak valid")
 	}
 	q := strings.TrimSpace(search)
@@ -178,7 +139,7 @@ func (s *anggotaService) ListAnggotaCursor(ctx context.Context, actor domain.Act
 	if limit > 100 {
 		limit = 100
 	}
-	provID, kabID, err := s.scopeOf(actor)
+	provID, kabID, err := actor.Scope()
 	if err != nil {
 		return nil, "", err
 	}

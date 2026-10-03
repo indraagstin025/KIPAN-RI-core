@@ -469,19 +469,23 @@ func TestListPengurusScopeAndFilter(t *testing.T) {
 	}
 }
 
-func TestScopeForActor(t *testing.T) {
+func TestActorScope(t *testing.T) {
 	prov, kab := 32, 3273
 	kabCtx := domain.ActorContext{Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &kab}
-	p, k := scopeForActor(kabCtx)
-	if p == nil || k == nil || *p != prov || *k != kab {
-		t.Fatalf("scope kabupaten salah: %v %v", p, k)
+	p, k, err := kabCtx.Scope()
+	if err != nil || p == nil || k == nil || *p != prov || *k != kab {
+		t.Fatalf("scope kabupaten salah: %v %v %v", p, k, err)
 	}
-	p, k = scopeForActor(provActor())
-	if p == nil || *p != prov || k != nil {
-		t.Fatalf("scope provinsi salah: %v %v", p, k)
+	p, k, err = provActor().Scope()
+	if err != nil || p == nil || *p != prov || k != nil {
+		t.Fatalf("scope provinsi salah: %v %v %v", p, k, err)
 	}
-	p, k = scopeForActor(nasActor())
-	if p != nil || k != nil {
-		t.Fatalf("scope nasional harus nil: %v %v", p, k)
+	p, k, err = nasActor().Scope()
+	if err != nil || p != nil || k != nil {
+		t.Fatalf("scope nasional harus nil: %v %v %v", p, k, err)
+	}
+	// Role USER tidak diizinkan mengakses scope wilayah.
+	if _, _, err := (domain.ActorContext{Role: domain.RoleUser}).Scope(); err == nil {
+		t.Fatal("role USER harus ditolak Scope()")
 	}
 }

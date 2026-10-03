@@ -28,7 +28,10 @@ func (s *outboxSvc) List(ctx context.Context, actor domain.ActorContext, jenis, 
 	if s.repo == nil {
 		return nil, 0, unavailable("antrian email")
 	}
-	prov, kab := scopeForActor(actor)
+	prov, kab, err := actor.Scope()
+	if err != nil {
+		return nil, 0, err
+	}
 	if page < 1 {
 		page = 1
 	}
@@ -69,7 +72,10 @@ func (s *outboxSvc) RetryPending(ctx context.Context, actor domain.ActorContext)
 	if s.repo == nil {
 		return 0, unavailable("antrian email")
 	}
-	prov, kab := scopeForActor(actor)
+	prov, kab, err := actor.Scope()
+	if err != nil {
+		return 0, err
+	}
 	return s.repo.RetryPending(ctx, prov, kab)
 }
 

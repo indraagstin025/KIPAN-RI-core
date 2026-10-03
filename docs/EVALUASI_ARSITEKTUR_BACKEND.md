@@ -80,8 +80,8 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 - Pengiriman email via **outbox worker** (sebelumnya fire-and-forget tersebar).
 
 **Duplikasi tersisa:**
-- **Resolusi scope wilayah** ditulis di beberapa tempat: `scopeForActor` (`service/kepengurusan_service.go`), `scopeOf` (`service/anggota_service.go`), `switch actor.Role` inline di `service/pendaftaran_service.go` (2×), dan `service/user_admin_service.go` — padahal `domain.ActorContext.CanAccessWilayah` sudah ada.
-- **Allowlist status** berulang (`service/anggota_service.go`, `service/pendaftaran_service.go`, varian cursor) — belum satu sumber domain.
+- **Resolusi scope wilayah** — ✅ **DIPERBAIKI (A1)**: kini lewat satu sumber `domain.ActorContext.Scope()`.
+- **Allowlist status** — ✅ **DIPERBAIKI (A2)**: kini `domain.PendaftaranStatus.IsValid()` / `domain.AnggotaStatus.IsValid()`.
 - **Dua jalur email**: aktivitas kepengurusan memakai `sendAppointmentEmail` (goroutine) di luar outbox — belum konsisten dengan worker.
 - Meta pagination masih manual di sebagian handler lama (sebagian sudah memakai `paginationMeta`).
 
@@ -98,17 +98,17 @@ tidak bergantung pada Fiber/SQL/Redis/S3 — **terverifikasi** (tidak ada import
 
 ## 6. Rekomendasi (A1–A6)
 
-| Kode | Rekomendasi | Prinsip | Prioritas | Risiko |
-|---|---|---|---|---|
-| **A1** | `ActorContext.Scope() (*int,*int,error)` di `domain`; ganti semua resolve scope manual | DRY + S | Tinggi | Rendah |
-| **A2** | Allowlist status di `domain` (`ValidPendaftaranStatus`, `ValidAnggotaStatus`) dipakai service/repo | DRY | Tinggi | Rendah |
-| **A3** | ISP: pecah interface repo gemuk menjadi per-use-case (Read/Write) + perbarui fakes | I | Sedang | Sedang |
-| **A4** | Pecah god-service (`pendaftaran`, `kepengurusan`) menjadi beberapa service fokus | S | Sedang | Sedang–Tinggi |
-| **A5** | `StorageHandler` bergantung pada interface `StorageService` | D | Sedang | Rendah |
-| **A6** | Pindahkan `sendAppointmentEmail` ke outbox (tambah jenis `PENGANGKATAN`) | DRY | Rendah | Sedang |
+| Kode | Rekomendasi | Prinsip | Prioritas | Risiko | Status |
+|---|---|---|---|---|---|
+| **A1** | `ActorContext.Scope() (*int,*int,error)` di `domain`; ganti semua resolve scope manual | DRY + S | Tinggi | Rendah | ✅ Selesai |
+| **A2** | Allowlist status di `domain` (`PendaftaranStatus.IsValid`, `AnggotaStatus.IsValid`) dipakai service/repo | DRY | Tinggi | Rendah | ✅ Selesai |
+| **A3** | ISP: pecah interface repo gemuk menjadi per-use-case (Read/Write) + perbarui fakes | I | Sedang | Sedang | Belum |
+| **A4** | Pecah god-service (`pendaftaran`, `kepengurusan`) menjadi beberapa service fokus | S | Sedang | Sedang–Tinggi | Belum |
+| **A5** | `StorageHandler` bergantung pada interface `StorageService` | D | Sedang | Rendah | Belum |
+| **A6** | Pindahkan `sendAppointmentEmail` ke outbox (tambah jenis `PENGANGKATAN`) | DRY | Rendah | Sedang | Belum |
 
-**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi sebagai bagian dari
-perbaikan struktur; A1/A2/A5/A6 belum dikerjakan.
+**Catatan:** pemisahan `routes` ke paket `router` (lihat §7) sudah dieksekusi. **A1 & A2 telah dikerjakan**;
+A3/A4/A5/A6 belum.
 
 ---
 
