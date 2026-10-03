@@ -41,7 +41,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - B3 Tambah/Edit Anggota ✅ **Selesai**.
 
 ### Fase C — Fitur Admin
-- C1 Laporan & Statistik (+ demografi + anomali NIA).
+- C1 Laporan & Statistik (+ demografi + anomali NIA) ✅ **Selesai**.
 - C2 Penelusur Audit + CSV.
 - C3 Manajemen User scope Nasional.
 - C4 Role & Wewenang (katalog read-only).
@@ -241,3 +241,21 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
   update/status/CSV); `tsc`/`lint`/`build` hijau; E2E create→edit→status→export.
 
 > **Fase B SELESAI.** Lanjut **Fase C** (C1 Laporan & Statistik).
+
+## 14. Catatan Fase C — C1 Laporan & Statistik (TDD §6.8)
+
+- **Endpoints** (capability `view_laporan`, `ScopeWilayah`):
+  - `GET /admin/laporan` — ringkasan (anggota/status, pengurus aktif efektif,
+    SK aktif, menunggu verifikasi), demografi (usia/pendidikan/pekerjaan),
+    distribusi wilayah per scope, tren 12 bulan, dan **anomali NIA**.
+  - `GET /admin/laporan/export.csv`.
+- **Anomali NIA**: NIK didekripsi **hanya di server** (`DecryptAESGCM`), lalu
+  4 digit awal dibandingkan kode kabupaten domisili; dibatasi 3000 kandidat.
+- **Repository** `laporan_repository.go` (agregat ter-scope, status efektif),
+  **service** `laporan_service.go`, **handler/routes** baru + capability
+  `view_laporan` (semua admin).
+- **Frontend**: halaman `/admin/laporan` (kartu ringkasan, bar demografi/wilayah/
+  tren, tabel anomali, Ekspor CSV, Cetak) + menu **Laporan**.
+- **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E
+  `GET /admin/laporan` & `export.csv` mengembalikan data benar (termasuk 1
+  anomali NIA pada data dev).
