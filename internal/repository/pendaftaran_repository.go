@@ -357,8 +357,9 @@ func (r *pendaftaranRepo) ListHistory(ctx context.Context, pendaftaranID int) ([
 
 // queueWhere membangun klausa WHERE + args dengan placeholder $n terindeks.
 // Filter wilayah berasal dari ActorContext server-side (bukan client).
+// Pendaftaran yang sudah DISETUJUI TIDAK masuk antrean (sudah jadi Anggota).
 func queueWhere(provinsiID, kabupatenID *int, status string) (string, []interface{}) {
-	where := []string{"1 = 1"}
+	where := []string{"status <> 'DISETUJUI'"}
 	args := []interface{}{}
 	if provinsiID != nil {
 		args = append(args, *provinsiID)
