@@ -338,3 +338,11 @@ Seluruh batch **selesai & terverifikasi** (backend `build`/`vet`/`test` hijau, f
 - Helper `canPromotePengurus` (roles.ts) + tombol "Jadikan Pengurus" di `AnggotaDetailPage`.
 - **Tanpa perubahan backend** (endpoint & validasi sudah ada).
 
+### Revisi alur pengangkatan (B1H–B1D, 04 Okt 2026)
+- **B1H**: perbaikan **404 berkas SK** — `ResolveOwner` mengenali `surat_keputusan.file_sk_key` (berkas SK kini dapat dibuka Kab/Prov/Nas).
+- **B1R**: **form Buat SK** memuat langkah **Kader + Jabatan + Tanggal Mulai** → submit membuat SK (Draf) + mengangkat kader; **Ajukan manual** dari detail SK.
+- **B1T**: **Tanggal Mulai** jabatan dapat diisi manual (default tanggal terbit).
+- **B1P**: mode **"Promosi Pengurus"** (`GET /admin/pengurus/promosi`) di samping "Dari Anggota (Baru)".
+- **B1D**: **Nonaktifkan SK** mendemosi pengurus aktif (Demisioner/Diberhentikan + keterangan) secara atomik.
+- Diadopsi dari project lama; perbandingan lengkap ada di catatan diskusi (project lama: SK dulu lalu tambah pengurus, tanpa DRAFT).
+

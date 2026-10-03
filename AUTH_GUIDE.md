@@ -160,12 +160,13 @@ PROV→`MENUNGGU_NASIONAL`, NAS→`DISETUJUI` final) → PROV `TERUSKAN` → NAS
 
 * **`POST /api/v1/admin/sk`** — buat SK (**selalu `DRAFT`**). Body menyertakan `nomor_sk`, `judul`, `level`, `provinsi_id`, `kabupaten_id`, `tanggal_terbit`, **`tanggal_berakhir`** (wajib, > terbit), `file_sk_key` (wajib). **Level & wilayah ditentukan server dari role**: Super/Nasional bebas pilih level+wilayah (divalidasi ke master); Provinsi dipaksa `PROVINSI` + provnya; Kabupaten dipaksa `KABUPATEN` + wilayahnya.
 * **`GET /api/v1/admin/sk`** — daftar ter-scope; filter `level`, `status` (Aktif/TidakAktif), `approval` (DRAFT/MENUNGGU_*/DISETUJUI/DITOLAK), `search`; `with_total=0` melewati COUNT.
-* **`GET /api/v1/admin/sk/:id`** — detail + susunan pengurus.
+* **`GET /api/v1/admin/sk/:id`** — detail + susunan pengurus. Berkas SK dapat dibuka via `GET /storage/presign-view?key=<file_sk_key>` (di-otorisasi per-wilayah; diperbaiki 04 Okt 2026).
 * **`POST /api/v1/admin/sk/:id/approve`** — `{"action":"AJUKAN|TERUSKAN|SAHKAN|TOLAK","catatan":"..."}`. `AJUKAN`=pengelola SK (Kab/Prov/Nas/Super sesuai level); `TERUSKAN`=PROV; `SAHKAN`/`TOLAK`=NAS/SUPER (TOLAK wajib catatan). Saat **`AJUKAN` SK Nasional** atau **`SAHKAN`** berlaku **Single Active SK rule**: SK lain selevel+wilayah → `TidakAktif` & pengurusnya → `Demisioner` (atomik).
-* **`POST /api/v1/admin/sk/:id/status`** — aktif/nonaktifkan SK.
-* **`POST /api/v1/admin/sk/:id/pengurus`** — tambah pengurus; peran mengikuti **level SK** (Opsi A: Kabupaten sekab **atau** Provinsi seprov); body `{anggota_id,jabatan_id,konfirmasi:true}`; SK `Aktif` & belum `DISETUJUI`. Efek **atomik**: pengurus lama → Demisioner; `anggota.tipe` + `users.tipe_user` → `PENGURUS`; seluruh sesi dicabut; email notifikasi async.
+* **`POST /api/v1/admin/sk/:id/status`** — `{status, status_pengurus?, keterangan?}`. Bila `status=TidakAktif`: **seluruh pengurus aktif didemosi** ke `status_pengurus` (Demisioner/Diberhentikan, default Demisioner) + `keterangan` **wajib**.
+* **`POST /api/v1/admin/sk/:id/pengurus`** — tambah pengurus; peran mengikuti **level SK** (Opsi A: Kabupaten sekab **atau** Provinsi seprov); body `{anggota_id, jabatan_id, konfirmasi:true, tanggal_mulai?}` (tanggal_mulai opsional, default tanggal terbit SK); SK `Aktif` & belum `DISETUJUI`. Efek **atomik**: pengurus lama → Demisioner; `anggota.tipe` + `users.tipe_user` → `PENGURUS`; seluruh sesi dicabut; email notifikasi async.
 * **`DELETE /api/v1/admin/sk/:id/pengurus/:pengurusId`** — lepas pengurus (SK non-final).
-* **`GET /api/v1/admin/pengurus`** — daftar ter-scope; filter `level`, `status`, `masa_jabatan` (Aktif/AkanBerakhir/Berakhir), `provinsi_id`, `kabupaten_id` (Nasional/Super), `search`, `with_total`; **`GET /api/v1/admin/pengurus/stats`** — kartu (total/per-level/akan-berakhir).
+* **`DELETE /api/v1/admin/sk/:id/pengurus/:pengurusId`** — lepas pengurus (SK non-final).
+* **`GET /api/v1/admin/pengurus`** — daftar ter-scope; filter `level`, `status`, `masa_jabatan` (Aktif/AkanBerakhir/Berakhir), `provinsi_id`, `kabupaten_id` (Nasional/Super), `search`, `with_total`; **`GET /api/v1/admin/pengurus/stats`** — kartu (total/per-level/akan-berakhir); **`GET /api/v1/admin/pengurus/promosi`** — kandidat **Promosi Pengurus** (anggota AKTIF ber-riwayat kepengurusan yang tidak sedang aktif menjabat).
 * **`PATCH /api/v1/admin/pengurus/:id`** — ubah **status** (keterangan wajib bila non-`Aktif`).
 * **`PATCH /api/v1/admin/pengurus/:id/jabatan`** — **ganti jabatan** (`{"jabatan_id":n}`); SK non-final; jabatan inti tunggal per SK.
 * **`GET /api/v1/admin/jabatan`** — master jabatan **berlevel** (`?level=NASIONAL|PROVINSI|KABUPATEN`); **`POST`/`PUT`** kelola hanya `SUPER_ADMIN`/`ADMIN_NASIONAL`. Validasi `jabatan.level == sk.level`.
@@ -173,7 +174,7 @@ PROV→`MENUNGGU_NASIONAL`, NAS→`DISETUJUI` final) → PROV `TERUSKAN` → NAS
 Aturan: jabatan **inti** maksimum satu pemegang per SK; anggota wajib `AKTIF` &
 satu wilayah dengan SK; SK `DISETUJUI` **terkunci** (buat SK baru untuk perubahan).
 
-> **UI:** pengangkatan memakai **wizard terpadu** (`PromotePengurusWizard`) via tombol di halaman **Pengurus**, **detail SK**, dan **detail Anggota** ("Jadikan Pengurus"). Urutan langkah: **SK → Anggota → Jabatan → Konfirmasi**; jabatan inti yang sudah terisi otomatis non-aktif. Susun pengurus **sebelum** SK diajukan.
+> **UI:** pengangkatan memakai **wizard terpadu** (`PromotePengurusWizard`) via tombol di halaman **Pengurus**, **detail SK**, dan **detail Anggota** ("Jadikan Pengurus"). Urutan langkah: **SK → Anggota → Jabatan → Konfirmasi**; jabatan inti yang sudah terisi otomatis non-aktif. Susun pengurus **sebelum** SK diajukan. **Form Buat SK** juga memuat langkah **Kader + Jabatan + Tanggal Mulai** (SK tersimpan Draf + kader terangkat) dengan mode **Dari Anggota (Baru) / Promosi Pengurus**. Menonaktifkan SK mendemosi pengurus (Demisioner/Diberhentikan).
 
 ### 9. Dasbor Analitik
 * **`GET /api/v1/admin/dashboard`** — ringkasan ter-scope: Nasional → per Provinsi; Provinsi → per Kabupaten/Kota; Kabupaten → per Kecamatan. Akses `USER` ditolak (403).
