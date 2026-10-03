@@ -86,4 +86,5 @@ Frontend berjalan di `http://localhost:5173`
 | [`docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md`](docs/IMPLEMENTASI_ANTRIAN_EMAIL_STATUS.md) | **SELESAI**: antrean email (outbox) + kredensial via tautan set-password |
 | [`docs/IMPLEMENTASI_KTA_CARD_DESIGN_LAMA.md`](docs/IMPLEMENTASI_KTA_CARD_DESIGN_LAMA.md) | Desain & output KTA (PDF + QR) |
 | [`docs/audit-security/`](docs/audit-security/) | Laporan audit keamanan OWASP (S1–S9) |
+| [`docs/EVALUASI_ARSITEKTUR_BACKEND.md`](docs/EVALUASI_ARSITEKTUR_BACKEND.md) | Evaluasi SOLID/DRY backend + rekomendasi & struktur routes |
 
