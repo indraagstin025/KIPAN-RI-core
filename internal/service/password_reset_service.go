@@ -33,6 +33,8 @@ type PasswordResetService interface {
 	ForgotPassword(ctx context.Context, email string, audit domain.AuditContext) error
 	// ResetPassword menukar token sekali pakai dengan password baru.
 	ResetPassword(ctx context.Context, token, newPassword string, audit domain.AuditContext) error
+	// SetPassword menukar token "buat kata sandi" (pwsetup:) dengan password baru.
+	SetPassword(ctx context.Context, token, newPassword string, audit domain.AuditContext) error
 }
 
 // PasswordResetDeps adalah dependensi service reset password.
@@ -173,5 +175,46 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, token, newPass
 	meta := `{"event":"password_reset","sessions_revoked":true}`
 	writeAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
 		"users", user.ID, "PASSWORD_RESET", &meta)
+	return nil
+}
+
+// SetPassword menukar token set-password (prefix `pwsetup:`, diterbitkan
+// worker outbox) dengan kata sandi baru untuk anggota.
+func (s *passwordResetService) SetPassword(ctx context.Context, token, newPassword string, audit domain.AuditContext) error {
+	if s.rdb == nil || s.userRepo == nil {
+		return unavailable("set kata sandi")
+	}
+	t := strings.TrimSpace(token)
+	if t == "" || len(t) > 256 {
+		return domain.NewValidationError("Tautan tidak valid atau kedaluwarsa")
+	}
+	val, err := consumeResetScript.Run(ctx, s.rdb, []string{setupKey(t)}).Result()
+	if err != nil {
+		return fmt.Errorf("gagal memverifikasi tautan: %w", err)
+	}
+	userID, ok := val.(string)
+	if !ok || strings.TrimSpace(userID) == "" {
+		return domain.NewValidationError("Tautan tidak valid atau kedaluwarsa")
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return domain.NewValidationError("Tautan tidak valid atau kedaluwarsa")
+	}
+	if user.Status != domain.UserStatusAktif {
+		return domain.ErrUserInactive
+	}
+	hash, err := argon2id.CreateHash(newPassword, argon2Params)
+	if err != nil {
+		return fmt.Errorf("gagal hash password baru: %w", err)
+	}
+	if err := s.userRepo.UpdatePassword(ctx, user.ID, hash); err != nil {
+		return fmt.Errorf("gagal menyimpan password baru: %w", err)
+	}
+	if err := s.userRepo.RevokeAllUserTokens(ctx, user.ID); err != nil {
+		log.Warn().Err(err).Str("user_id", user.ID).Msg("Gagal mencabut sesi setelah set password")
+	}
+	meta := `{"event":"set_password","sessions_revoked":true}`
+	writeAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
+		"users", user.ID, "PASSWORD_SET", &meta)
 	return nil
 }

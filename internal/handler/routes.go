@@ -121,6 +121,7 @@ func RegisterRoutes(
 		UserRepo: userRepo, AdminRepo: repository.NewUserAdminRepository(db),
 		WilayahRepo: wilayahRepo, AuditRepo: auditRepo,
 	}))
+	outboxHandler := NewOutboxHandler(service.NewOutboxService(emailOutboxRepo))
 	ktaHandler := NewKTAHandler(ktaSvc)
 	anggotaService := service.NewAnggotaService(cfg, service.AnggotaDeps{
 		AnggotaRepo: anggotaRepo, WilayahRepo: wilayahRepo,
@@ -150,6 +151,7 @@ func RegisterRoutes(
 	registerStorageRoutes(v1, rdb, authMiddleware, storageHandler)
 	registerWilayahRoutes(v1, rdb, wilayahHandler)
 	registerWilayahAdminRoutes(v1, rdb, authMiddleware, wilayahAdminHandler)
+	registerOutboxRoutes(v1, rdb, authMiddleware, outboxHandler)
 	registerAnggotaRoutes(v1, rdb, authMiddleware, ktaHandler, anggotaHandler)
 	registerNotificationRoutes(v1, authMiddleware, notifHandler)
 	registerUserRoutes(v1, rdb, authMiddleware, ktaHandler)
@@ -303,6 +305,8 @@ func registerAuthRoutes(
 	// Batch 3: reset kata sandi mandiri via email (anti-enumeration).
 	auth.Post("/forgot-password", authLimiter, pwResetLimiter, pwResetHandler.Forgot)
 	auth.Post("/reset-password", authLimiter, pwResetHandler.Reset)
+	// Set-password: tukar token "buat kata sandi" (dari antrian email) dengan sandi baru.
+	auth.Post("/set-password", authLimiter, pwResetHandler.Set)
 	auth.Get("/me", authMiddleware.Authenticate(), authHandler.Me)
 	auth.Put("/password", authMiddleware.Authenticate(), authHandler.ChangePassword)
 }
@@ -504,6 +508,27 @@ func registerUserAdminRoutes(
 	grp.Post("", handler.Create)
 	grp.Put("/:id", handler.Update)
 	grp.Delete("/:id", handler.Delete)
+}
+
+// registerOutboxRoutes mendaftarkan pemantauan antrian email (outbox) admin.
+func registerOutboxRoutes(
+	v1 fiber.Router,
+	rdb *redis.Client,
+	authMiddleware *middleware.AuthMiddleware,
+	handler *OutboxHandler,
+) {
+	grp := v1.Group("/admin/email-outbox",
+		authMiddleware.Authenticate(),
+		middleware.RequireRoles(
+			domain.RoleSuperAdmin, domain.RoleAdminNasional,
+			domain.RoleAdminProvinsi, domain.RoleAdminKabupaten,
+		),
+		middleware.MutatingRateLimit(rdb, "out_mut"),
+	)
+	grp.Get("", handler.List)
+	grp.Post("/retry-pending", handler.RetryPending)
+	grp.Post("/retry", handler.RetryMany)
+	grp.Post("/:id/retry", handler.Retry)
 }
 
 // registerWilayahAdminRoutes mendaftarkan endpoint master wilayah admin

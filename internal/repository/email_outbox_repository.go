@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -24,6 +26,7 @@ type OutboxFilter struct {
 // EmailOutboxRepository adalah antrian persisten pengiriman email (outbox).
 type EmailOutboxRepository interface {
 	Enqueue(ctx context.Context, item *domain.EmailOutbox) error
+	GetByID(ctx context.Context, id int64) (*domain.EmailOutbox, error)
 	ClaimNext(ctx context.Context, limit int) ([]domain.EmailOutbox, error)
 	MarkSent(ctx context.Context, id int64) error
 	MarkFailed(ctx context.Context, id int64, errMsg string, nextRetry time.Time, dead bool) error
@@ -50,6 +53,17 @@ func (r *emailOutboxRepo) Enqueue(ctx context.Context, item *domain.EmailOutbox)
 		item.Jenis, item.PendaftaranID, item.UserID, item.ProvinsiID, item.KabupatenID,
 		item.ToEmail, item.Subject, item.TextBody, item.HTMLBody,
 	).Scan(&item.ID, &item.Status, &item.Attempts, &item.NextRetryAt, &item.CreatedAt, &item.UpdatedAt)
+}
+
+func (r *emailOutboxRepo) GetByID(ctx context.Context, id int64) (*domain.EmailOutbox, error) {
+	var it domain.EmailOutbox
+	if err := r.db.GetContext(ctx, &it, `SELECT `+outboxColumns+` FROM email_outbox WHERE id = $1`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &it, nil
 }
 
 // ClaimNext melakukan "lease" pada sejumlah baris pending siap kirim: attempts+1

@@ -32,6 +32,7 @@ var ratePolicies = map[string]ratePolicy{
 	"wil_pub":  {max: 60, window: time.Minute},     // daftar wilayah (read-only ringan)
 	"wil_mut":  {max: 30, window: time.Minute},     // mutasi master wilayah admin (status/tambah)
 	"usr_mut":  {max: 30, window: time.Minute},     // mutasi manajemen pengguna (Super Admin)
+	"out_mut":  {max: 30, window: time.Minute},     // mutasi antrian email (retry/kirim ulang)
 	"agt_pub":  {max: 30, window: time.Minute},     // cek anggota publik (anti scraping NIA)
 }
 

@@ -59,3 +59,19 @@ func (h *PasswordResetHandler) Reset(c *fiber.Ctx) error {
 	}
 	return response.Success(c, "Kata sandi berhasil diatur ulang. Silakan login dengan kata sandi baru.", nil)
 }
+
+// Set menukar token "buat kata sandi" (dari email pengangkatan akun) dengan
+// kata sandi baru. Payload sama dengan reset.
+func (h *PasswordResetHandler) Set(c *fiber.Ctx) error {
+	var req resetPasswordPayload
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "Format data tidak valid")
+	}
+	if errs := h.validator.ValidateStruct(req); len(errs) > 0 {
+		return response.ValidationError(c, "Validasi gagal", errs)
+	}
+	if err := h.service.SetPassword(c.Context(), req.Token, req.NewPassword, auditContextOf(c)); err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Kata sandi berhasil dibuat. Silakan login.", nil)
+}
