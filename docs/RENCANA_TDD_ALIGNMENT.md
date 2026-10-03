@@ -37,7 +37,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 
 ### Fase B — Pendaftaran & Keanggotaan
 - B1 Retensi DITOLAK + unique NIK parsial — migrasi `000028` ✅ **Selesai**.
-- B2 Kolom RIWAYAT.
+- B2 Kolom RIWAYAT ✅ **Selesai**.
 - B3 Tambah/Edit Anggota.
 
 ### Fase C — Fitur Admin
@@ -199,3 +199,23 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
   `TestRejectedNIKCanReregister` (DITOLAK → GetByNikHash 404 → daftar ulang
   sukses → GetByNikHash mengembalikan yang baru → non-DITOLAK kedua ditolak);
   index definisi terverifikasi memiliki predikat `<> 'DITOLAK'`.
+
+## 12. Catatan Fase B — B2 Kolom RIWAYAT (TDD §5.5)
+
+- **Domain** `riwayat.go`: `PengurusRiwayatRow` + `FormatRiwayat` — jabatan
+  **aktif terbaru** menang; bila tak ada, **riwayat terakhir**; bila kosong `-`.
+  Periode `YYYY-YYYY` dari SK; label wilayah by level (Nasional/nama prov/nama kab).
+- **Repository** `anggota_repository.go`:
+  - `anggotaListColumns` + `a.pekerjaan` (kolom PEKERJAAN).
+  - `RiwayatByAnggotaIDs(ids)` — query batch `IN (...)`, status efektif dari
+    `pengurus_status_efektif(...)`, dikelompokkan lalu `FormatRiwayat`.
+- **Service** `anggota_service.go`: `attachRiwayat` dipakai di `ListAnggota`,
+  `ListAnggotaCursor`, dan `GetAnggotaDetail` (best-effort; gagal → kosongkan).
+- **DTO**: `AnggotaListItem` + `pekerjaan`/`riwayat`; `domain.Anggota` + `riwayat`.
+- **Frontend**: Data Anggota — kolom **Nama/NIA · Pekerjaan · Riwayat** · Wilayah ·
+  Status; detail menampilkan "Riwayat Kepengurusan".
+- **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; golden test
+  `TestFormatRiwayat` (3 skenario Mirwan); integrasi `TestRiwayatByAnggotaIDs`;
+  E2E list & detail menampilkan riwayat benar.
+
+> **Fase B tersisa: B3 Tambah/Edit Anggota.**

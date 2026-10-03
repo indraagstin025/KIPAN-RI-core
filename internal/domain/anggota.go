@@ -10,6 +10,8 @@ type AnggotaListItem struct {
 	NIA           string    `db:"nia" json:"nia"`
 	NamaLengkap   string    `db:"nama_lengkap" json:"nama_lengkap"`
 	Status        string    `db:"status" json:"status"`
+	Pekerjaan     string    `db:"pekerjaan" json:"pekerjaan"`
+	Riwayat       string    `db:"-" json:"riwayat"` // dihitung server-side (TDD §5.5)
 	ProvinsiID    int       `db:"provinsi_id" json:"provinsi_id"`
 	ProvinsiNama  string    `db:"provinsi_nama" json:"provinsi_nama"`
 	KabupatenID   int       `db:"kabupaten_id" json:"kabupaten_id"`

@@ -117,7 +117,31 @@ func (s *anggotaService) ListAnggota(ctx context.Context, actor domain.ActorCont
 	if err != nil {
 		return nil, 0, err
 	}
+	s.attachRiwayat(ctx, items)
 	return items, total, nil
+}
+
+// attachRiwayat mengisi kolom RIWAYAT (TDD §5.5) untuk sejumlah item daftar.
+func (s *anggotaService) attachRiwayat(ctx context.Context, items []domain.AnggotaListItem) {
+	if s.anggotaRepo == nil || len(items) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+	}
+	byID, err := s.anggotaRepo.RiwayatByAnggotaIDs(ctx, ids)
+	if err != nil {
+		log.Warn().Err(err).Msg("Gagal menghitung riwayat anggota; kolom RIWAYAT dikosongkan")
+		return
+	}
+	for i := range items {
+		if v, ok := byID[items[i].ID]; ok {
+			items[i].Riwayat = v
+		} else {
+			items[i].Riwayat = "-"
+		}
+	}
 }
 
 // ListAnggotaCursor varian keyset (tanpa COUNT + tanpa OFFSET besar).
@@ -163,6 +187,7 @@ func (s *anggotaService) ListAnggotaCursor(ctx context.Context, actor domain.Act
 		last := items[len(items)-1]
 		next = keyset.Encode(last.CreatedAt, last.ID)
 	}
+	s.attachRiwayat(ctx, items)
 	return items, next, nil
 }
 
@@ -179,6 +204,9 @@ func (s *anggotaService) GetAnggotaDetail(ctx context.Context, id int, actor dom
 	}
 	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
 		return nil, domain.NewForbiddenError("Data anggota di luar wilayah kerja Anda")
+	}
+	if m, err := s.anggotaRepo.RiwayatByAnggotaIDs(ctx, []int{id}); err == nil {
+		item.Riwayat = m[id]
 	}
 	return item, nil
 }

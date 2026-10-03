@@ -363,6 +363,8 @@ type Anggota struct {
 	TanggalAngkat      time.Time       `db:"tanggal_angkat" json:"tanggal_angkat"`
 	CreatedAt          time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt          time.Time       `db:"updated_at" json:"updated_at"`
+	// Riwayat bukan kolom DB; diisi server-side saat detail (TDD §5.5).
+	Riwayat string `db:"-" json:"riwayat,omitempty"`
 }
 
 // KTAQRHashValue mengembalikan signature QR ("" bila belum terbit).

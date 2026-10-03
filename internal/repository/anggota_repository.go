@@ -36,6 +36,8 @@ type AnggotaRepository interface {
 	GetByUserID(ctx context.Context, userID string) (*domain.Anggota, error)
 	// SetStatus mengubah status keanggotaan (mis. MENINGGAL saat PAW).
 	SetStatus(ctx context.Context, id int, status domain.AnggotaStatus) error
+	// RiwayatByAnggotaIDs menghitung kolom RIWAYAT (TDD §5.5) per anggota.
+	RiwayatByAnggotaIDs(ctx context.Context, ids []int) (map[int]string, error)
 }
 
 type anggotaRepo struct {
@@ -143,6 +145,47 @@ func (r *anggotaRepo) SetStatus(ctx context.Context, id int, status domain.Anggo
 	return nil
 }
 
+// RiwayatByAnggotaIDs menghitung teks kolom RIWAYAT untuk sekumpulan anggota
+// (TDD §5.5) memakai status efektif (TDD §5.4). Anggota tanpa riwayat = "-".
+func (r *anggotaRepo) RiwayatByAnggotaIDs(ctx context.Context, ids []int) (map[int]string, error) {
+	out := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	query, args, err := sqlx.In(`
+		SELECT p.anggota_id, p.level, j.nama AS jabatan,
+		       wp.nama AS provinsi_nama, wk.nama AS kabupaten_nama,
+		       sk.tanggal_terbit, sk.tanggal_berakhir,
+		       pengurus_status_efektif(p.status, sk.status, sk.tanggal_berakhir, CURRENT_DATE) AS status_efektif,
+		       p.tanggal_mulai
+		FROM pengurus p
+		JOIN surat_keputusan sk ON sk.id = p.surat_keputusan_id
+		JOIN jabatan j ON j.id = p.jabatan_id
+		LEFT JOIN wilayah_provinsi wp ON wp.id = p.provinsi_id
+		LEFT JOIN wilayah_kabupaten wk ON wk.id = p.kabupaten_id
+		WHERE p.anggota_id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	query = r.db.Rebind(query)
+	rows := make([]domain.PengurusRiwayatRow, 0)
+	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
+		return nil, err
+	}
+	grouped := make(map[int][]domain.PengurusRiwayatRow)
+	for i := range rows {
+		grouped[rows[i].AnggotaID] = append(grouped[rows[i].AnggotaID], rows[i])
+	}
+	for _, id := range ids {
+		if rs, ok := grouped[id]; ok {
+			out[id] = domain.FormatRiwayat(rs)
+		} else {
+			out[id] = "-"
+		}
+	}
+	return out, nil
+}
+
 // GetByUserID mengambil anggota milik satu akun USER (satu user = satu kader).
 func (r *anggotaRepo) GetByUserID(ctx context.Context, userID string) (*domain.Anggota, error) {
 	var a domain.Anggota
@@ -182,7 +225,7 @@ func anggotaWhere(provinsiID, kabupatenID *int, status, search string) (string, 
 	return strings.Join(where, " AND "), args
 }
 
-const anggotaListColumns = `a.id, a.nia, a.nama_lengkap, a.status,
+const anggotaListColumns = `a.id, a.nia, a.nama_lengkap, a.status, a.pekerjaan,
 	a.provinsi_id, p.nama AS provinsi_nama,
 	a.kabupaten_id, k.nama AS kabupaten_nama,
 	a.tanggal_angkat, a.created_at`

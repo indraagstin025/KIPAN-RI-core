@@ -48,6 +48,14 @@ func (f *fakeAnggotaRepo) SetStatus(_ context.Context, id int, status domain.Ang
 	return nil
 }
 
+func (f *fakeAnggotaRepo) RiwayatByAnggotaIDs(_ context.Context, ids []int) (map[int]string, error) {
+	out := make(map[int]string, len(ids))
+	for _, id := range ids {
+		out[id] = "-"
+	}
+	return out, nil
+}
+
 func (f *fakeAnggotaRepo) SetUserID(_ context.Context, id int, userID string) error {
 	if f.links == nil {
 		f.links = map[int]string{}
