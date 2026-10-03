@@ -14,7 +14,8 @@ import (
 // UserAdminRepository operasi manajemen akun admin (Super Admin).
 // Interface terpisah agar konsumen lain (auth) tak terpengaruh.
 type UserAdminRepository interface {
-	ListAdmin(ctx context.Context, role, status, search string, limit, offset int) ([]domain.User, int, error)
+	// ListAdmin memfilter berdasarkan daftar role (kosong = semua role admin).
+	ListAdmin(ctx context.Context, roles []string, status, search string, limit, offset int) ([]domain.User, int, error)
 	Counts(ctx context.Context) (*domain.AdminUserCounts, error)
 	CreateAdmin(ctx context.Context, u *domain.User) error
 	UpdateAdminProfile(ctx context.Context, id, name, email string, role domain.Role, provinsiID, kabupatenID *int, status domain.UserStatus) error
@@ -37,7 +38,7 @@ func (r *userAdminRepo) CreateAdmin(ctx context.Context, u *domain.User) error {
 	return mapDBError(err, "Email sudah dipakai akun lain")
 }
 
-func (r *userAdminRepo) ListAdmin(ctx context.Context, role, status, search string, limit, offset int) ([]domain.User, int, error) {
+func (r *userAdminRepo) ListAdmin(ctx context.Context, roles []string, status, search string, limit, offset int) ([]domain.User, int, error) {
 	if limit <= 0 {
 		limit = 25
 	}
@@ -49,9 +50,19 @@ func (r *userAdminRepo) ListAdmin(ctx context.Context, role, status, search stri
 	}
 	where := []string{"u.deleted_at IS NULL", "u.role <> 'USER'"}
 	args := []interface{}{}
-	if v := strings.TrimSpace(role); v != "" {
-		args = append(args, v)
-		where = append(where, fmt.Sprintf("u.role = $%d", len(args)))
+	clean := make([]string, 0, len(roles))
+	for _, rl := range roles {
+		if s := strings.TrimSpace(rl); s != "" {
+			clean = append(clean, s)
+		}
+	}
+	if len(clean) > 0 {
+		ph := make([]string, len(clean))
+		for i, rl := range clean {
+			args = append(args, rl)
+			ph[i] = fmt.Sprintf("$%d", len(args))
+		}
+		where = append(where, "u.role IN ("+strings.Join(ph, ",")+")")
 	}
 	if v := strings.TrimSpace(status); v != "" {
 		args = append(args, v)

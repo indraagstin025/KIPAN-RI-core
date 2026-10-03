@@ -50,13 +50,46 @@ func NewUserAdminService(deps UserAdminDeps) UserAdminService {
 }
 
 func (s *userAdminSvc) guard(actor domain.ActorContext) error {
-	if actor.Role != domain.RoleSuperAdmin {
-		return domain.NewForbiddenError("Manajemen Pengguna hanya untuk Super Admin")
+	if actor.Role != domain.RoleSuperAdmin && actor.Role != domain.RoleAdminNasional {
+		return domain.NewForbiddenError("Manajemen Pengguna hanya untuk Super Admin / Admin Nasional")
 	}
 	if s.adminRepo == nil || s.userRepo == nil {
 		return unavailable("pengguna")
 	}
 	return nil
+}
+
+// regionalRestricted true bila aktor hanya boleh mengelola akun Provinsi/Kab.
+func regionalRestricted(actor domain.ActorContext) bool {
+	return actor.Role == domain.RoleAdminNasional
+}
+
+// assertManageableRole memastikan aktor berwenang atas role target.
+func assertManageableRole(actor domain.ActorContext, target domain.Role) error {
+	if regionalRestricted(actor) &&
+		target != domain.RoleAdminProvinsi && target != domain.RoleAdminKabupaten {
+		return domain.NewForbiddenError("Admin Nasional hanya dapat mengelola akun Provinsi/Kabupaten")
+	}
+	return nil
+}
+
+// listRoles menentukan filter role untuk daftar akun sesuai peran aktor.
+func listRoles(actor domain.ActorContext, requested string) ([]string, error) {
+	rq := strings.ToUpper(strings.TrimSpace(requested))
+	if actor.Role == domain.RoleSuperAdmin {
+		if rq == "" {
+			return nil, nil
+		}
+		return []string{rq}, nil
+	}
+	switch rq {
+	case "":
+		return []string{string(domain.RoleAdminProvinsi), string(domain.RoleAdminKabupaten)}, nil
+	case string(domain.RoleAdminProvinsi), string(domain.RoleAdminKabupaten):
+		return []string{rq}, nil
+	default:
+		return nil, domain.NewForbiddenError("Admin Nasional hanya dapat melihat akun Provinsi/Kabupaten")
+	}
 }
 
 func normAdminRole(v string) (domain.Role, bool) {
@@ -138,7 +171,11 @@ func (s *userAdminSvc) List(ctx context.Context, actor domain.ActorContext, role
 	if limit > 100 {
 		limit = 100
 	}
-	return s.adminRepo.ListAdmin(ctx, role, status, search, limit, (page-1)*limit)
+	roles, err := listRoles(actor, role)
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.adminRepo.ListAdmin(ctx, roles, status, search, limit, (page-1)*limit)
 }
 
 func (s *userAdminSvc) Counts(ctx context.Context, actor domain.ActorContext) (*domain.AdminUserCounts, error) {
@@ -163,6 +200,9 @@ func (s *userAdminSvc) Create(ctx context.Context, actor domain.ActorContext, au
 	role, ok := normAdminRole(in.Role)
 	if !ok {
 		return nil, domain.NewValidationError("Role admin tidak valid")
+	}
+	if err := assertManageableRole(actor, role); err != nil {
+		return nil, err
 	}
 	status, ok := normUserStatus(in.Status)
 	if !ok {
@@ -220,6 +260,12 @@ func (s *userAdminSvc) Update(ctx context.Context, actor domain.ActorContext, au
 	role, ok := normAdminRole(in.Role)
 	if !ok {
 		return nil, domain.NewValidationError("Role admin tidak valid")
+	}
+	if err := assertManageableRole(actor, existing.Role); err != nil {
+		return nil, err
+	}
+	if err := assertManageableRole(actor, role); err != nil {
+		return nil, err
 	}
 	status, ok := normUserStatus(in.Status)
 	if !ok {
@@ -303,6 +349,9 @@ func (s *userAdminSvc) Delete(ctx context.Context, actor domain.ActorContext, au
 	}
 	existing, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
+		return err
+	}
+	if err := assertManageableRole(actor, existing.Role); err != nil {
 		return err
 	}
 	if existing.Role == domain.RoleSuperAdmin {

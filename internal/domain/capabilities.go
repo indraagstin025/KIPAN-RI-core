@@ -8,20 +8,21 @@ package domain
 type Capability string
 
 const (
-	CapViewDashboard      Capability = "view_dashboard"      // lihat dasbor ter-scope
-	CapViewPendaftaran    Capability = "view_pendaftaran"    // lihat antrean/detail pendaftaran
-	CapVerifyPendaftaran  Capability = "verify_pendaftaran"  // putusan verifikasi (setujui/tolak/perbaikan)
-	CapManageKepengurusan Capability = "manage_kepengurusan" // kelola SK & pengurus
-	CapCreateSK           Capability = "create_sk"           // susun & ajukan SK
-	CapManageOutbox       Capability = "manage_outbox"       // kelola antrian email
-	CapViewLaporan        Capability = "view_laporan"        // laporan & statistik
-	CapViewAudit          Capability = "view_audit"          // penelusur audit
-	CapCreateJabatan      Capability = "create_jabatan"      // tambah entri master jabatan (semua admin)
-	CapManageJabatan      Capability = "manage_jabatan"      // ubah/nonaktifkan master jabatan
-	CapManageWilayah      Capability = "manage_wilayah"      // master wilayah
-	CapManageUsers        Capability = "manage_users"        // manajemen akun admin
-	CapManageOrganisasi   Capability = "manage_organisasi"   // profil organisasi
-	CapManageBackup       Capability = "manage_backup"       // backup database
+	CapViewDashboard       Capability = "view_dashboard"        // lihat dasbor ter-scope
+	CapViewPendaftaran     Capability = "view_pendaftaran"      // lihat antrean/detail pendaftaran
+	CapVerifyPendaftaran   Capability = "verify_pendaftaran"    // putusan verifikasi (setujui/tolak/perbaikan)
+	CapManageKepengurusan  Capability = "manage_kepengurusan"   // kelola SK & pengurus
+	CapCreateSK            Capability = "create_sk"             // susun & ajukan SK
+	CapManageOutbox        Capability = "manage_outbox"         // kelola antrian email
+	CapViewLaporan         Capability = "view_laporan"          // laporan & statistik
+	CapViewAudit           Capability = "view_audit"            // penelusur audit
+	CapCreateJabatan       Capability = "create_jabatan"        // tambah entri master jabatan (semua admin)
+	CapManageJabatan       Capability = "manage_jabatan"        // ubah/nonaktifkan master jabatan
+	CapManageWilayah       Capability = "manage_wilayah"        // master wilayah
+	CapManageUsers         Capability = "manage_users"          // manajemen akun admin (Super)
+	CapManageRegionalUsers Capability = "manage_regional_users" // kelola akun Provinsi/Kabupaten (Super+Nasional)
+	CapManageOrganisasi    Capability = "manage_organisasi"     // profil organisasi
+	CapManageBackup        Capability = "manage_backup"         // backup database
 )
 
 // CapabilityInfo adalah metadata satu capability untuk katalog UI & audit.
@@ -48,7 +49,8 @@ var capabilityRegistry = []CapabilityInfo{
 	{CapCreateJabatan, "Tambah Jabatan", "Menambah entri jabatan baru (tanpa level).", allAdminRoles},
 	{CapManageJabatan, "Kelola Jabatan", "Mengubah/menonaktifkan master jabatan.", []Role{RoleSuperAdmin, RoleAdminNasional}},
 	{CapManageWilayah, "Master Wilayah", "Mengelola master data wilayah.", []Role{RoleSuperAdmin, RoleAdminNasional}},
-	{CapManageUsers, "Manajemen Pengguna", "Mengelola akun admin.", []Role{RoleSuperAdmin}},
+	{CapManageUsers, "Manajemen Pengguna", "Mengelola semua akun admin.", []Role{RoleSuperAdmin}},
+	{CapManageRegionalUsers, "Kelola Akun Regional", "Mengelola akun admin Provinsi/Kabupaten.", []Role{RoleSuperAdmin, RoleAdminNasional}},
 	{CapManageOrganisasi, "Profil Organisasi", "Mengelola profil organisasi & halaman publik.", []Role{RoleSuperAdmin}},
 	{CapManageBackup, "Database Backup", "Membuat & mengunduh backup database.", []Role{RoleSuperAdmin}},
 }

@@ -43,7 +43,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 ### Fase C — Fitur Admin
 - C1 Laporan & Statistik (+ demografi + anomali NIA) ✅ **Selesai**.
 - C2 Penelusur Audit + CSV ✅ **Selesai**.
-- C3 Manajemen User scope Nasional.
+- C3 Manajemen User scope Nasional ✅ **Selesai**.
 - C4 Role & Wewenang (katalog read-only).
 - C5 Profil Organisasi — migrasi `000029`.
 - C6 Database Backup (`pg_dump`, terenkripsi) — migrasi `000030`.
@@ -273,3 +273,20 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
   tabel, pagination, Ekspor CSV, Cetak) + menu **Jejak Audit** (Super/Nasional).
 - **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E
   Nasional got 200/200, **Kabupaten 403**, total 199 baris.
+
+## 16. Catatan Fase C — C3 Manajemen User scope Nasional (TDD §6.8)
+
+- **Capability** `manage_regional_users` = **Super + Nasional**; route `/admin/users`
+  memakai capability ini (sebelumnya `manage_users`/Super-only).
+- **Aturan server-side** (`user_admin_service.go`):
+  - Admin Nasional hanya boleh melihat **&** mengelola akun **Provinsi/Kabupaten**;
+    daftar difilter (`ListAdmin(roles…)`), filter role Super/Nasional → 403.
+  - Tidak boleh membuat akun Super/Nasional (403); tetap menjaga: cegah
+    menonaktifkan/menghapus akun sendiri & Super Admin terakhir.
+- **Repository** `ListAdmin` menerima daftar role (`roles []string`).
+- **Frontend**: menu & route Manajemen Pengguna untuk Super+Nasional; bagi
+  Nasional, tab Super/Nasional disembunyikan, opsi role dibatasi Prov/Kab, dan
+  aksi Ubah/Hapus hanya untuk baris Prov/Kab.
+- **Verifikasi**: `build`/`vet`/`test` + `tsc`/`lint`/`build` hijau; E2E:
+  GET users nas=200 / kab=403 / super=200; nas filter SUPER_ADMIN=403;
+  nas POST Provinsi=201; nas POST Nasional=403.

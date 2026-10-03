@@ -67,7 +67,7 @@ func (f *fakeUserAdmin) SoftDeleteAdmin(_ context.Context, id string) error {
 	}
 	return nil
 }
-func (f *fakeUserAdmin) ListAdmin(context.Context, string, string, string, int, int) ([]domain.User, int, error) {
+func (f *fakeUserAdmin) ListAdmin(context.Context, []string, string, string, int, int) ([]domain.User, int, error) {
 	return nil, 0, nil
 }
 func (f *fakeUserAdmin) Counts(context.Context) (*domain.AdminUserCounts, error) {
@@ -106,10 +106,21 @@ func TestUserAdminCreate(t *testing.T) {
 		domain.UserCreateRequest{Name: "Ani", Email: "bukan-email", Role: "ADMIN_NASIONAL"}); err == nil {
 		t.Fatal("email buruk seharusnya ditolak")
 	}
-	// Hanya Super.
+	// Admin Nasional TIDAK boleh membuat akun Nasional/Super.
 	if _, err := svc.Create(ctx, nasActor(), domain.AuditContext{},
 		domain.UserCreateRequest{Name: "X", Email: "x@kipan.id", Role: "ADMIN_NASIONAL"}); err == nil {
-		t.Fatal("non-Super seharusnya ditolak")
+		t.Fatal("Nasional tidak boleh membuat akun Nasional")
+	}
+	// Admin Nasional BOLEH membuat akun Provinsi/Kabupaten.
+	prov := 32
+	if _, err := svc.Create(ctx, nasActor(), domain.AuditContext{},
+		domain.UserCreateRequest{Name: "Prov", Email: "prov@kipan.id", Role: "ADMIN_PROVINSI", ProvinsiID: &prov}); err != nil {
+		t.Fatalf("Nasional harus boleh membuat akun Provinsi: %v", err)
+	}
+	// Provinsi tidak boleh mengelola pengguna.
+	if _, err := svc.Create(ctx, provActor(), domain.AuditContext{},
+		domain.UserCreateRequest{Name: "Y", Email: "y@kipan.id", Role: "ADMIN_KABUPATEN"}); err == nil {
+		t.Fatal("Admin Provinsi tidak boleh mengelola pengguna")
 	}
 }
 
