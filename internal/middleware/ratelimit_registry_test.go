@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -32,16 +33,30 @@ func TestRateLimitRegistryCoversRouteUsage(t *testing.T) {
 	if !ok {
 		t.Fatal("tidak dapat menentukan lokasi file test")
 	}
-	routesPath := filepath.Join(filepath.Dir(thisFile), "..", "handler", "routes.go")
-
-	src, err := os.ReadFile(routesPath)
+	// Wiring rute kini berada di paket internal/router, dipecah per domain
+	// menjadi beberapa berkas *_routes.go.
+	routerDir := filepath.Join(filepath.Dir(thisFile), "..", "router")
+	routes, err := filepath.Glob(filepath.Join(routerDir, "*_routes.go"))
 	if err != nil {
-		t.Fatalf("gagal membaca %s: %v", routesPath, err)
+		t.Fatalf("gagal memindai %s: %v", routerDir, err)
+	}
+	if len(routes) == 0 {
+		t.Fatalf("tidak ada berkas *_routes.go ditemukan di %s", routerDir)
 	}
 
-	matches := rateLimitCallRe.FindAllStringSubmatch(string(src), -1)
+	var src strings.Builder
+	for _, p := range routes {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("gagal membaca %s: %v", p, err)
+		}
+		src.Write(b)
+		src.WriteByte('\n')
+	}
+
+	matches := rateLimitCallRe.FindAllStringSubmatch(src.String(), -1)
 	if len(matches) == 0 {
-		t.Fatal("tidak ada pemanggilan RateLimit(...) terdeteksi di routes.go — " +
+		t.Fatal("tidak ada pemanggilan RateLimit(...) terdeteksi di berkas rute — " +
 			"periksa apakah pola wiring berubah")
 	}
 

@@ -18,8 +18,8 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/database"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/handler"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/router"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
@@ -70,7 +70,7 @@ func main() {
 	// Fiber app
 	// ============================================================
 	app := setupFiberApp(cfg)
-	handler.RegisterRoutes(app, cfg, db, rdb, validator.New())
+	router.Register(app, cfg, db, rdb, validator.New())
 
 	startServer(app, cfg.App.Port)
 }
