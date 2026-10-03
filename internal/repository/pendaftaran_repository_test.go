@@ -250,3 +250,50 @@ func TestRevisionTokenFlow(t *testing.T) {
 		t.Fatal("token pakai-ulang DITERIMA")
 	}
 }
+
+// TestRejectedNIKCanReregister memverifikasi TDD D16: arsip DITOLAK permanen
+// namun pendaftar boleh mendaftar ulang dengan NIK yang sama; keunikan nik_hash
+// hanya berlaku untuk baris non-DITOLAK.
+func TestRejectedNIKCanReregister(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	provID, kabID := testWilayah(t, ctx, db)
+	repo := NewPendaftaranRepository(db)
+
+	nikHash := "integ-reject-" + uniqueNIK()
+
+	p1 := testEntity("REG-REJ-00001", nikHash, provID, kabID)
+	if err := repo.CreateWithHistory(ctx, p1, "SUBMIT", "uji"); err != nil {
+		t.Fatalf("CreateWithHistory p1 gagal: %v", err)
+	}
+	t.Cleanup(func() { cleanupPendaftaran(t, ctx, db, p1.ID) })
+
+	// Tandai DITOLAK (arsip permanen).
+	if _, err := db.ExecContext(ctx, `UPDATE pendaftaran SET status = 'DITOLAK' WHERE id = $1`, p1.ID); err != nil {
+		t.Fatalf("update DITOLAK gagal: %v", err)
+	}
+
+	// GetByNikHash mengabaikan arsip DITOLAK.
+	if _, err := repo.GetByNikHash(ctx, nikHash); err == nil {
+		t.Fatal("GetByNikHash harus mengabaikan baris DITOLAK")
+	}
+
+	// Daftar ulang dengan NIK sama harus SUKSES.
+	p2 := testEntity("REG-REJ-00002", nikHash, provID, kabID)
+	if err := repo.CreateWithHistory(ctx, p2, "SUBMIT", "daftar ulang"); err != nil {
+		t.Fatalf("daftar ulang setelah DITOLAK harus sukses: %v", err)
+	}
+	t.Cleanup(func() { cleanupPendaftaran(t, ctx, db, p2.ID) })
+
+	got, err := repo.GetByNikHash(ctx, nikHash)
+	if err != nil || got.ID != p2.ID {
+		t.Fatalf("GetByNikHash harus mengembalikan pendaftaran aktif p2: %v", err)
+	}
+
+	// Dua baris non-DITOLAK dengan NIK sama → ditolak DB.
+	p3 := testEntity("REG-REJ-00003", nikHash, provID, kabID)
+	if err := repo.CreateWithHistory(ctx, p3, "SUBMIT", "duplikat"); err == nil {
+		cleanupPendaftaran(t, ctx, db, p3.ID)
+		t.Fatal("dua pendaftaran non-DITOLAK dengan NIK sama harus ditolak")
+	}
+}

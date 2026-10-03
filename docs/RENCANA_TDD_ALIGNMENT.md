@@ -36,7 +36,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - A4 Kedaluwarsa dinamis (pakai `pengurus_status_efektif` + job harian) ✅ **Selesai**.
 
 ### Fase B — Pendaftaran & Keanggotaan
-- B1 Retensi DITOLAK + unique NIK parsial — migrasi `000028`.
+- B1 Retensi DITOLAK + unique NIK parsial — migrasi `000028` ✅ **Selesai**.
 - B2 Kolom RIWAYAT.
 - B3 Tambah/Edit Anggota.
 
@@ -186,3 +186,16 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 
 > **Fase A (Kepengurusan) SELESAI.** Lanjut **Fase B** (B1 retensi DITOLAK +
 > unique NIK parsial, migrasi `000028`).
+
+## 11. Catatan Fase B — B1 Retensi DITOLAK + Unique NIK Parsial (TDD D16)
+
+- **Migrasi `000028`**: `DROP INDEX uq_pendaftaran_nik_hash` (global) →
+  `CREATE UNIQUE INDEX uq_pendaftaran_nik_hash ON pendaftaran (nik_hash)
+  WHERE status <> 'DITOLAK'`. Baris DITOLAK disimpan permanen & tidak memblokir
+  pendaftaran ulang.
+- **Repository**: `GetByNikHash` hanya mengembalikan baris **non-DITOLAK**
+  (`ORDER BY id DESC LIMIT 1`); arsip DITOLAK diabaikan.
+- **Verifikasi**: `build`/`vet`/`test` hijau; test integrasi
+  `TestRejectedNIKCanReregister` (DITOLAK → GetByNikHash 404 → daftar ulang
+  sukses → GetByNikHash mengembalikan yang baru → non-DITOLAK kedua ditolak);
+  index definisi terverifikasi memiliki predikat `<> 'DITOLAK'`.

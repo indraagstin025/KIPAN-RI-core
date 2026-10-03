@@ -363,9 +363,13 @@ func (r *pendaftaranRepo) GetByNomorPendaftaran(ctx context.Context, nomor strin
 	return &p, nil
 }
 
+// GetByNikHash mengambil pendaftaran AKTIF (non-DITOLAK) berdasarkan blind
+// index NIK. Arsip DITOLAK diabaikan agar pendaftar dapat mendaftar ulang
+// (TDD D16).
 func (r *pendaftaranRepo) GetByNikHash(ctx context.Context, nikHash string) (*domain.Pendaftaran, error) {
 	var p domain.Pendaftaran
-	query := `SELECT ` + pendaftaranColumns + ` FROM pendaftaran WHERE nik_hash = $1 LIMIT 1`
+	query := `SELECT ` + pendaftaranColumns + ` FROM pendaftaran
+		WHERE nik_hash = $1 AND status <> 'DITOLAK' ORDER BY id DESC LIMIT 1`
 	if err := r.db.GetContext(ctx, &p, query, strings.TrimSpace(nikHash)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
