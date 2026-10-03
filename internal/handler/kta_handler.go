@@ -33,3 +33,18 @@ func (h *KTAHandler) DownloadKTA(c *fiber.Ctx) error {
 	}
 	return response.Success(c, "Tiket unduh KTA diterbitkan", fiber.Map{"download_url": url})
 }
+
+// DownloadMyKTA mengembalikan tiket baca PDF KTA milik akun USER sendiri
+// (Batch 2). Route dipagari RequireRoles(USER); kepemilikan ditegakkan
+// di service via anggota.user_id.
+func (h *KTAHandler) DownloadMyKTA(c *fiber.Ctx) error {
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	url, err := h.service.GetMyKTADocumentURL(c.Context(), actor.UserID, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Tiket unduh KTA diterbitkan", fiber.Map{"download_url": url})
+}

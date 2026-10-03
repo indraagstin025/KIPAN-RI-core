@@ -7,7 +7,7 @@ import (
 )
 
 func TestQRBytesRoundtrip(t *testing.T) {
-	qr, err := QRBytes("https://kipan.id/v/KIPAN-32-3273-2026-00001?sig=abc")
+	qr, err := QRBytes("https://kipan.id/v/KIPAN-IND-3273-2026-000001?sig=abc")
 	if err != nil {
 		t.Fatalf("QRBytes gagal: %v", err)
 	}
@@ -20,16 +20,16 @@ func TestQRBytesRoundtrip(t *testing.T) {
 }
 
 func TestRenderPDFValid(t *testing.T) {
-	qr, err := QRBytes("https://kipan.id/v/KIPAN-32-3273-2026-00001?sig=abc")
+	qr, err := QRBytes("https://kipan.id/v/KIPAN-IND-3273-2026-000001?sig=abc")
 	if err != nil {
 		t.Fatalf("QRBytes gagal: %v", err)
 	}
 	pdf, err := RenderPDF(CardData{
-		NIA:           "KIPAN-32-3273-2026-00001",
+		NIA:           "KIPAN-IND-3273-2026-000001",
 		NamaLengkap:   "Uji KTA",
 		Status:        "AKTIF",
 		TanggalAngkat: time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC),
-		VerifyURL:     "https://kipan.id/v/KIPAN-32-3273-2026-00001?sig=abc",
+		VerifyURL:     "https://kipan.id/v/KIPAN-IND-3273-2026-000001?sig=abc",
 	}, qr)
 	if err != nil {
 		t.Fatalf("RenderPDF gagal: %v", err)

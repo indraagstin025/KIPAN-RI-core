@@ -12,9 +12,11 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/generator"
+	"github.com/kipan-indonesia/sim-kipan-core/pkg/keyset"
 	"github.com/rs/zerolog/log"
 )
 
@@ -33,8 +35,10 @@ type PendaftaranService interface {
 	GetTracking(ctx context.Context, nomor string) (*domain.PendaftaranTrackingResponse, error)
 	// ListQueue adalah antrean admin terfilter jurisdiction aktor.
 	ListQueue(ctx context.Context, actor domain.ActorContext, status string, page, limit int) ([]domain.PendaftaranQueueItem, int, error)
+	// ListQueueCursor varian keyset (tanpa COUNT) untuk antrean besar.
+	ListQueueCursor(ctx context.Context, actor domain.ActorContext, status, cursor string, limit int) ([]domain.PendaftaranQueueItem, string, error)
 	// GetDetail adalah jalur admin: tolak objek di luar wilayah aktor.
-	GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Pendaftaran, error)
+	GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.PendaftaranAdminDetail, error)
 	// Verifikasi, revisi, dan KTA/NIK pindah ke RevisionService &
 	// VerificationService (R3: pecah god-service).
 }
@@ -48,6 +52,9 @@ type PendaftaranDeps struct {
 	StorageSvc  ObjectVerifier
 	WilayahRepo repository.WilayahRepository
 	NotifRepo   repository.NotificationRepository
+	OTPSvc      OTPService
+	WAGateway   gateway.WAGateway
+	ListRepo    repository.ListKeysetRepository
 }
 
 type pendaftaranService struct {
@@ -58,6 +65,9 @@ type pendaftaranService struct {
 	storageSvc  ObjectVerifier
 	wilayahRepo repository.WilayahRepository
 	notifRepo   repository.NotificationRepository
+	otpSvc      OTPService
+	waGateway   gateway.WAGateway
+	listRepo    repository.ListKeysetRepository
 }
 
 func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) PendaftaranService {
@@ -69,6 +79,9 @@ func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) Pendaftaran
 		storageSvc:  deps.StorageSvc,
 		wilayahRepo: deps.WilayahRepo,
 		notifRepo:   deps.NotifRepo,
+		otpSvc:      deps.OTPSvc,
+		waGateway:   deps.WAGateway,
+		listRepo:    deps.ListRepo,
 	}
 }
 
@@ -83,9 +96,13 @@ var phonePattern = regexp.MustCompile(`^(\+62|62|0)8[1-9][0-9]{6,10}$`)
 // di batch storage presign.
 var objectKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/_\.\-]{0,254}$`)
 
+// kodePosPattern mewajibkan 5 digit (format Indonesia).
+var kodePosPattern = regexp.MustCompile(`^\d{5}$`)
+
 // nomorPattern menerima REG-YYYYMM-XXXX (warisan KIPAN_INDONESIA, 4 digit)
-// dan REG-YYYYMM-XXXXX (baru, 5 digit) selama masa transisi migrasi data.
-var nomorPattern = regexp.MustCompile(`^REG-\d{6}-\d{4,5}$`)
+// dan REG-YYYYMM-XXXXX (baru, 5 digit) serta lebih dari 5 digit bila suatu
+// periode melampaui 99.999 pendaftaran (generator memakai lebar minimum 5).
+var nomorPattern = regexp.MustCompile(`^REG-\d{6}-\d{4,}$`)
 
 // normalizeNomor menyeragamkan nomor registrasi (trim + uppercase) dan
 // menolak format di luar dua varian yang dikenal (422, bukan 404 agar
@@ -106,8 +123,8 @@ const (
 	maxEmailLen         = 255
 	maxWhatsappLen      = 25
 	maxKecamatanDesaLen = 100
-	maxKodePosLen       = 10
 	maxMotivasiLen      = 1000
+	minMotivasiLen      = 20
 	maxBebasLen         = 100
 	minPendaftarAge     = 16
 	maxPendaftarAge     = 30
@@ -147,6 +164,16 @@ func (s *pendaftaranService) ValidateSubmitRequest(req domain.PendaftaranSubmitR
 	if strings.TrimSpace(req.JenisKelamin) == "" || (req.JenisKelamin != "L" && req.JenisKelamin != "P") {
 		return domain.NewValidationError("Jenis kelamin harus L atau P")
 	}
+	// Pendaftaran HANYA untuk Kader. Jalur Pengurus via submit DITOLAK
+	// (pengurus lahir dari pengangkatan via SK, bukan pendaftaran mandiri).
+	// TipePendaftaran tetap diterima untuk kompatibilitas, tetapi selain
+	// KADER ditolak eksplisit agar klien lama mendapat pesan jelas (bukan
+	// perilaku diam-diam).
+	if tipe, err := normalizeTipePendaftaran(req.TipePendaftaran); err != nil {
+		return err
+	} else if tipe != domain.TipePendaftaranKader {
+		return domain.NewValidationError("Pendaftaran hanya untuk Kader. Pengurus diangkat via Surat Keputusan oleh Admin Kabupaten/Kota.")
+	}
 	alamat := strings.TrimSpace(req.Alamat)
 	if len([]rune(alamat)) < 10 || len([]rune(alamat)) > maxAlamatLen {
 		return domain.NewValidationError("Alamat wajib 10-2000 karakter")
@@ -168,6 +195,11 @@ func (s *pendaftaranService) ValidateSubmitRequest(req domain.PendaftaranSubmitR
 	if len(wa) > maxWhatsappLen || !phonePattern.MatchString(wa) {
 		return domain.NewValidationError("Nomor WhatsApp tidak valid (contoh: 081234567890)")
 	}
+	// Batch 3: token bukti OTP wajib ada (validitas + sekali pakai
+	// ditegakkan di CreateRegistration via OTPService).
+	if t := strings.TrimSpace(req.WaOTPToken); t == "" || len(t) > 256 {
+		return domain.NewValidationError("Verifikasi WhatsApp wajib diselesaikan sebelum submit")
+	}
 	if err := checkObjectKey("Foto", req.FotoKey, true); err != nil {
 		return err
 	}
@@ -175,45 +207,95 @@ func (s *pendaftaranService) ValidateSubmitRequest(req domain.PendaftaranSubmitR
 		return err
 	}
 	for _, f := range []struct {
-		label string
-		key   string
+		label    string
+		key      string
+		required bool
 	}{
-		{"CV", req.CVKey},
-		{"SK", req.SKKey},
-		{"Surat pernyataan", req.SuratPernyataanKey},
-		{"Surat sehat", req.SuratSehatKey},
+		{"CV", req.CVKey, true},
+		{"SK", req.SKKey, false},
+		{"Surat pernyataan", req.SuratPernyataanKey, true},
+		{"Surat sehat", req.SuratSehatKey, true},
 	} {
-		if err := checkObjectKey(f.label, f.key, false); err != nil {
+		if err := checkObjectKey(f.label, f.key, f.required); err != nil {
 			return err
 		}
 	}
-	if len([]rune(req.Motivasi)) > maxMotivasiLen {
-		return domain.NewValidationError("Motivasi maksimal 1000 karakter")
+	motivasi := strings.TrimSpace(req.Motivasi)
+	if len([]rune(motivasi)) < minMotivasiLen || len([]rune(motivasi)) > maxMotivasiLen {
+		return domain.NewValidationError("Motivasi wajib 20-1000 karakter")
 	}
-	if containsAngleBracket(req.Motivasi) {
+	if containsAngleBracket(motivasi) {
 		return domain.NewValidationError("Motivasi tidak boleh mengandung karakter < atau >")
 	}
 	if err := checkPersyaratan(req.Persyaratan); err != nil {
 		return err
 	}
 	for _, f := range []struct {
-		label string
-		val   string
-		limit int
+		label    string
+		val      string
+		limit    int
+		required bool
 	}{
-		{"Agama", req.Agama, maxBebasLen},
-		{"Pendidikan", req.Pendidikan, maxBebasLen},
-		{"Pekerjaan", req.Pekerjaan, maxBebasLen},
-		{"Status pribadi", req.StatusPribadi, maxBebasLen},
-		{"Kecamatan", req.Kecamatan, maxKecamatanDesaLen},
-		{"Desa", req.Desa, maxKecamatanDesaLen},
+		{"Agama", req.Agama, maxBebasLen, true},
+		{"Pendidikan", req.Pendidikan, maxBebasLen, true},
+		{"Pekerjaan", req.Pekerjaan, maxBebasLen, true},
+		{"Status pribadi", req.StatusPribadi, maxBebasLen, false},
+		{"Kecamatan", req.Kecamatan, maxKecamatanDesaLen, true},
+		{"Desa", req.Desa, maxKecamatanDesaLen, true},
 	} {
-		if len([]rune(strings.TrimSpace(f.val))) > f.limit {
+		v := strings.TrimSpace(f.val)
+		if v == "" {
+			if f.required {
+				return domain.NewValidationError(f.label + " wajib diisi")
+			}
+			continue
+		}
+		if len([]rune(v)) > f.limit {
 			return domain.NewValidationError(f.label + " melebihi batas karakter")
 		}
+		if containsAngleBracket(v) {
+			return domain.NewValidationError(f.label + " tidak boleh mengandung karakter < atau >")
+		}
 	}
-	if len(strings.TrimSpace(req.KodePos)) > maxKodePosLen {
-		return domain.NewValidationError("Kode pos maksimal 10 karakter")
+	if !kodePosPattern.MatchString(strings.TrimSpace(req.KodePos)) {
+		return domain.NewValidationError("Kode pos wajib 5 digit angka")
+	}
+	// L7: satu object key tidak boleh dipakai di >1 slot dokumen
+	// (anti satu-berkas-untuk-semua). Berlaku untuk submit.
+	return checkDuplicateDocKeys(docKeysOf(req))
+}
+
+// docSlot adalah pasangan label + key satu slot dokumen.
+type docSlot struct {
+	label string
+	key   string
+}
+
+// docKeysOf mengekstrak 6 slot dokumen dari request submit.
+func docKeysOf(req domain.PendaftaranSubmitRequest) []docSlot {
+	return []docSlot{
+		{"Foto", req.FotoKey},
+		{"KTP", req.KTPKey},
+		{"CV", req.CVKey},
+		{"SK", req.SKKey},
+		{"Surat pernyataan", req.SuratPernyataanKey},
+		{"Surat sehat", req.SuratSehatKey},
+	}
+}
+
+// checkDuplicateDocKeys menolak satu object key yang dipakai di >1 slot.
+// Slot kosong (dokumen opsional tak diunggah) diabaikan.
+func checkDuplicateDocKeys(slots []docSlot) error {
+	seen := make(map[string]string, len(slots))
+	for _, f := range slots {
+		k := strings.TrimSpace(f.key)
+		if k == "" {
+			continue
+		}
+		if prev, ok := seen[k]; ok {
+			return domain.NewValidationError("Dokumen " + prev + " dan " + f.label + " tidak boleh memakai berkas yang sama")
+		}
+		seen[k] = f.label
 	}
 	return nil
 }
@@ -255,6 +337,17 @@ func marshalPersyaratan(items []string) (string, error) {
 		return "", domain.NewValidationError("Checklist persyaratan tidak valid")
 	}
 	return string(raw), nil
+}
+
+// normalizeTipePendaftaran menyeragamkan pilihan jalur (case-insensitive)
+// dan menolak nilai di luar KADER/PENGURUS. Dipakai validasi agar klien
+// lama mendapat pesan jelas; submit baru wajib KADER (ditolak di Validate).
+func normalizeTipePendaftaran(raw string) (domain.TipePendaftaran, error) {
+	t := domain.TipePendaftaran(strings.ToUpper(strings.TrimSpace(raw)))
+	if !t.IsValid() {
+		return "", domain.NewValidationError("Tipe pendaftaran harus KADER atau PENGURUS")
+	}
+	return t, nil
 }
 
 // containsAngleBracket menolak < > pada field plain-text (anti stored-XSS);
@@ -347,13 +440,17 @@ func (s *pendaftaranService) EncryptNIK(nik string) (string, error) {
 	return crypto.EncryptAESGCM(strings.TrimSpace(nik), key)
 }
 
-// CreateRegistration menyimpan pendaftaran baru: validasi → cek duplikat NIK
-// di DUA tabel (pendaftaran + anggota) → enkripsi → alokasi nomor → insert
-// atomik beserta riwayat SUBMIT. Duplikat dikembalikan sebagai 409.
+// CreateRegistration menyimpan pendaftaran baru: validasi → bukti OTP WA
+// → cek duplikat NIK di DUA tabel (pendaftaran + anggota) → enkripsi →
+// alokasi nomor → insert atomik beserta riwayat SUBMIT.
+// Duplikat dikembalikan sebagai 409.
 func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.PendaftaranSubmitRequest, audit domain.AuditContext) (*domain.PendaftaranCreateResult, error) {
 	if err := s.ValidateSubmitRequest(req); err != nil {
 		return nil, err
 	}
+	// Tipe selalu KADER (Validate sudah menolak non-KADER); SKKey masuk
+	// diabaikan (pengurus lahir dari pengangkatan, bukan submit).
+	tipe := domain.TipePendaftaranKader
 	if s.repo == nil {
 		return nil, domain.NewValidationError("Repository pendaftaran belum tersedia")
 	}
@@ -363,6 +460,9 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 	if err != nil {
 		return nil, err
 	}
+	// Hardening anti-oracle: NIK terdaftar sebagai pendaftar maupun sebagai
+	// anggota menghasilkan pesan 409 yang SAMA agar endpoint publik tidak
+	// membocorkan status keanggotaan seseorang.
 	if _, err := s.repo.GetByNikHash(ctx, blindIndex); err == nil {
 		return nil, domain.NewConflictError("NIK sudah terdaftar")
 	} else if !errors.Is(err, domain.ErrNotFound) {
@@ -374,7 +474,7 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 			return nil, err
 		}
 		if exists {
-			return nil, domain.NewConflictError("NIK sudah terdaftar sebagai anggota")
+			return nil, domain.NewConflictError("NIK sudah terdaftar")
 		}
 	}
 	nikEncrypted, err := s.EncryptNIK(nik)
@@ -400,6 +500,15 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 	}
 	persyaratanJSON, err := marshalPersyaratan(req.Persyaratan)
 	if err != nil {
+		return nil, err
+	}
+	// Batch 3: token OTP dikonsumsi SETELAH seluruh validasi lolos (tepat
+	// sebelum nomor dialokasikan) agar submit yang gagal validasi bisa
+	// diperbaiki tanpa minta kode baru. Sekali pakai via script Lua atomik.
+	if s.otpSvc == nil {
+		return nil, unavailable("verifikasi OTP")
+	}
+	if err := s.otpSvc.VerifyAndConsume(ctx, req.Whatsapp, req.WaOTPToken); err != nil {
 		return nil, err
 	}
 	now := time.Now()
@@ -441,10 +550,11 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 			FotoKey:              strings.TrimSpace(req.FotoKey),
 			KTPKey:               strings.TrimSpace(req.KTPKey),
 			CVKey:                strings.TrimSpace(req.CVKey),
-			SKKey:                strings.TrimSpace(req.SKKey),
+			SKKey:                "",
 			SuratPernyataanKey:   strings.TrimSpace(req.SuratPernyataanKey),
 			SuratSehatKey:        strings.TrimSpace(req.SuratSehatKey),
-			Status:               domain.PendaftaranStatusDiajukan,
+			Status:               domain.PendaftaranStatusDraft,
+			Tipe:                 tipe,
 		}
 		if err := s.repo.CreateWithHistory(ctx, entity, "SUBMIT", "Pendaftaran mandiri diterima"); err != nil {
 			var appErr *domain.AppError
@@ -462,10 +572,12 @@ func (s *pendaftaranService) CreateRegistration(ctx context.Context, req domain.
 			entity.NamaLengkap+" mendaftar dan menunggu verifikasi ("+number+").",
 			domain.NotifTypePendaftaran, "#admin?page=verifikasi",
 			entity.ProvinsiID, entity.KabupatenID)
+		// Batch 2: kirim nomor REG via WhatsApp (async best-effort).
+		s.notifyRegistrantWA(entity.Whatsapp, entity.NamaLengkap, number)
 		return &domain.PendaftaranCreateResult{
 			ID:               entity.ID,
 			NomorPendaftaran: number,
-			Status:           string(domain.PendaftaranStatusDiajukan),
+			Status:           string(domain.PendaftaranStatusDraft),
 		}, nil
 	}
 	return nil, lastErr
@@ -487,17 +599,25 @@ func (s *pendaftaranService) GetTracking(ctx context.Context, nomor string) (*do
 	if err != nil {
 		return nil, err
 	}
+	// Endpoint publik GET tidak boleh menulis. Kedaluwarsa dihitung read-only:
+	// DRAFT > 30 hari ditampilkan sebagai KEDALUWARSA (persist dilakukan admin).
+	status := item.Status
+	if status == domain.PendaftaranStatusDraft && time.Since(item.CreatedAt) > 30*24*time.Hour {
+		status = domain.PendaftaranStatusKedaluwarsa
+	}
 	return &domain.PendaftaranTrackingResponse{
 		NomorPendaftaran: item.NomorPendaftaran,
-		Status:           string(item.Status),
-		StatusLabel:      domain.TrackingStatusLabel(item.Status),
+		Status:           string(status),
+		StatusLabel:      domain.TrackingStatusLabel(status),
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 	}, nil
 }
 
 // GetDetail melayani admin: tolak objek di luar wilayah kerja aktor (RULES 7).
-func (s *pendaftaranService) GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.Pendaftaran, error) {
+// Nama wilayah di-resolve dari master yang sama dengan dropdown (fail-open:
+// lookup gagal = nama kosong, detail tetap kembali).
+func (s *pendaftaranService) GetDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.PendaftaranAdminDetail, error) {
 	if id <= 0 {
 		return nil, domain.NewValidationError("ID pendaftaran tidak valid")
 	}
@@ -511,7 +631,15 @@ func (s *pendaftaranService) GetDetail(ctx context.Context, id int, actor domain
 	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
 		return nil, domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
 	}
-	return item, nil
+	out := &domain.PendaftaranAdminDetail{Pendaftaran: *item}
+	if s.wilayahRepo != nil {
+		if prov, kab, err := s.wilayahRepo.GetNames(ctx, item.ProvinsiID, item.KabupatenID); err == nil {
+			out.ProvinsiNama, out.KabupatenNama = prov, kab
+		} else {
+			log.Warn().Err(err).Int("pendaftaran_id", id).Msg("GetDetail: gagal resolve nama wilayah")
+		}
+	}
+	return out, nil
 }
 
 // verifySubmittedDocuments memverifikasi setiap dokumen yang diklaim sudah
@@ -526,10 +654,10 @@ func (s *pendaftaranService) verifySubmittedDocuments(ctx context.Context, req d
 	}{
 		{"foto", req.FotoKey, true},
 		{"ktp", req.KTPKey, true},
-		{"cv", req.CVKey, false},
+		{"cv", req.CVKey, true},
 		{"sk", req.SKKey, false},
-		{"surat_pernyataan", req.SuratPernyataanKey, false},
-		{"surat_sehat", req.SuratSehatKey, false},
+		{"surat_pernyataan", req.SuratPernyataanKey, true},
+		{"surat_sehat", req.SuratSehatKey, true},
 	}
 	for _, d := range docs {
 		k := strings.TrimSpace(d.key)
@@ -588,14 +716,17 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 	if s.repo == nil {
 		return nil, 0, unavailable("pendaftaran")
 	}
+	// Lazy expiry: tandai DRAFT yang sudah lewat 30 hari menjadi KEDALUWARSA.
+	_ = s.repo.ExpireStaleDrafts(ctx, 30)
 	st := strings.TrimSpace(status)
 	if st != "" {
 		allowed := map[string]bool{
-			string(domain.PendaftaranStatusDiajukan):     true,
+			string(domain.PendaftaranStatusDraft):        true,
 			string(domain.PendaftaranStatusDiverifikasi): true,
 			string(domain.PendaftaranStatusPerbaikan):    true,
 			string(domain.PendaftaranStatusDisetujui):    true,
 			string(domain.PendaftaranStatusDitolak):      true,
+			string(domain.PendaftaranStatusKedaluwarsa):  true,
 		}
 		if !allowed[st] {
 			return nil, 0, domain.NewValidationError("Filter status tidak valid")
@@ -641,7 +772,72 @@ func (s *pendaftaranService) ListQueue(ctx context.Context, actor domain.ActorCo
 	return items, total, nil
 }
 
-// notifyAdmins menyebar notifikasi ke admin berhak secara best-effort:
+// validQueueStatus memvalidasi filter status antrean.
+func validQueueStatus(st string) bool {
+	switch st {
+	case string(domain.PendaftaranStatusDraft), string(domain.PendaftaranStatusDiverifikasi),
+		string(domain.PendaftaranStatusPerbaikan), string(domain.PendaftaranStatusDisetujui),
+		string(domain.PendaftaranStatusDitolak), string(domain.PendaftaranStatusKedaluwarsa):
+		return true
+	}
+	return false
+}
+
+// ListQueueCursor varian keyset (tanpa COUNT + tanpa OFFSET besar).
+func (s *pendaftaranService) ListQueueCursor(ctx context.Context, actor domain.ActorContext, status, cursor string, limit int) ([]domain.PendaftaranQueueItem, string, error) {
+	if s.listRepo == nil {
+		return nil, "", unavailable("pendaftaran")
+	}
+	_ = s.repo.ExpireStaleDrafts(ctx, 30)
+	st := strings.TrimSpace(status)
+	if st != "" && !validQueueStatus(st) {
+		return nil, "", domain.NewValidationError("Filter status tidak valid")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	var provID, kabID *int
+	switch actor.Role {
+	case domain.RoleSuperAdmin, domain.RoleAdminNasional:
+		// tanpa filter
+	case domain.RoleAdminProvinsi:
+		if actor.ProvinsiID == nil {
+			return nil, "", domain.NewForbiddenError("Akun Admin Provinsi belum terhubung ke wilayah")
+		}
+		provID = actor.ProvinsiID
+	case domain.RoleAdminKabupaten:
+		if actor.KabupatenID == nil {
+			return nil, "", domain.NewForbiddenError("Akun Admin Kabupaten belum terhubung ke wilayah")
+		}
+		provID, kabID = actor.ProvinsiID, actor.KabupatenID
+	default:
+		return nil, "", domain.NewForbiddenError("Role tidak diizinkan mengakses antrean")
+	}
+	at := time.Now().UTC().Add(time.Hour)
+	id := maxInt4
+	if strings.TrimSpace(cursor) != "" {
+		var err error
+		at, id, err = keyset.Decode(cursor)
+		if err != nil {
+			return nil, "", domain.NewValidationError("Cursor tidak valid")
+		}
+	}
+	items, err := s.listRepo.ListQueueKeyset(ctx, provID, kabID, st, at, id, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[len(items)-1]
+		next = keyset.Encode(last.CreatedAt, last.ID)
+	}
+	return items, next, nil
+}
+
 // gagal kirim hanya dicatat warn, tidak menggagalkan alur utama.
 func (s *pendaftaranService) notifyAdmins(ctx context.Context, title, message string, notifType domain.NotificationType, link string, provID, kabID int) {
 	if s.notifRepo == nil {
@@ -650,6 +846,41 @@ func (s *pendaftaranService) notifyAdmins(ctx context.Context, title, message st
 	if err := s.notifRepo.NotifyAdmins(ctx, title, message, notifType, link, provID, kabID); err != nil {
 		log.Warn().Err(err).Msg("gagal menyebar notifikasi pendaftaran")
 	}
+}
+
+// publicURL mengembalikan base URL frontend untuk tautan pesan.
+func (s *pendaftaranService) publicURL() string {
+	return publicURLFrom(s.cfg)
+}
+
+// registrantWAMessage menyusun teks WhatsApp berisi nomor pendaftaran +
+// tautan lacak.
+func registrantWAMessage(nama, nomor, publicURL string) string {
+	return "Halo " + nama + ",\n\n" +
+		"Pendaftaran KIPAN Anda telah kami terima.\n" +
+		"Nomor Pendaftaran: " + nomor + "\n\n" +
+		"Lacak status: " + publicURL + "/lacak?nomor=" + nomor + "\n" +
+		"Simpan nomor ini untuk revisi berkas dan verifikasi KTA.\n\n" +
+		"— Sistem Informasi KIPAN RI"
+}
+
+// notifyRegistrantWA mengirim nomor REG via WhatsApp secara async & best-effort:
+// submit tetap sukses walau gateway gagal/lambat (nomor sudah tampil di layar
+// sukses + tersimpan di browser). Memakai context terpisah karena context
+// request sudah selesai saat goroutine berjalan.
+func (s *pendaftaranService) notifyRegistrantWA(whatsapp, nama, nomor string) {
+	if s.waGateway == nil || strings.TrimSpace(whatsapp) == "" {
+		return
+	}
+	text := registrantWAMessage(nama, nomor, s.publicURL())
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		if err := s.waGateway.SendMessage(ctx, whatsapp, text); err != nil {
+			log.Warn().Err(err).Str("nomor", nomor).
+				Msg("Gagal mengirim nomor pendaftaran via WhatsApp")
+		}
+	}()
 }
 
 // auditEvent mendelegasikan ke writeAudit terpusat (R2).

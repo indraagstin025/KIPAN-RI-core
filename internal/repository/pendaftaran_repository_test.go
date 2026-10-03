@@ -70,7 +70,7 @@ func testEntity(nomor, nikHash string, provID, kabID int) *domain.Pendaftaran {
 		Whatsapp:         "081234567890",
 		FotoKey:          "uploads/pendaftaran/foto.jpg",
 		KTPKey:           "uploads/pendaftaran/ktp.jpg",
-		Status:           domain.PendaftaranStatusDiajukan,
+		Status:           domain.PendaftaranStatusDraft,
 	}
 }
 
@@ -231,13 +231,13 @@ func TestRevisionTokenFlow(t *testing.T) {
 	if err := repo.SubmitRevisionTx(ctx, p.ID, "hash-token-salah", keys, "x"); err == nil {
 		t.Fatal("token salah DITERIMA")
 	}
-	// Token benar → sukses, status DIAJUKAN, token hangus.
+	// Token benar → sukses, status DRAFT, token hangus.
 	if err := repo.SubmitRevisionTx(ctx, p.ID, "hash-token-benar", keys, "revisi"); err != nil {
 		t.Fatalf("SubmitRevisionTx gagal: %v", err)
 	}
 	got, err := repo.GetByID(ctx, p.ID)
-	if err != nil || got.Status != domain.PendaftaranStatusDiajukan {
-		t.Fatalf("status harus DIAJUKAN: %+v %v", got, err)
+	if err != nil || got.Status != domain.PendaftaranStatusDraft {
+		t.Fatalf("status harus DRAFT: %+v %v", got, err)
 	}
 	if got.RevisiTokenHash != nil {
 		t.Fatal("token tidak hangus setelah dipakai")

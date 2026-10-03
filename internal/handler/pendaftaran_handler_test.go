@@ -52,20 +52,23 @@ func (s *stubPendaftaranService) VerifyKTA(context.Context, string, string) (*do
 func (s *stubPendaftaranService) ListQueue(context.Context, domain.ActorContext, string, int, int) ([]domain.PendaftaranQueueItem, int, error) {
 	return []domain.PendaftaranQueueItem{}, 0, nil
 }
+func (s *stubPendaftaranService) ListQueueCursor(context.Context, domain.ActorContext, string, string, int) ([]domain.PendaftaranQueueItem, string, error) {
+	return []domain.PendaftaranQueueItem{}, "", nil
+}
 func (s *stubPendaftaranService) RequestRevisionToken(context.Context, domain.RevisionTokenRequest, domain.AuditContext) (*domain.RevisionTokenResponse, error) {
 	return nil, s.revisionErr
 }
 func (s *stubPendaftaranService) SubmitRevision(context.Context, string, domain.RevisionSubmitRequest, domain.AuditContext) error {
 	return nil
 }
-func (s *stubPendaftaranService) GetDetail(context.Context, int, domain.ActorContext) (*domain.Pendaftaran, error) {
+func (s *stubPendaftaranService) GetDetail(context.Context, int, domain.ActorContext) (*domain.PendaftaranAdminDetail, error) {
 	return nil, domain.ErrNotFound
 }
 func (s *stubPendaftaranService) RevealNIK(context.Context, int, domain.ActorContext, domain.AuditContext) (string, error) {
 	return "3201010101010001", nil
 }
-func (s *stubPendaftaranService) ProcessApproval(context.Context, int, domain.PendaftaranApprovalAction, string, domain.ActorContext, domain.AuditContext) error {
-	return nil
+func (s *stubPendaftaranService) ProcessApproval(context.Context, int, domain.PendaftaranApprovalAction, string, domain.ActorContext, domain.AuditContext) (*service.ApprovalResult, error) {
+	return &service.ApprovalResult{}, nil
 }
 
 var _ service.PendaftaranService = (*stubPendaftaranService)(nil)

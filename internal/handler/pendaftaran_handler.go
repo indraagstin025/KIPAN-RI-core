@@ -125,6 +125,17 @@ func (h *PendaftaranHandler) ListQueue(c *fiber.Ctx) error {
 	if !ok {
 		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
+	if c.Query("paginate") == "cursor" {
+		items, next, err := h.service.ListQueueCursor(c.Context(), actor, c.Query("status"), c.Query("cursor"), c.QueryInt("limit", 25))
+		if err != nil {
+			return response.FromError(c, err)
+		}
+		return response.Paginated(c, "Daftar antrean pendaftaran", items, fiber.Map{
+			"per_page":    c.QueryInt("limit", 25),
+			"with_total":  false,
+			"next_cursor": next,
+		})
+	}
 	page := c.QueryInt("page", 1)
 	limit := c.QueryInt("limit", 25)
 	status := c.Query("status")
@@ -155,6 +166,8 @@ func (h *PendaftaranHandler) ListQueue(c *fiber.Ctx) error {
 
 // RequestRevisionToken menerbitkan token revisi untuk status PERBAIKAN.
 // Wajib bukti pemilik (email DAN whatsapp terdaftar — BE-001).
+// Batch 3 (Opsi B): token dikirim ke EMAIL terdaftar dan TIDAK lagi
+// dikembalikan di respons API.
 func (h *PendaftaranHandler) RequestRevisionToken(c *fiber.Ctx) error {
 	var req domain.RevisionTokenRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -164,7 +177,9 @@ func (h *PendaftaranHandler) RequestRevisionToken(c *fiber.Ctx) error {
 	if err != nil {
 		return response.FromError(c, err)
 	}
-	return response.Success(c, "Token revisi diterbitkan (berlaku 24 jam)", res)
+	return response.Success(c,
+		"Token revisi dikirim ke email terdaftar (berlaku 24 jam, sekali pakai)",
+		fiber.Map{"expires_at": res.ExpiresAt})
 }
 
 // SubmitRevision memproses revisi mandiri applicant bertoken.
@@ -180,7 +195,7 @@ func (h *PendaftaranHandler) SubmitRevision(c *fiber.Ctx) error {
 	if err := h.revisionSvc.SubmitRevision(c.Context(), nomor, req, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
-	return response.Success(c, "Revisi berhasil dikirim, status kembali DIAJUKAN", nil)
+	return response.Success(c, "Revisi berhasil dikirim, status kembali DRAFT", nil)
 }
 
 func (h *PendaftaranHandler) Verify(c *fiber.Ctx) error {
@@ -212,10 +227,22 @@ func (h *PendaftaranHandler) processApproval(c *fiber.Ctx, action domain.Pendaft
 		Catatan string `json:"catatan"`
 	}
 	_ = c.BodyParser(&payload)
-	if err := h.verificationSvc.ProcessApproval(c.Context(), id, action, payload.Catatan, actor, auditContextOf(c)); err != nil {
+	res, err := h.verificationSvc.ProcessApproval(c.Context(), id, action, payload.Catatan, actor, auditContextOf(c))
+	if err != nil {
 		return response.FromError(c, err)
 	}
-	return response.Success(c, successMsg, nil)
+	// Password awal akun USER hanya ada di respons SETUJI saat akun baru
+	// dibuat: admin wajib meneruskannya ke anggota via kanal resmi.
+	// Tidak pernah dicatat di log/audit oleh service.
+	var data interface{}
+	if action == domain.PendaftaranActionSetujui && res != nil {
+		out := fiber.Map{"nia": res.NIA}
+		if res.OneTimePassword != "" {
+			out["one_time_password"] = res.OneTimePassword
+		}
+		data = out
+	}
+	return response.Success(c, successMsg, data)
 }
 
 func (h *PendaftaranHandler) VerifyKTA(c *fiber.Ctx) error {

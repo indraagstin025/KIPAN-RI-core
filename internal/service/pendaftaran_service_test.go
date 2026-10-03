@@ -15,6 +15,8 @@ import (
 // fakeAnggotaRepo adalah anggotaRepo in-memory untuk uji VerifyKTA.
 type fakeAnggotaRepo struct {
 	byNIA map[string]*domain.Anggota
+	byID  map[int]*domain.Anggota
+	links map[int]string
 }
 
 func (f *fakeAnggotaRepo) ExistsByNikHash(_ context.Context, _ string) (bool, error) {
@@ -28,12 +30,42 @@ func (f *fakeAnggotaRepo) GetByNIA(_ context.Context, nia string) (*domain.Anggo
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakeAnggotaRepo) GetByID(_ context.Context, _ int) (*domain.Anggota, error) {
+func (f *fakeAnggotaRepo) GetByID(_ context.Context, id int) (*domain.Anggota, error) {
+	if a, ok := f.byID[id]; ok && a != nil {
+		return a, nil
+	}
 	return nil, domain.ErrNotFound
 }
 
 func (f *fakeAnggotaRepo) SetKTAPDFKey(_ context.Context, _ int, _ string) error {
 	return nil
+}
+
+func (f *fakeAnggotaRepo) SetUserID(_ context.Context, id int, userID string) error {
+	if f.links == nil {
+		f.links = map[int]string{}
+	}
+	f.links[id] = userID
+	if a, ok := f.byID[id]; ok && a != nil {
+		a.UserID = &userID
+	}
+	return nil
+}
+
+func (f *fakeAnggotaRepo) GetByUserID(_ context.Context, userID string) (*domain.Anggota, error) {
+	for _, a := range f.byNIA {
+		if a != nil && a.UserID != nil && *a.UserID == userID {
+			return a, nil
+		}
+	}
+	for id, uid := range f.links {
+		if uid == userID {
+			if a, ok := f.byID[id]; ok {
+				return a, nil
+			}
+		}
+	}
+	return nil, domain.ErrNotFound
 }
 
 func (f *fakeAnggotaRepo) ListAnggota(_ context.Context, _, _ *int, _, _ string, _, _ int) ([]domain.AnggotaListItem, error) {
@@ -46,6 +78,20 @@ func (f *fakeAnggotaRepo) CountAnggota(_ context.Context, _, _ *int, _, _ string
 
 var _ repository.AnggotaRepository = (*fakeAnggotaRepo)(nil)
 
+// Uji Batch 2: pesan WA berisi nomor REG + tautan lacak.
+func TestRegistrantWAMessage(t *testing.T) {
+	msg := registrantWAMessage("Rizki Pratama", "REG-202610-00042", "https://sim.kipan.id")
+	for _, want := range []string{
+		"Rizki Pratama",
+		"REG-202610-00042",
+		"https://sim.kipan.id/lacak?nomor=REG-202610-00042",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("pesan WA tidak memuat %q:\n%s", want, msg)
+		}
+	}
+}
+
 func TestValidateSubmitRequestAcceptsValidPayload(t *testing.T) {
 	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
@@ -55,6 +101,7 @@ func TestValidateSubmitRequestAcceptsValidPayload(t *testing.T) {
 		TempatLahir:        "Bandung",
 		TanggalLahir:       time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		JenisKelamin:       "L",
+		TipePendaftaran:    "KADER",
 		Agama:              "Islam",
 		Pendidikan:         "S1",
 		Pekerjaan:          "Software Engineer",
@@ -67,6 +114,7 @@ func TestValidateSubmitRequestAcceptsValidPayload(t *testing.T) {
 		KodePos:            "40142",
 		Email:              "rizki@example.com",
 		Whatsapp:           "081234567890",
+		WaOTPToken:         "test-token-format-ok",
 		Motivasi:           "Ingin belajar dan berkontribusi",
 		FotoKey:            "uploads/foto.jpg",
 		KTPKey:             "uploads/ktp.jpg",
@@ -85,20 +133,22 @@ func TestValidateSubmitRequestRejectsInvalidNIK(t *testing.T) {
 	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	req := domain.PendaftaranSubmitRequest{
-		NamaLengkap:  "Rizki Pratama",
-		NIK:          "12345",
-		TempatLahir:  "Bandung",
-		TanggalLahir: time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		JenisKelamin: "L",
-		Alamat:       "Jl. Merdeka No. 10, Bandung",
-		ProvinsiID:   32,
-		KabupatenID:  3273,
-		Kecamatan:    "Cidadap",
-		Desa:         "Ciumbuleuit",
-		Email:        "rizki@example.com",
-		Whatsapp:     "081234567890",
-		FotoKey:      "uploads/foto.jpg",
-		KTPKey:       "uploads/ktp.jpg",
+		NamaLengkap:     "Rizki Pratama",
+		NIK:             "12345",
+		TempatLahir:     "Bandung",
+		TanggalLahir:    time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		JenisKelamin:    "L",
+		TipePendaftaran: "KADER",
+		Alamat:          "Jl. Merdeka No. 10, Bandung",
+		ProvinsiID:      32,
+		KabupatenID:     3273,
+		Kecamatan:       "Cidadap",
+		Desa:            "Ciumbuleuit",
+		Email:           "rizki@example.com",
+		Whatsapp:        "081234567890",
+		WaOTPToken:      "test-token-format-ok",
+		FotoKey:         "uploads/foto.jpg",
+		KTPKey:          "uploads/ktp.jpg",
 	}
 
 	if err := service.ValidateSubmitRequest(req); err == nil {
@@ -108,22 +158,30 @@ func TestValidateSubmitRequestRejectsInvalidNIK(t *testing.T) {
 
 func validSubmitRequest() domain.PendaftaranSubmitRequest {
 	return domain.PendaftaranSubmitRequest{
-		NamaLengkap:  "Rizki Pratama",
-		NIK:          "3201010101010001",
-		TempatLahir:  "Bandung",
-		TanggalLahir: time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		JenisKelamin: "L",
-		Alamat:       "Jl. Merdeka No. 10, Bandung",
-		ProvinsiID:   32,
-		KabupatenID:  3273,
-		Kecamatan:    "Cidadap",
-		Desa:         "Ciumbuleuit",
-		KodePos:      "40142",
-		Email:        "rizki@example.com",
-		Whatsapp:     "081234567890",
-		Motivasi:     "Ingin belajar dan berkontribusi",
-		FotoKey:      "uploads/foto.jpg",
-		KTPKey:       "uploads/ktp.jpg",
+		NamaLengkap:        "Rizki Pratama",
+		NIK:                "3201010101010001",
+		TempatLahir:        "Bandung",
+		TanggalLahir:       time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		JenisKelamin:       "L",
+		TipePendaftaran:    "KADER",
+		Agama:              "Islam",
+		Pendidikan:         "S1",
+		Pekerjaan:          "Software Engineer",
+		Alamat:             "Jl. Merdeka No. 10, Bandung",
+		ProvinsiID:         32,
+		KabupatenID:        3273,
+		Kecamatan:          "Cidadap",
+		Desa:               "Ciumbuleuit",
+		KodePos:            "40142",
+		Email:              "rizki@example.com",
+		Whatsapp:           "081234567890",
+		WaOTPToken:         "test-token-format-ok",
+		Motivasi:           "Ingin belajar dan berkontribusi",
+		FotoKey:            "uploads/foto.jpg",
+		KTPKey:             "uploads/ktp.jpg",
+		CVKey:              "uploads/cv.pdf",
+		SuratPernyataanKey: "uploads/pernyataan.pdf",
+		SuratSehatKey:      "uploads/sehat.pdf",
 	}
 }
 
@@ -163,6 +221,28 @@ func TestValidateSubmitRequestTable(t *testing.T) {
 		{"key traversal", func(r *domain.PendaftaranSubmitRequest) { r.KTPKey = "../../etc/passwd" }},
 		{"key karakter ilegal", func(r *domain.PendaftaranSubmitRequest) { r.KTPKey = "uploads/ktp?.jpg" }},
 		{"foto kosong", func(r *domain.PendaftaranSubmitRequest) { r.FotoKey = "" }},
+		{"agama kosong", func(r *domain.PendaftaranSubmitRequest) { r.Agama = "" }},
+		{"pendidikan kosong", func(r *domain.PendaftaranSubmitRequest) { r.Pendidikan = "  " }},
+		{"pekerjaan kosong", func(r *domain.PendaftaranSubmitRequest) { r.Pekerjaan = "" }},
+		{"kecamatan kosong", func(r *domain.PendaftaranSubmitRequest) { r.Kecamatan = "" }},
+		{"desa kosong", func(r *domain.PendaftaranSubmitRequest) { r.Desa = "" }},
+		{"kode pos kosong", func(r *domain.PendaftaranSubmitRequest) { r.KodePos = "" }},
+		{"kode pos 4 digit", func(r *domain.PendaftaranSubmitRequest) { r.KodePos = "1234" }},
+		{"kode pos alfanumerik", func(r *domain.PendaftaranSubmitRequest) { r.KodePos = "40A42" }},
+		{"motivasi kosong", func(r *domain.PendaftaranSubmitRequest) { r.Motivasi = "" }},
+		{"motivasi terlalu pendek", func(r *domain.PendaftaranSubmitRequest) { r.Motivasi = "Ikut kipan" }},
+		{"cv kosong", func(r *domain.PendaftaranSubmitRequest) { r.CVKey = "" }},
+		{"surat pernyataan kosong", func(r *domain.PendaftaranSubmitRequest) { r.SuratPernyataanKey = "" }},
+		{"surat sehat kosong", func(r *domain.PendaftaranSubmitRequest) { r.SuratSehatKey = "" }},
+		{"agama XSS", func(r *domain.PendaftaranSubmitRequest) { r.Agama = "Isl<script>am" }},
+		{"wa otp token kosong", func(r *domain.PendaftaranSubmitRequest) { r.WaOTPToken = "" }},
+		{"wa otp token spasi", func(r *domain.PendaftaranSubmitRequest) { r.WaOTPToken = "   " }},
+		{"tipe kosong", func(r *domain.PendaftaranSubmitRequest) { r.TipePendaftaran = "" }},
+		{"tipe salah", func(r *domain.PendaftaranSubmitRequest) { r.TipePendaftaran = "ADMIN" }},
+		{"pengurus ditolak walau ada SK", func(r *domain.PendaftaranSubmitRequest) { r.TipePendaftaran = "PENGURUS"; r.SKKey = "uploads/sk.pdf" }},
+		{"foto dan KTP key sama", func(r *domain.PendaftaranSubmitRequest) { r.KTPKey = r.FotoKey }},
+		{"CV dan surat pernyataan key sama", func(r *domain.PendaftaranSubmitRequest) { r.SuratPernyataanKey = r.CVKey }},
+		{"SK dan foto key sama (kader)", func(r *domain.PendaftaranSubmitRequest) { r.SKKey = r.FotoKey }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -177,8 +257,24 @@ func TestValidateSubmitRequestTable(t *testing.T) {
 		})
 	}
 
-	// Prefix 62 tetap valid.
+	// Jalur PENGURUS DITOLAK (kader saja yang boleh daftar; pengurus via
+	// pengangkatan SK). Lowercase tetap dinormalisasi sebelum ditolak.
 	req := validSubmitRequest()
+	req.TipePendaftaran = "pengurus"
+	req.SKKey = "uploads/sk.pdf"
+	if err := service.ValidateSubmitRequest(req); err == nil {
+		t.Fatal("expected pengurus+SK to be rejected")
+	}
+
+	// SK kosong + status pribadi kosong tetap lolos (kader tidak melampirkan SK).
+	req = validSubmitRequest()
+	req.SKKey = ""
+	req.StatusPribadi = ""
+	if err := service.ValidateSubmitRequest(req); err != nil {
+		t.Fatalf("expected empty SK to pass: %v", err)
+	}
+
+	// Prefix 62 tetap valid.
 	req.Whatsapp = "6281234567890"
 	if err := service.ValidateSubmitRequest(req); err != nil {
 		t.Fatalf("expected 62-prefix WhatsApp to pass: %v", err)
@@ -218,6 +314,7 @@ func TestActorCanAccessWilayah(t *testing.T) {
 		{"kabupaten beda", domain.ActorContext{Role: domain.RoleAdminKabupaten, ProvinsiID: &prov32, KabupatenID: &kab3273}, 32, kab3204, false},
 		{"kabupaten provinsi inkonsisten", domain.ActorContext{Role: domain.RoleAdminKabupaten, ProvinsiID: &prov33, KabupatenID: &kab3273}, 32, 3273, false},
 		{"kabupaten tanpa kabupaten", domain.ActorContext{Role: domain.RoleAdminKabupaten, ProvinsiID: &prov32}, 32, 3273, false},
+		{"user tanpa akses wilayah", domain.ActorContext{Role: domain.RoleUser, UserID: "u9"}, 32, 3273, false},
 		{"role tak dikenal", domain.ActorContext{Role: "ANON"}, 32, 3273, false},
 		{"role kosong", domain.ActorContext{}, 32, 3273, false},
 	}
@@ -234,7 +331,7 @@ func TestVerifyKTAAcceptsActiveKey(t *testing.T) {
 	const keyActive = "aa00112233445566778899aabbccddeeffaa00112233445566778899aabbccdd"
 	member := &domain.Anggota{
 		ID:            7,
-		NIA:           "KIPAN-32-3273-2026-00007",
+		NIA:           "KIPAN-IND-3273-2026-000007",
 		NamaLengkap:   "Uji Rotasi",
 		Status:        domain.AnggotaStatusAktif,
 		TanggalAngkat: time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC),
@@ -261,7 +358,7 @@ func TestVerifyKTAAcceptsPreviousKeyAfterRotation(t *testing.T) {
 	const keyNew = "cc00112233445566778899aabbccddeeffcc00112233445566778899aabbccdd"
 	member := &domain.Anggota{
 		ID:            8,
-		NIA:           "KIPAN-32-3273-2026-00008",
+		NIA:           "KIPAN-IND-3273-2026-000008",
 		NamaLengkap:   "Uji Rotasi Lama",
 		Status:        domain.AnggotaStatusAktif,
 		TanggalAngkat: time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC),
@@ -291,7 +388,7 @@ func TestVerifyKTARejectsUnknownKey(t *testing.T) {
 	const keyEvil = "ee00112233445566778899aabbccddeeffee00112233445566778899aabbccdd"
 	member := &domain.Anggota{
 		ID:            9,
-		NIA:           "KIPAN-32-3273-2026-00009",
+		NIA:           "KIPAN-IND-3273-2026-000009",
 		Status:        domain.AnggotaStatusAktif,
 		TanggalAngkat: time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC),
 	}
@@ -343,20 +440,21 @@ func TestValidateSubmitRequestRejectsInvalidWhatsapp(t *testing.T) {
 	service := NewPendaftaranService(nil, PendaftaranDeps{})
 
 	req := domain.PendaftaranSubmitRequest{
-		NamaLengkap:  "Rizki Pratama",
-		NIK:          "3201010101010001",
-		TempatLahir:  "Bandung",
-		TanggalLahir: time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		JenisKelamin: "L",
-		Alamat:       "Jl. Merdeka No. 10, Bandung",
-		ProvinsiID:   32,
-		KabupatenID:  3273,
-		Kecamatan:    "Cidadap",
-		Desa:         "Ciumbuleuit",
-		Email:        "rizki@example.com",
-		Whatsapp:     "abc123",
-		FotoKey:      "uploads/foto.jpg",
-		KTPKey:       "uploads/ktp.jpg",
+		NamaLengkap:     "Rizki Pratama",
+		NIK:             "3201010101010001",
+		TempatLahir:     "Bandung",
+		TanggalLahir:    time.Date(1998, 5, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		JenisKelamin:    "L",
+		TipePendaftaran: "KADER",
+		Alamat:          "Jl. Merdeka No. 10, Bandung",
+		ProvinsiID:      32,
+		KabupatenID:     3273,
+		Kecamatan:       "Cidadap",
+		Desa:            "Ciumbuleuit",
+		Email:           "rizki@example.com",
+		Whatsapp:        "abc123",
+		FotoKey:         "uploads/foto.jpg",
+		KTPKey:          "uploads/ktp.jpg",
 	}
 
 	if err := service.ValidateSubmitRequest(req); err == nil {

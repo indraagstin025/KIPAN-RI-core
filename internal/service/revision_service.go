@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
@@ -26,6 +29,7 @@ type RevisionDeps struct {
 	Repo       repository.PendaftaranRepository
 	StorageSvc ObjectVerifier
 	AuditRepo  repository.AuditLogRepository
+	Mail       gateway.MailSender
 }
 
 type revisionSvc struct {
@@ -33,10 +37,14 @@ type revisionSvc struct {
 	repo       repository.PendaftaranRepository
 	storageSvc ObjectVerifier
 	auditRepo  repository.AuditLogRepository
+	mail       gateway.MailSender
 }
 
 func NewRevisionService(cfg *config.Config, deps RevisionDeps) RevisionService {
-	return &revisionSvc{cfg: cfg, repo: deps.Repo, storageSvc: deps.StorageSvc, auditRepo: deps.AuditRepo}
+	return &revisionSvc{
+		cfg: cfg, repo: deps.Repo, storageSvc: deps.StorageSvc,
+		auditRepo: deps.AuditRepo, mail: deps.Mail,
+	}
 }
 
 // RevisionTokenTTL adalah masa berlaku token revisi applicant.
@@ -79,10 +87,12 @@ func MatchOwnerProof(storedEmail, storedWA, proofEmail, proofWA string) bool {
 // statusnya publik. Token mentah dikembalikan sekali; yang disimpan hanya
 // hash SHA-256 + expiry.
 //
-// PENERIMAAN RISIKO SEMENTARA (dicatat di laporan PR Fase 2): token
-// dikembalikan di respons, bukan kanal terverifikasi. Diterima karena
-// bukti ganda + limiter per-nomor + 24 jam + sekali pakai; pengiriman
-// WA/email tetap wajib sebelum produksi (Fase 5).
+// RequestRevisionToken menerbitkan token revisi satu-permintaan untuk
+// pendaftaran berstatus PERBAIKAN. Wajib bukti pemilik (email DAN whatsapp
+// terdaftar — BE-001): nomor saja tidak cukup karena sekuensial dan
+// statusnya publik. Token mentah TIDAK lagi dikembalikan lewat respons API
+// (Batch 3, Opsi B): dikirim ke EMAIL terdaftar; yang disimpan hanya hash
+// SHA-256 + expiry.
 func (s *revisionSvc) RequestRevisionToken(ctx context.Context, req domain.RevisionTokenRequest, audit domain.AuditContext) (*domain.RevisionTokenResponse, error) {
 	nr, err := normalizeNomor(req.Nomor)
 	if err != nil {
@@ -115,15 +125,32 @@ func (s *revisionSvc) RequestRevisionToken(ctx context.Context, req domain.Revis
 	if err := s.repo.SetRevisiToken(ctx, item.ID, crypto.HashToken(raw), expiresAt); err != nil {
 		return nil, err
 	}
+
+	// Opsi B: kirim token ke email terdaftar (kanal terverifikasi).
+	s.sendRevisionTokenEmail(item.NamaLengkap, item.Email, nr, raw)
+
 	s.auditEvent(ctx, audit, nil, "Pendaftar "+nr, "PUBLIK",
 		"pendaftaran", strconv.Itoa(item.ID), "REVISI_TOKEN", nil)
 	return &domain.RevisionTokenResponse{Token: raw, ExpiresAt: expiresAt}, nil
 }
 
+// sendRevisionTokenEmail mengirim token ke email pendaftar (best-effort).
+func (s *revisionSvc) sendRevisionTokenEmail(nama, email, nomor, token string) {
+	if s.mail == nil || strings.TrimSpace(email) == "" {
+		return
+	}
+	content := RevisionTokenEmail(nama, nomor, token, publicURLFrom(s.cfg))
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := s.mail.Send(ctx, email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
+		log.Warn().Err(err).Str("nomor", nomor).Msg("Gagal mengirim token revisi via email")
+	}
+}
+
 // SubmitRevision memproses revisi mandiri applicant: token valid +
 // belum kedaluwarsa + state PERBAIKAN (satu UPDATE atomik, error generik
 // tanpa oracle), dokumen baru tervalidasi + terverifikasi storage,
-// status kembali DIAJUKAN, token hangus sekali pakai.
+// status kembali DRAFT, token hangus sekali pakai.
 func (s *revisionSvc) SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error {
 	nr, err := normalizeNomor(nomor)
 	if err != nil {
@@ -168,12 +195,32 @@ func (s *revisionSvc) SubmitRevision(ctx context.Context, nomor string, req doma
 				return err
 			}
 		}
-		// Hanya foto + KTP yang wajib (selaras submit); dokumen opsional
-		// boleh tetap kosong bila tidak pernah diunggah.
-		if strings.TrimSpace(k) == "" && (name == "foto_key" || name == "ktp_key") {
+		// Batch Kader/Pengurus: foto, KTP, CV, surat pernyataan, surat sehat
+		// selalu wajib (selaras submit); SK wajib hanya untuk jalur
+		// PENGURUS mengikuti tipe tersimpan (kader tidak melampirkan SK).
+		skWajib := item.Tipe == domain.TipePendaftaranPengurus
+		if strings.TrimSpace(k) == "" && (name == "foto_key" || name == "ktp_key" ||
+			name == "cv_key" || name == "surat_pernyataan_key" || name == "surat_sehat_key" ||
+			(name == "sk_key" && skWajib)) {
+			if name == "sk_key" {
+				return domain.NewValidationError("Pendaftaran Pengurus wajib melampirkan SK")
+			}
 			return domain.NewValidationError("Dokumen " + name + " wajib ada")
 		}
 		keys[name] = k
+	}
+
+	// L7: hasil merge akhir tidak boleh memakai satu key di >1 slot
+	// (mis. revisi menunjuk foto ke key KTP yang sudah ada).
+	if err := checkDuplicateDocKeys([]docSlot{
+		{"Foto", keys["foto_key"]},
+		{"KTP", keys["ktp_key"]},
+		{"CV", keys["cv_key"]},
+		{"SK", keys["sk_key"]},
+		{"Surat pernyataan", keys["surat_pernyataan_key"]},
+		{"Surat sehat", keys["surat_sehat_key"]},
+	}); err != nil {
+		return err
 	}
 
 	// Perbandingan hash dilakukan di SQL dalam UPDATE atomik yang sama:

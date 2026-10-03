@@ -2,27 +2,44 @@ package domain
 
 import "time"
 
+// TipePendaftaran membedakan jalur pendaftaran: KADER (tanpa SK) vs
+// PENGURUS (wajib SK). Disetujui → USER dengan tipe yang sama.
+type TipePendaftaran string
+
+const (
+	TipePendaftaranKader    TipePendaftaran = "KADER"
+	TipePendaftaranPengurus TipePendaftaran = "PENGURUS"
+)
+
+func (t TipePendaftaran) IsValid() bool {
+	return t == TipePendaftaranKader || t == TipePendaftaranPengurus
+}
+
 // PendaftaranSubmitRequest adalah payload masuk untuk pendaftaran calon anggota.
 // Semua field bersifat server-side validated agar tidak mempercayai data klien secara mentah.
 type PendaftaranSubmitRequest struct {
-	NamaLengkap   string `json:"nama_lengkap"`
-	NIK           string `json:"nik"`
-	TempatLahir   string `json:"tempat_lahir"`
-	TanggalLahir  string `json:"tanggal_lahir"`
-	JenisKelamin  string `json:"jenis_kelamin"`
-	Agama         string `json:"agama,omitempty"`
-	Pendidikan    string `json:"pendidikan,omitempty"`
-	Pekerjaan     string `json:"pekerjaan,omitempty"`
-	StatusPribadi string `json:"status_pribadi,omitempty"`
-	Alamat        string `json:"alamat"`
-	ProvinsiID    int    `json:"provinsi_id"`
-	KabupatenID   int    `json:"kabupaten_id"`
-	Kecamatan     string `json:"kecamatan,omitempty"`
-	Desa          string `json:"desa,omitempty"`
-	KodePos       string `json:"kode_pos,omitempty"`
-	Email         string `json:"email"`
-	Whatsapp      string `json:"whatsapp"`
-	Motivasi      string `json:"motivation,omitempty"`
+	TipePendaftaran string `json:"tipe_pendaftaran"`
+	NamaLengkap     string `json:"nama_lengkap"`
+	NIK             string `json:"nik"`
+	TempatLahir     string `json:"tempat_lahir"`
+	TanggalLahir    string `json:"tanggal_lahir"`
+	JenisKelamin    string `json:"jenis_kelamin"`
+	Agama           string `json:"agama,omitempty"`
+	Pendidikan      string `json:"pendidikan,omitempty"`
+	Pekerjaan       string `json:"pekerjaan,omitempty"`
+	StatusPribadi   string `json:"status_pribadi,omitempty"`
+	Alamat          string `json:"alamat"`
+	ProvinsiID      int    `json:"provinsi_id"`
+	KabupatenID     int    `json:"kabupaten_id"`
+	Kecamatan       string `json:"kecamatan,omitempty"`
+	Desa            string `json:"desa,omitempty"`
+	KodePos         string `json:"kode_pos,omitempty"`
+	Email           string `json:"email"`
+	Whatsapp        string `json:"whatsapp"`
+	// WaOTPToken adalah token hasil verifikasi OTP WhatsApp (Batch 3,
+	// anti-bot submit awal). Diverifikasi + dihanguskan di service.
+	WaOTPToken string `json:"wa_otp_token"`
+	Motivasi   string `json:"motivation,omitempty"`
 	// Persyaratan adalah checklist yang dicentang pendaftar (selaras form
 	// KIPAN_INDONESIA). Opsional di server; label livedi frontend.
 	Persyaratan        []string `json:"persyaratan,omitempty"`
@@ -53,7 +70,7 @@ type PendaftaranStatusTransition struct {
 
 // PendaftaranStatusTransitionRules daftar state machine yang boleh terjadi.
 var PendaftaranStatusTransitionRules = []PendaftaranStatusTransition{
-	{From: PendaftaranStatusDiajukan, To: PendaftaranStatusDiverifikasi, Action: PendaftaranActionVerifikasi},
+	{From: PendaftaranStatusDraft, To: PendaftaranStatusDiverifikasi, Action: PendaftaranActionVerifikasi},
 	{From: PendaftaranStatusDiverifikasi, To: PendaftaranStatusPerbaikan, Action: PendaftaranActionPerbaikan},
 	{From: PendaftaranStatusDiverifikasi, To: PendaftaranStatusDitolak, Action: PendaftaranActionTolak},
 	{From: PendaftaranStatusDiverifikasi, To: PendaftaranStatusDisetujui, Action: PendaftaranActionSetujui},
@@ -104,7 +121,7 @@ type TrackingTimelineItem struct {
 // statusMap di track/route.ts proyek lama).
 func TrackingStatusLabel(status PendaftaranStatus) string {
 	switch status {
-	case PendaftaranStatusDiajukan:
+	case PendaftaranStatusDraft:
 		return "Pendaftaran Diterima"
 	case PendaftaranStatusDiverifikasi:
 		return "Sedang Diverifikasi"
@@ -114,6 +131,8 @@ func TrackingStatusLabel(status PendaftaranStatus) string {
 		return "Pendaftaran Ditolak"
 	case PendaftaranStatusDisetujui:
 		return "Disetujui"
+	case PendaftaranStatusKedaluwarsa:
+		return "Kedaluwarsa"
 	default:
 		return string(status)
 	}
@@ -187,4 +206,14 @@ type PendaftaranDetailResponse struct {
 	Status           string    `json:"status"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// PendaftaranAdminDetail adalah detail untuk verifikator: seluruh field
+// Pendaftaran + nama wilayah ter-resolve dari master yang sama dengan
+// dropdown pendaftaran. Nama tidak boleh menggagalkan detail (fail-open:
+// kosong bila lookup gagal).
+type PendaftaranAdminDetail struct {
+	Pendaftaran
+	ProvinsiNama  string `json:"provinsi_nama"`
+	KabupatenNama string `json:"kabupaten_nama"`
 }

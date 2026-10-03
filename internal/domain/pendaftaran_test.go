@@ -3,8 +3,8 @@ package domain
 import "testing"
 
 func TestIsAllowedTransition(t *testing.T) {
-	if !IsAllowedTransition(PendaftaranStatusDiajukan, PendaftaranStatusDiverifikasi, PendaftaranActionVerifikasi) {
-		t.Fatal("expected DIAJUKAN -> DIVERIFIKASI with VERIFIKASI to be allowed")
+	if !IsAllowedTransition(PendaftaranStatusDraft, PendaftaranStatusDiverifikasi, PendaftaranActionVerifikasi) {
+		t.Fatal("expected DRAFT -> DIVERIFIKASI with VERIFIKASI to be allowed")
 	}
 
 	if !IsAllowedTransition(PendaftaranStatusDiverifikasi, PendaftaranStatusDisetujui, PendaftaranActionSetujui) {
@@ -15,18 +15,18 @@ func TestIsAllowedTransition(t *testing.T) {
 		t.Fatal("expected DIVERIFIKASI -> PERBAIKAN with PERBAIKAN to be allowed")
 	}
 
-	if IsAllowedTransition(PendaftaranStatusDiajukan, PendaftaranStatusDisetujui, PendaftaranActionSetujui) {
-		t.Fatal("expected invalid direct approval from DIAJUKAN to DISETUJUI to be rejected")
+	if IsAllowedTransition(PendaftaranStatusDraft, PendaftaranStatusDisetujui, PendaftaranActionSetujui) {
+		t.Fatal("expected invalid direct approval from DRAFT to DISETUJUI to be rejected")
 	}
 
-	if IsAllowedTransition(PendaftaranStatusDiverifikasi, PendaftaranStatusDiajukan, PendaftaranActionVerifikasi) {
+	if IsAllowedTransition(PendaftaranStatusDiverifikasi, PendaftaranStatusDraft, PendaftaranActionVerifikasi) {
 		t.Fatal("expected invalid reverse transition to be rejected")
 	}
 }
 
 func TestTrackingStatusLabel(t *testing.T) {
 	cases := map[PendaftaranStatus]string{
-		PendaftaranStatusDiajukan:     "Pendaftaran Diterima",
+		PendaftaranStatusDraft:        "Pendaftaran Diterima",
 		PendaftaranStatusDiverifikasi: "Sedang Diverifikasi",
 		PendaftaranStatusPerbaikan:    "Perlu Perbaikan",
 		PendaftaranStatusDitolak:      "Pendaftaran Ditolak",

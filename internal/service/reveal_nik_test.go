@@ -69,6 +69,7 @@ func (f *fakePendaftaranRepo) SetRevisiToken(context.Context, int, string, time.
 func (f *fakePendaftaranRepo) SubmitRevisionTx(context.Context, int, string, map[string]string, string) error {
 	return errFakeUnimpl
 }
+func (f *fakePendaftaranRepo) ExpireStaleDrafts(context.Context, int) error { return nil }
 
 var _ repository.PendaftaranRepository = (*fakePendaftaranRepo)(nil)
 
@@ -80,7 +81,7 @@ func TestRevealNIKSuccess(t *testing.T) {
 	prov, kab := 2, 3
 	repo := &fakePendaftaranRepo{item: &domain.Pendaftaran{
 		ID: 9, NIKEncrypted: enc, ProvinsiID: prov, KabupatenID: kab,
-		Status: domain.PendaftaranStatusDiajukan,
+		Status: domain.PendaftaranStatusDraft,
 	}}
 	cfg := &config.Config{}
 	cfg.Crypto.AESMasterKey = revealTestKey
@@ -101,7 +102,7 @@ func TestRevealNIKLintasWilayahDitolak(t *testing.T) {
 	otherKab := 99
 	repo := &fakePendaftaranRepo{item: &domain.Pendaftaran{
 		ID: 9, NIKEncrypted: "x", ProvinsiID: prov, KabupatenID: kab,
-		Status: domain.PendaftaranStatusDiajukan,
+		Status: domain.PendaftaranStatusDraft,
 	}}
 	cfg := &config.Config{}
 	cfg.Crypto.AESMasterKey = revealTestKey

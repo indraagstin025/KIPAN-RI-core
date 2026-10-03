@@ -30,6 +30,9 @@ type KTAService interface {
 	// GetKTADocumentURL mengembalikan tiket baca PDF untuk admin
 	// dalam yurisdiksi anggota + audit VIEW.
 	GetKTADocumentURL(ctx context.Context, anggotaID int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
+	// GetMyKTADocumentURL mengembalikan tiket baca PDF KTA milik akun
+	// USER sendiri. Otorisasi = kecocokan anggota.user_id (bukan wilayah).
+	GetMyKTADocumentURL(ctx context.Context, userID string, audit domain.AuditContext) (string, error)
 }
 
 type ktaService struct {
@@ -137,6 +140,50 @@ func (s *ktaService) GetKTADocumentURL(ctx context.Context, anggotaID int, actor
 			UserAgent:  audit.UserAgent,
 			EntityName: "anggota",
 			EntityID:   strconv.Itoa(anggotaID),
+			Action:     "VIEW",
+			Metadata:   &meta,
+			RequestID:  audit.RequestID,
+		})
+	}
+	return url, nil
+}
+
+// GetMyKTADocumentURL melayani unduhan KTA mandiri (Batch 2). Tanpa
+// CanAccessWilayah (USER selalu gagal di sana): kepemilikan dijamin oleh
+// query anggota.user_id = pemanggil. Tanpa anggota terhubung = 404.
+func (s *ktaService) GetMyKTADocumentURL(ctx context.Context, userID string, audit domain.AuditContext) (string, error) {
+	uid := strings.TrimSpace(userID)
+	if uid == "" {
+		return "", domain.NewValidationError("ID user tidak valid")
+	}
+	if s.anggotaRepo == nil {
+		return "", unavailable("anggota")
+	}
+	member, err := s.anggotaRepo.GetByUserID(ctx, uid)
+	if err != nil {
+		return "", err
+	}
+	if member.KTAPDFKey == nil || strings.TrimSpace(*member.KTAPDFKey) == "" {
+		return "", domain.NewNotFoundError("Dokumen KTA")
+	}
+	if s.docStore == nil || !s.docStore.Configured() {
+		return "", unavailable("storage")
+	}
+	url, err := s.docStore.PresignKTADocument(ctx, *member.KTAPDFKey)
+	if err != nil {
+		return "", err
+	}
+	if s.auditRepo != nil {
+		actorID := uid
+		meta := `{"event":"kta_download_self"}`
+		_ = s.auditRepo.Create(ctx, &domain.ActivityLog{
+			ActorID:    &actorID,
+			ActorName:  member.NamaLengkap,
+			ActorRole:  string(domain.RoleUser),
+			IPAddress:  audit.IP,
+			UserAgent:  audit.UserAgent,
+			EntityName: "anggota",
+			EntityID:   strconv.Itoa(member.ID),
 			Action:     "VIEW",
 			Metadata:   &meta,
 			RequestID:  audit.RequestID,

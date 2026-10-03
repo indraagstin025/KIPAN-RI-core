@@ -39,7 +39,7 @@ type PendaftaranRepository interface {
 	// SetRevisiToken menyimpan hash token revisi + expiry (token mentah
 	// tidak pernah disimpan).
 	SetRevisiToken(ctx context.Context, id int, tokenHash string, expiresAt time.Time) error
-	// SubmitRevisionTx mengganti dokumen + status DIAJUKAN + hapus token
+	// SubmitRevisionTx mengganti dokumen + status DRAFT + hapus token
 	// dalam satu transaksi. rows==0 berarti token salah/kedaluwarsa atau
 	// state bukan PERBAIKAN (tanpa oracle: satu error generik).
 	SubmitRevisionTx(ctx context.Context, id int, tokenHash string, keys map[string]string, catatan string) error
@@ -51,6 +51,9 @@ type PendaftaranRepository interface {
 	// IssueMember menerbitkan anggota + NIA + signature KTA dalam satu
 	// transaksi. ktaKey adalah KTA_SIGNING_KEY dari config (dipasok service).
 	IssueMember(ctx context.Context, pendaftaranID int, year int, ktaKey string) (*domain.Anggota, error)
+	// ExpireStaleDrafts menandai pendaftaran DRAFT yang lebih lama dari
+	// olderThanDays hari menjadi KEDALUWARSA (lazy-on-access).
+	ExpireStaleDrafts(ctx context.Context, olderThanDays int) error
 }
 
 // mapDBError memetakan error Postgres ke domain error yang tepat agar klien
@@ -69,6 +72,19 @@ type pendaftaranRepo struct {
 
 func NewPendaftaranRepository(db *sqlx.DB) PendaftaranRepository {
 	return &pendaftaranRepo{db: db}
+}
+
+// ExpireStaleDrafts menandai DRAFT kedaluwarsa (lazy-on-access).
+func (r *pendaftaranRepo) ExpireStaleDrafts(ctx context.Context, olderThanDays int) error {
+	if olderThanDays <= 0 {
+		olderThanDays = 30
+	}
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE pendaftaran
+		 SET status = $1, updated_at = CURRENT_TIMESTAMP
+		 WHERE status = $2 AND created_at < CURRENT_TIMESTAMP - ($3 * INTERVAL '1 day')`,
+		domain.PendaftaranStatusKedaluwarsa, domain.PendaftaranStatusDraft, olderThanDays)
+	return err
 }
 
 func (r *pendaftaranRepo) Create(ctx context.Context, p *domain.Pendaftaran) error {
@@ -102,6 +118,7 @@ func (r *pendaftaranRepo) Create(ctx context.Context, p *domain.Pendaftaran) err
 			surat_pernyataan_key,
 			surat_sehat_key,
 			status,
+			tipe_pendaftaran,
 			catatan_perbaikan,
 			revisi_token_hash,
 			revisi_token_expires_at,
@@ -136,6 +153,7 @@ func (r *pendaftaranRepo) Create(ctx context.Context, p *domain.Pendaftaran) err
 			:surat_pernyataan_key,
 			:surat_sehat_key,
 			:status,
+			:tipe_pendaftaran,
 			:catatan_perbaikan,
 			:revisi_token_hash,
 			:revisi_token_expires_at,
@@ -190,6 +208,7 @@ func (r *pendaftaranRepo) CreateWithHistory(ctx context.Context, p *domain.Penda
 			surat_pernyataan_key,
 			surat_sehat_key,
 			status,
+			tipe_pendaftaran,
 			catatan_perbaikan,
 			revisi_token_hash,
 			revisi_token_expires_at,
@@ -224,6 +243,7 @@ func (r *pendaftaranRepo) CreateWithHistory(ctx context.Context, p *domain.Penda
 			:surat_pernyataan_key,
 			:surat_sehat_key,
 			:status,
+			:tipe_pendaftaran,
 			:catatan_perbaikan,
 			:revisi_token_hash,
 			:revisi_token_expires_at,
@@ -285,7 +305,7 @@ const pendaftaranColumns = `id, nomor_pendaftaran, nama_lengkap, nik_hash,
 	pendidikan, pekerjaan, status_pribadi, alamat, provinsi_id, kabupaten_id,
 	kecamatan, desa, kode_pos, email, whatsapp, motivasi, persyaratan_checklist,
 	foto_key, ktp_key,
-	cv_key, sk_key, surat_pernyataan_key, surat_sehat_key, status,
+	cv_key, sk_key, surat_pernyataan_key, surat_sehat_key, status, tipe_pendaftaran,
 	catatan_perbaikan, revisi_token_hash, revisi_token_expires_at,
 	anggota_id, created_at, updated_at`
 
@@ -447,7 +467,7 @@ func (r *pendaftaranRepo) SubmitRevisionTx(ctx context.Context, id int, tokenHas
 		  AND status = $11`,
 		keys["foto_key"], keys["ktp_key"], keys["cv_key"], keys["sk_key"],
 		keys["surat_pernyataan_key"], keys["surat_sehat_key"],
-		domain.PendaftaranStatusDiajukan, strings.TrimSpace(catatan),
+		domain.PendaftaranStatusDraft, strings.TrimSpace(catatan),
 		id, tokenHash, domain.PendaftaranStatusPerbaikan)
 	if err != nil {
 		return err
@@ -566,11 +586,9 @@ func (r *pendaftaranRepo) IssueMember(ctx context.Context, pendaftaranID int, ye
 		return nil, domain.NewConflictError("Pendaftaran sudah memiliki anggota")
 	}
 
-	// Kode BPS resmi (bukan ID serial) agar NIA stabil dan terbaca.
-	var provKode, kabKode string
-	if err := tx.GetContext(ctx, &provKode, `SELECT kode FROM wilayah_provinsi WHERE id = $1`, p.ProvinsiID); err != nil {
-		return nil, fmt.Errorf("gagal mengambil kode provinsi: %w", err)
-	}
+	// Kode BPS resmi kabupaten (bukan ID serial) agar NIA stabil dan terbaca.
+	// Kode kab 4 digit sudah memuat kode provinsi (mis. "3204").
+	var kabKode string
 	if err := tx.GetContext(ctx, &kabKode, `SELECT kode FROM wilayah_kabupaten WHERE id = $1`, p.KabupatenID); err != nil {
 		return nil, fmt.Errorf("gagal mengambil kode kabupaten: %w", err)
 	}
@@ -587,7 +605,7 @@ func (r *pendaftaranRepo) IssueMember(ctx context.Context, pendaftaranID int, ye
 		return nil, fmt.Errorf("gagal menghasilkan sequence NIA: %w", err)
 	}
 
-	niaCode, err := nia.GenerateNIA(provKode, kabKode, year, sequence)
+	niaCode, err := nia.GenerateNIA(kabKode, year, sequence)
 	if err != nil {
 		return nil, err
 	}
@@ -601,18 +619,18 @@ func (r *pendaftaranRepo) IssueMember(ctx context.Context, pendaftaranID int, ye
 			nia, nama_lengkap, nik_hash, nik_encrypted, tempat_lahir, tanggal_lahir,
 			jenis_kelamin, agama, pendidikan, pekerjaan, alamat, provinsi_id, kabupaten_id,
 			kecamatan, desa, kode_pos, email, whatsapp, foto_key, ktp_key, cv_key, sk_key,
-			surat_pernyataan_key, surat_sehat_key, status, angkatan, pendaftaran_id,
+			surat_pernyataan_key, surat_sehat_key, status, tipe, angkatan, pendaftaran_id,
 			tanggal_daftar, tanggal_angkat, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-			$17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29,
+			$17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
 			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 		) RETURNING *
 	`, niaCode, p.NamaLengkap, p.NIKHash, p.NIKEncrypted, p.TempatLahir, p.TanggalLahir,
 		p.JenisKelamin, p.Agama, p.Pendidikan, p.Pekerjaan, p.Alamat, p.ProvinsiID,
 		p.KabupatenID, p.Kecamatan, p.Desa, p.KodePos, p.Email, p.Whatsapp, p.FotoKey,
 		p.KTPKey, p.CVKey, p.SKKey, p.SuratPernyataanKey, p.SuratSehatKey,
-		domain.AnggotaStatusAktif, fmt.Sprintf("%d", year), p.ID, p.CreatedAt, time.Now())
+		domain.AnggotaStatusAktif, p.Tipe, fmt.Sprintf("%d", year), p.ID, p.CreatedAt, time.Now())
 	if err != nil {
 		return nil, mapDBError(
 			fmt.Errorf("gagal membuat anggota: %w", err),

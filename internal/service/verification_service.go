@@ -6,87 +6,123 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/alexedwards/argon2id"
+	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
-	"github.com/rs/zerolog/log"
 )
 
 type VerificationService interface {
-	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error
+	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) (*ApprovalResult, error)
 	VerifyKTA(ctx context.Context, nia, sig string) (*domain.KTAVerificationResponse, error)
 	RevealNIK(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
+}
+
+// ApprovalResult adalah hasil proses approval. OneTimePassword hanya terisi
+// saat akun USER baru dibuat (SETUJI): ditampilkan SEKALI ke admin penyetuju
+// untuk diteruskan ke anggota via kanal resmi. Tidak pernah masuk audit/log.
+type ApprovalResult struct {
+	OneTimePassword string `json:"one_time_password,omitempty"`
+	NIA             string `json:"nia,omitempty"`
 }
 
 // VerificationDeps adalah dependensi service verifikasi (R1: pola deps).
 type VerificationDeps struct {
 	Repo        repository.PendaftaranRepository
 	AnggotaRepo repository.AnggotaRepository
+	UserRepo    repository.UserRepository
 	AuditRepo   repository.AuditLogRepository
 	KTASvc      KTAService
 	NotifRepo   repository.NotificationRepository
+	Mail        gateway.MailSender
 }
 
 type verificationSvc struct {
 	cfg         *config.Config
 	repo        repository.PendaftaranRepository
 	anggotaRepo repository.AnggotaRepository
+	userRepo    repository.UserRepository
 	auditRepo   repository.AuditLogRepository
 	ktaSvc      KTAService
 	notifRepo   repository.NotificationRepository
+	mail        gateway.MailSender
 }
 
 func NewVerificationService(cfg *config.Config, deps VerificationDeps) VerificationService {
 	return &verificationSvc{
 		cfg: cfg, repo: deps.Repo, anggotaRepo: deps.AnggotaRepo,
+		userRepo:  deps.UserRepo,
 		auditRepo: deps.AuditRepo, ktaSvc: deps.KTASvc, notifRepo: deps.NotifRepo,
+		mail: deps.Mail,
 	}
 }
 
 // ProcessApproval memvalidasi otorisasi + jurisdiction + transisi status,
 // lalu mengeksekusi secara atomik beserta riwayat beraktor dan audit trail.
 // actor WAJIB berasal dari JWT terverifikasi (RULES 6), bukan dari client.
-func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error {
+//
+// Aksi SETUJI sekaligus menerbitkan akun USER anggota (Batch 2): password
+// awal acak dikembalikan SEKALI di ApprovalResult untuk diteruskan ke
+// anggota — tidak pernah ditulis ke audit/log.
+func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) (*ApprovalResult, error) {
 	if id <= 0 {
-		return domain.NewValidationError("ID pendaftaran tidak valid")
+		return nil, domain.NewValidationError("ID pendaftaran tidak valid")
 	}
 	if s.repo == nil {
-		return unavailable("pendaftaran")
+		return nil, unavailable("pendaftaran")
 	}
 	if action == "" {
-		return domain.NewValidationError("Aksi verifikasi wajib dipilih")
+		return nil, domain.NewValidationError("Aksi verifikasi wajib dipilih")
 	}
 
 	item, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
-		return domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
+		return nil, domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
+	}
+	// Batasan peran (selaras proyek lama + URD): Admin Provinsi boleh
+	// MELIHAT antrean provinsinya, tetapi TIDAK BOLEH aksi verifikasi
+	// (verifikasi/perbaikan/tolak/setujui = wewenang eksklusif
+	// Kab/Kota di wilayahnya, plus Nasional/Super).
+	if actor.Role == domain.RoleAdminProvinsi {
+		return nil, domain.NewValidationError("Admin Provinsi tidak berwenang memverifikasi pendaftaran. Verifikasi adalah wewenang Admin Kabupaten/Kota.")
 	}
 
 	targetStatus, ok := mapStatusForAction(action)
 	if !ok {
-		return domain.NewValidationError("Aksi tidak valid untuk proses pendaftaran")
+		return nil, domain.NewValidationError("Aksi tidak valid untuk proses pendaftaran")
 	}
 	if !domain.IsAllowedTransition(item.Status, targetStatus, action) {
-		return domain.NewValidationError("Transisi status tidak sah untuk aksi yang diminta")
+		return nil, domain.NewValidationError("Transisi status tidak sah untuk aksi yang diminta")
 	}
 
 	note := strings.TrimSpace(catatan)
+	// T6: perbaikan/penolakan WAJIB beralasan agar pendaftar tahu yang harus
+	// diperbaiki. Ditegakkan di server, bukan hanya di frontend.
+	if (action == domain.PendaftaranActionPerbaikan || action == domain.PendaftaranActionTolak) && note == "" {
+		return nil, domain.NewValidationError("Catatan wajib diisi untuk permintaan perbaikan atau penolakan")
+	}
 	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
 	meta := fmt.Sprintf(`{"from":%q,"to":%q}`, string(item.Status), string(targetStatus))
 
 	if action == domain.PendaftaranActionSetujui {
 		if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.KTASigningKey) == "" {
-			return domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
+			return nil, domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
 		}
 		member, err := s.repo.IssueMember(ctx, id, time.Now().Year(), s.cfg.Crypto.KTASigningKey)
 		if err != nil {
@@ -95,16 +131,22 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 			// alih-alih gagal dengan "sudah memiliki anggota".
 			var appErr *domain.AppError
 			if errors.As(err, &appErr) && appErr.Code == 409 && s.anggotaRepo != nil {
-				return s.healKTADocument(ctx, id, actorID, actorName, actorRole, audit, meta)
+				return s.healKTADocument(ctx, id, actor, audit, meta)
 			}
-			return err
+			return nil, err
 		}
 		// PDF KTA server-side, fail-closed: gagal render/upload = approve
 		// gagal, admin retry (idempoten via jalur heal di atas).
 		if s.ktaSvc != nil {
 			if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
-				return err
+				return nil, err
 			}
+		}
+		// Terbitkan akun USER anggota (idempoten: email sudah ada = link).
+		// Gagal di sini = admin retry (jalur heal melengkapi sisanya).
+		otp, err := s.ensureMemberAccount(ctx, member, actor, audit)
+		if err != nil {
+			return nil, err
 		}
 		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 			"pendaftaran", strconv.Itoa(id), string(action), &meta)
@@ -112,11 +154,13 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 			"Pendaftaran "+item.NamaLengkap+" disetujui menjadi Anggota.",
 			domain.NotifTypeVerifikasi, "#admin?page=verifikasi",
 			item.ProvinsiID, item.KabupatenID)
-		return nil
+		// Batch 3: notifikasi DISETUJUI + NIA via email (async best-effort).
+		s.sendStatusEmail(item.NamaLengkap, item.Email, item.NomorPendaftaran, "DISETUJUI", "", member.NIA)
+		return &ApprovalResult{OneTimePassword: otp, NIA: member.NIA}, nil
 	}
 
 	if err := s.repo.UpdateStatusWithHistory(ctx, id, targetStatus, string(action), &actorID, &actorName, &actorRole, note); err != nil {
-		return err
+		return nil, err
 	}
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 		"pendaftaran", strconv.Itoa(id), string(action), &meta)
@@ -124,33 +168,184 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 		"Pendaftaran "+item.NamaLengkap+" diperbarui menjadi "+string(targetStatus)+".",
 		domain.NotifTypeVerifikasi, "#admin?page=verifikasi",
 		item.ProvinsiID, item.KabupatenID)
-	return nil
+	// Batch 3: PERBAIKAN & DITOLAK dikirim via email (async best-effort).
+	if targetStatus == domain.PendaftaranStatusPerbaikan || targetStatus == domain.PendaftaranStatusDitolak {
+		s.sendStatusEmail(item.NamaLengkap, item.Email, item.NomorPendaftaran, string(targetStatus), note, "")
+	}
+	return &ApprovalResult{}, nil
+}
+
+// sendStatusEmail mengirim notifikasi perubahan status ke pendaftar via
+// email secara async best-effort (approve tidak boleh gagal karena SMTP).
+func (s *verificationSvc) sendStatusEmail(nama, email, nomor, status, catatan, nia string) {
+	if s.mail == nil || strings.TrimSpace(email) == "" {
+		return
+	}
+	content := StatusEmail(status, nama, nomor, catatan, nia, publicURLFrom(s.cfg))
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := s.mail.Send(ctx, email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
+			log.Warn().Err(err).Str("nomor", nomor).Msg("Gagal mengirim notifikasi status via email")
+		}
+	}()
 }
 
 // healKTADocument menyelesaikan PDF KTA untuk approve yang sebelumnya gagal
 // di tengah jalan (anggota sudah terbit, PDF belum). Idempoten: bila PDF
-// sudah ada, IssueKTADocument mengembalikan key lama.
-func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actorID, actorName, actorRole string, audit domain.AuditContext, meta string) error {
+// sudah ada, IssueKTADocument mengembalikan key lama. Akun USER ikut
+// dilengkapi bila belum terhubung (percobaan pertama gagal setelah IssueMember).
+func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext, meta string) (*ApprovalResult, error) {
 	if s.anggotaRepo == nil || s.ktaSvc == nil {
-		return domain.NewConflictError("Pendaftaran sudah memiliki anggota")
+		return nil, domain.NewConflictError("Pendaftaran sudah memiliki anggota")
 	}
 	item, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if item.AnggotaID == nil {
-		return domain.NewConflictError("Pendaftaran sudah memiliki anggota")
+		return nil, domain.NewConflictError("Pendaftaran sudah memiliki anggota")
 	}
 	member, err := s.anggotaRepo.GetByID(ctx, *item.AnggotaID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
-		return err
+		return nil, err
 	}
+	otp, err := s.ensureMemberAccount(ctx, member, actor, audit)
+	if err != nil {
+		return nil, err
+	}
+	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 		"pendaftaran", strconv.Itoa(id), string(domain.PendaftaranActionSetujui), &meta)
-	return nil
+	return &ApprovalResult{OneTimePassword: otp, NIA: member.NIA}, nil
+}
+
+// ensureMemberAccount menerbitkan akun USER untuk anggota (Batch 2).
+// Idempoten: email sudah terdaftar = hubungkan anggota ke akun existing
+// (tanpa password baru). Password awal acak 16 karakter, yang disimpan
+// hanya hash Argon2id — plaintext dikembalikan sekali ke pemanggil.
+func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domain.Anggota, actor domain.ActorContext, audit domain.AuditContext) (string, error) {
+	if s.userRepo == nil || s.anggotaRepo == nil {
+		return "", unavailable("akun user")
+	}
+	if member == nil || strings.TrimSpace(member.Email) == "" {
+		return "", domain.NewValidationError("Email anggota tidak valid untuk penerbitan akun")
+	}
+
+	if existing, err := s.userRepo.GetByEmail(ctx, member.Email); err == nil && existing != nil {
+		// #3(a): hanya tautkan ke akun ber-role USER. Email milik akun
+		// admin/verifikator TIDAK boleh diam-diam menjadi pemilik data
+		// anggota (pendaftar bisa menulis email orang lain) — minta admin
+		// menyelesaikan manual (mis. perbaiki email pendaftar).
+		if existing.Role != domain.RoleUser {
+			return "", domain.NewConflictError(
+				"Email pendaftar sudah dipakai akun non-anggota (" + string(existing.Role) +
+					"). Perbaiki email pendaftaran sebelum menyetujui")
+		}
+		if err := s.anggotaRepo.SetUserID(ctx, member.ID, existing.ID); err != nil {
+			return "", err
+		}
+		actorID := actor.UserID
+		linkMeta := `{"event":"member_account_linked"}`
+		s.auditEvent(ctx, audit, &actorID, actor.Name, string(actor.Role),
+			"anggota", strconv.Itoa(member.ID), "LINK_USER", &linkMeta)
+		return "", nil
+	} else if !errors.Is(err, domain.ErrUserNotFound) {
+		return "", err
+	}
+
+	password, err := generateMemberPassword(16)
+	if err != nil {
+		return "", fmt.Errorf("gagal membuat password awal: %w", err)
+	}
+	hash, err := argon2id.CreateHash(password, argon2Params)
+	if err != nil {
+		return "", fmt.Errorf("gagal hash password awal: %w", err)
+	}
+	// Tipe akun mengikuti jalur pendaftaran (KADER/PENGURUS); legacy
+	// tanpa tipe dianggap KADER (selaras DEFAULT migrasi 000011).
+	tipeUser := domain.UserTipe(member.Tipe)
+	if tipeUser != domain.UserTipeKader && tipeUser != domain.UserTipePengurus {
+		tipeUser = domain.UserTipeKader
+	}
+	user := &domain.User{
+		ID:           uuid.NewString(),
+		Email:        strings.TrimSpace(member.Email),
+		PasswordHash: hash,
+		Name:         member.NamaLengkap,
+		Role:         domain.RoleUser,
+		TipeUser:     tipeUser,
+		Status:       domain.UserStatusAktif,
+		ProvinsiID:   &member.ProvinsiID,
+		KabupatenID:  &member.KabupatenID,
+	}
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		return "", err
+	}
+	if err := s.anggotaRepo.SetUserID(ctx, member.ID, user.ID); err != nil {
+		return "", err
+	}
+	actorID := actor.UserID
+	createMeta := `{"event":"member_account_created","role":"USER","tipe":"` + string(tipeUser) + `"}`
+	s.auditEvent(ctx, audit, &actorID, actor.Name, string(actor.Role),
+		"users", user.ID, "CREATE", &createMeta)
+	return password, nil
+}
+
+// memberPasswordAlphabet aman untuk shell/.env (tanpa kutip, backslash,
+// dolar, atau spasi) — selaras generator password seeder.
+const memberPasswordAlphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%^*-_=+?"
+
+// generateMemberPassword membuat password awal acak (crypto/rand) dengan
+// tiap kelas karakter (kecil, besar, digit, simbol) minimal satu.
+func generateMemberPassword(length int) (string, error) {
+	if length < 12 {
+		length = 12
+	}
+	classes := []string{
+		"abcdefghijkmnopqrstuvwxyz",
+		"ABCDEFGHJKLMNPQRSTUVWXYZ",
+		"23456789",
+		"!@#%^*-_=+?",
+	}
+	out := make([]byte, 0, length)
+	for _, class := range classes {
+		idx, err := randIntN(len(class))
+		if err != nil {
+			return "", err
+		}
+		out = append(out, class[idx])
+	}
+	for len(out) < length {
+		idx, err := randIntN(len(memberPasswordAlphabet))
+		if err != nil {
+			return "", err
+		}
+		out = append(out, memberPasswordAlphabet[idx])
+	}
+	for i := len(out) - 1; i > 0; i-- {
+		j, err := randIntN(i + 1)
+		if err != nil {
+			return "", err
+		}
+		out[i], out[j] = out[j], out[i]
+	}
+	return string(out), nil
+}
+
+// randIntN mengembalikan angka acak [0, max) dari crypto/rand.
+func randIntN(max int) (int, error) {
+	if max <= 0 {
+		return 0, nil
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0, err
+	}
+	return int(n.Int64()), nil
 }
 
 // VerifyKTA memverifikasi keaslian KTA secara kriptografis (RULES 20).
