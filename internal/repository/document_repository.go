@@ -56,6 +56,16 @@ const docOwnerAnggotaSQL = `
 	ORDER BY id
 	LIMIT 1`
 
+// Berkas SK (lampiran surat_keputusan) juga dokumen bucket uploads. Wilayah
+// SK bisa NULL (level NASIONAL) → COALESCE ke 0 agar dapat dipetakan;
+// CanAccessWilayah tetap memberi akses untuk Nas/Super.
+const docOwnerSuratKeputusanSQL = `
+	SELECT id, COALESCE(provinsi_id, 0) AS provinsi_id, COALESCE(kabupaten_id, 0) AS kabupaten_id
+	FROM surat_keputusan
+	WHERE file_sk_key = $1
+	ORDER BY id
+	LIMIT 1`
+
 func (r *documentRepo) ResolveOwner(ctx context.Context, key string) (*DocumentOwner, error) {
 	k := strings.TrimSpace(key)
 	if k == "" {
@@ -69,6 +79,11 @@ func (r *documentRepo) ResolveOwner(ctx context.Context, key string) (*DocumentO
 		return nil, err
 	}
 	if owner, err := r.lookup(ctx, docOwnerAnggotaSQL, "anggota", k); err == nil {
+		return owner, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if owner, err := r.lookup(ctx, docOwnerSuratKeputusanSQL, "surat_keputusan", k); err == nil {
 		return owner, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
