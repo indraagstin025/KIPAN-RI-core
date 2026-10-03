@@ -21,7 +21,7 @@ func registerWilayahAdminRoutes(
 ) {
 	grp := v1.Group("/admin/wilayah",
 		authMiddleware.Authenticate(),
-		middleware.RequireRoles(domain.RoleSuperAdmin, domain.RoleAdminNasional),
+		middleware.RequireCapability(domain.CapManageWilayah),
 		middleware.MutatingRateLimit(rdb, "wil_mut"),
 	)
 	grp.Get("/cards", h.Cards)

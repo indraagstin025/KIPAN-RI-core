@@ -21,7 +21,7 @@ func registerUserAdminRoutes(
 ) {
 	grp := v1.Group("/admin/users",
 		authMiddleware.Authenticate(),
-		middleware.RequireRoles(domain.RoleSuperAdmin),
+		middleware.RequireCapability(domain.CapManageUsers),
 		middleware.MutatingRateLimit(rdb, "usr_mut"),
 	)
 	grp.Get("", h.List)

@@ -26,7 +26,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 |---|---|---|
 | 0.1 | Worker terpisah (`cmd/worker`) + scheduler + advisory lock | ✅ Selesai |
 | 0.2 | Status efektif tunggal (fungsi + view) — migrasi `000025` | ✅ Selesai |
-| 0.3 | Capability matrix + test RBAC | Belum |
+| 0.3 | Capability matrix (`domain/capabilities.go`) + `RequireCapability` + test | ✅ Selesai |
 | 0.4 | Tooling migrasi (preflight + snapshot + klon) + state-machine tersurat | Belum |
 
 ### Fase A — Kepengurusan
@@ -71,3 +71,20 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - Test integrasi (gated `TEST_DATABASE_URL`): 7 kasus fungsi + view queryable.
 - Konsumen menyusul: **A4** (materialisasi) & **B2** (kolom RIWAYAT) memakai
   fungsi/view ini, bukan logika ad-hoc.
+
+## 5. Catatan Batch 0.3
+
+- **`internal/domain/capabilities.go`**: satu sumber kebenaran wewenang
+  (`Capability` × `Role`) + metadata (label/deskripsi) untuk katalog UI.
+  Aksesor: `AllCapabilities`, `HasCapability`, `RolesForCapability`,
+  `CapabilitiesForRole`, `KnownCapability` (semua mengembalikan salinan).
+- **`middleware.RequireCapability(caps...)`**: guard berbasis capability
+  (401 tanpa claims, 403 tanpa wewenang) — menggantikan `RequireRoles` yang
+  hard-code role di titik yang lebih terbaca. Sudah diterapkan di
+  `/admin/wilayah` (`manage_wilayah`) & `/admin/users` (`manage_users`).
+- Invariant diuji: Super punya semua capability; `USER` tidak punya satupun;
+  sel matriks kunci (manage_users Super-only; verify Kab bukan Prov; wilayah
+  Nasional bukan Prov).
+- Capability untuk fitur mendatang (`view_audit`, `manage_organisasi`,
+  `manage_backup`) sudah dideklarasikan agar **C2/C4/C5/C6** langsung
+  memakainya.

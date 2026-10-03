@@ -51,6 +51,24 @@ func RequireRoles(allowedRoles ...domain.Role) fiber.Handler {
 	}
 }
 
+// RequireCapability memastikan role pemanggil memiliki salah satu capability
+// yang diminta (sumber: domain.capabilityRegistry). Menggantikan RequireRoles
+// pada titik yang lebih terbaca. Claims tidak ada → 401; tidak berwenang → 403.
+func RequireCapability(caps ...domain.Capability) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		claims := GetUser(c)
+		if claims == nil {
+			return response.Unauthorized(c, "Akses ditolak: otentikasi diperlukan")
+		}
+		for _, cap := range caps {
+			if domain.HasCapability(claims.Role, cap) {
+				return c.Next()
+			}
+		}
+		return response.Forbidden(c, "Akses ditolak: role Anda tidak memiliki wewenang untuk tindakan ini")
+	}
+}
+
 // ScopeWilayah menerapkan filter wilayah otomatis berdasarkan role admin:
 //
 //   - SUPER_ADMIN / ADMIN_NASIONAL : scope nasional (tanpa filter)
@@ -69,9 +87,9 @@ func ScopeWilayah() fiber.Handler {
 			return response.Unauthorized(c, "Akses ditolak: otentikasi diperlukan")
 		}
 
-	var scope WilayahScope
+		var scope WilayahScope
 
-	switch claims.Role {
+		switch claims.Role {
 		case domain.RoleSuperAdmin, domain.RoleAdminNasional:
 			// Scope nasional — kedua field nil
 			scope = WilayahScope{}
@@ -86,18 +104,18 @@ func ScopeWilayah() fiber.Handler {
 			if claims.KabupatenID == nil {
 				return response.Forbidden(c, "Akun Admin Kabupaten belum terhubung ke wilayah kabupaten")
 			}
-		// Admin Kabupaten juga wajib punya ProvinsiID untuk konsistensi filter hierarki.
-		scope = WilayahScope{
-			ProvinsiID:  claims.ProvinsiID, // boleh nil jika legacy data
-			KabupatenID: claims.KabupatenID,
-		}
+			// Admin Kabupaten juga wajib punya ProvinsiID untuk konsistensi filter hierarki.
+			scope = WilayahScope{
+				ProvinsiID:  claims.ProvinsiID, // boleh nil jika legacy data
+				KabupatenID: claims.KabupatenID,
+			}
 
-	case domain.RoleUser:
-		// Akun anggota tidak memiliki yurisdiksi admin. Tolak eksplisit
-		// agar tidak jatuh ke scope nasional diam-diam (fail-closed).
-		return response.Forbidden(c, "Akun user tidak memiliki akses wilayah admin")
+		case domain.RoleUser:
+			// Akun anggota tidak memiliki yurisdiksi admin. Tolak eksplisit
+			// agar tidak jatuh ke scope nasional diam-diam (fail-closed).
+			return response.Forbidden(c, "Akun user tidak memiliki akses wilayah admin")
 
-	default:
+		default:
 			return response.Forbidden(c, "Role tidak dikenal untuk scope wilayah")
 		}
 
