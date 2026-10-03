@@ -31,9 +31,12 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, rdb *redis.Client) *Runner {
 	emailOutboxRepo := repository.NewEmailOutboxRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	anggotaRepo := repository.NewAnggotaRepository(db)
+	auditRepo := repository.NewAuditLogRepository(db)
+	pengurusRepo := repository.NewPengurusRepository(db)
 	mailSender := infra.MailSender(cfg)
 
 	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo)
+	expirySvc := service.NewPengurusExpiryService(pengurusRepo, auditRepo)
 
 	sched := NewScheduler(NewAdvisoryLocker(db), resolveLocation(cfg.Worker.Timezone))
 	sched.Register(Job{
@@ -41,6 +44,22 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, rdb *redis.Client) *Runner {
 		Interval:  cfg.Outbox.Interval,
 		Immediate: true,
 		Run:       emailWorker.ProcessOnce,
+	})
+	// Materialisasi kedaluwarsa masa bakti pengurus (TDD §5.4).
+	sched.Register(Job{
+		Name:      "pengurus-expired",
+		Interval:  cfg.Worker.ExpiryInterval,
+		Immediate: true,
+		Run: func(ctx context.Context) error {
+			n, err := expirySvc.RunOnce(ctx)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				log.Info().Int("closed", n).Msg("Kedaluwarsa: pengurus didemosikan otomatis")
+			}
+			return nil
+		},
 	})
 
 	return &Runner{sched: sched}

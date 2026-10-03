@@ -33,7 +33,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - A1 Master Jabatan TDD — migrasi `000026` ✅ **Selesai**.
 - A2 Jabatan ganda lintas tingkat — migrasi `000027` (partial unique) ✅ **Selesai**.
 - A3 PAW + Mutasi ✅ **Selesai**.
-- A4 Kedaluwarsa dinamis (pakai `pengurus_status_efektif` + job harian).
+- A4 Kedaluwarsa dinamis (pakai `pengurus_status_efektif` + job harian) ✅ **Selesai**.
 
 ### Fase B — Pendaftaran & Keanggotaan
 - B1 Retensi DITOLAK + unique NIK parsial — migrasi `000028`.
@@ -166,3 +166,23 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - **Verifikasi**: `build`/`vet`/`test` hijau (test unit PAW/Mutasi +
   `tsc`/`lint`/`build` hijau); E2E: PAW Demisioner 200; Mutasi → record lama
   Demisioner & baru Aktif di SK tujuan.
+
+## 10. Catatan Fase A — A4 Deteksi Kedaluwarsa Dinamis (TDD §5.4)
+
+- **Lapis tampilan**: query pengurus kini memakai `pengurus_status_efektif(...)`
+  (konstanta `pengurusStatusEfektifExpr`) untuk kolom `status`, filter status,
+  `Stats`, dan `ListPromosi` — satu definisi bersama view (`000025`). Masa bakti
+  lewat langsung tampil `Demisioner` tanpa menunggu job.
+- **Lapis materialisasi**: `PengurusRepository.CloseExpiredAppointments` (satu
+  statement `UPDATE ... FROM surat_keputusan ... RETURNING`, idempoten) +
+  `service.PengurusExpiryService.RunOnce` menulis audit `DEMISIONER_OTOMATIS`
+  per personalia (aktor "Sistem").
+- **Worker**: job `pengurus-expired` di `cmd/worker` (interval
+  `WORKER_EXPIRY_INTERVAL`, default 24h, `Immediate`) — aman multi-instance
+  (advisory lock).
+- **Verifikasi**: `build`/`vet`/`test` hijau; test integrasi
+  `TestCloseExpiredAppointments` (status efektif Demisioner sebelum job →
+  ditutup → tersimpan Demisioner → idempoten); worker mendaftarkan job.
+
+> **Fase A (Kepengurusan) SELESAI.** Lanjut **Fase B** (B1 retensi DITOLAK +
+> unique NIK parsial, migrasi `000028`).

@@ -164,3 +164,12 @@ type MutasiRequest struct {
 	TanggalMulai *time.Time `json:"tanggal_mulai"`
 	Keterangan   string     `json:"keterangan"`
 }
+
+// ExpiredAppointment adalah pengurus yang ditutup otomatis karena masa bakti
+// SK berakhir (hasil job materialisasi kedaluwarsa dinamis, TDD §5.4).
+type ExpiredAppointment struct {
+	ID               int    `db:"id" json:"id"`
+	AnggotaID        int    `db:"anggota_id" json:"anggota_id"`
+	SuratKeputusanID int    `db:"surat_keputusan_id" json:"surat_keputusan_id"`
+	NomorSK          string `db:"nomor_sk" json:"nomor_sk"`
+}

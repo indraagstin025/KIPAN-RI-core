@@ -78,6 +78,8 @@ type OutboxConfig struct {
 // kedaluwarsa masa bakti). Zona waktu tidak valid akan fallback ke UTC.
 type WorkerConfig struct {
 	Timezone string // IANA, mis. "Asia/Jakarta"
+	// ExpiryInterval = jeda job materialisasi kedaluwarsa masa bakti pengurus.
+	ExpiryInterval time.Duration
 }
 
 type DatabaseConfig struct {
@@ -193,6 +195,7 @@ func Load() (*Config, error) {
 
 	// Worker terpisah (cmd/worker).
 	v.SetDefault("WORKER_TIMEZONE", "Asia/Jakarta")
+	v.SetDefault("WORKER_EXPIRY_INTERVAL", "24h")
 
 	v.SetDefault("STORAGE_REGION", "auto")
 	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
@@ -208,6 +211,7 @@ func Load() (*Config, error) {
 	refreshTTL := mustParseDuration(v.GetString("AUTH_REFRESH_TOKEN_TTL"), 7*24*time.Hour, "AUTH_REFRESH_TOKEN_TTL")
 	presignedTTL := mustParseDuration(v.GetString("STORAGE_PRESIGNED_TTL"), 5*time.Minute, "STORAGE_PRESIGNED_TTL")
 	emailInterval := mustParseDuration(v.GetString("EMAIL_WORKER_INTERVAL"), 10*time.Second, "EMAIL_WORKER_INTERVAL")
+	expiryInterval := mustParseDuration(v.GetString("WORKER_EXPIRY_INTERVAL"), 24*time.Hour, "WORKER_EXPIRY_INTERVAL")
 	setupTTL := mustParseDuration(v.GetString("SETUP_TOKEN_TTL"), 168*time.Hour, "SETUP_TOKEN_TTL")
 
 	// ============================================================
@@ -312,7 +316,8 @@ func Load() (*Config, error) {
 			SetupTokenTTL: setupTTL,
 		},
 		Worker: WorkerConfig{
-			Timezone: strings.TrimSpace(v.GetString("WORKER_TIMEZONE")),
+			Timezone:       strings.TrimSpace(v.GetString("WORKER_TIMEZONE")),
+			ExpiryInterval: expiryInterval,
 		},
 	}
 

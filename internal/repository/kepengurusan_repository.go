@@ -457,6 +457,9 @@ type PengurusWriteRepository interface {
 	// Mutate menutup record lama (Demisioner) lalu membuka record baru pada
 	// SK/jabatan tujuan dalam SATU transaksi (TDD D3, tanpa jabatan ganda).
 	Mutate(ctx context.Context, in MutateInput) (int, error)
+	// CloseExpiredAppointments menutup SELURUH pengurus Aktif yang masa bakti
+	// SK-nya sudah lewat (materialisasi kedaluwarsa dinamis, TDD §5.4).
+	CloseExpiredAppointments(ctx context.Context) ([]domain.ExpiredAppointment, error)
 	Remove(ctx context.Context, pengurusID int) error
 	UpdateStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string) error
 	UpdateJabatan(ctx context.Context, id int, jabatanID int) error
@@ -479,10 +482,15 @@ type pengurusRepo struct{ db *sqlx.DB }
 
 func NewPengurusRepository(db *sqlx.DB) PengurusRepository { return &pengurusRepo{db: db} }
 
+// pengurusStatusEfektifExpr = status efektif pengurus (TDD §5.4): 'Aktif' hanya
+// bila record Aktif + SK Aktif + masa bakti belum lewat. Satu definisi dipakai
+// bersama view v_pengurus_efektif, tampilan, dan job materialisasi.
+const pengurusStatusEfektifExpr = `pengurus_status_efektif(p.status, sk.status, sk.tanggal_berakhir, CURRENT_DATE)`
+
 const pengurusDetailColumns = `p.id, p.anggota_id, a.nia, a.nama_lengkap,
 	p.surat_keputusan_id, sk.nomor_sk, p.jabatan_id, j.nama AS jabatan, j.is_inti,
 	p.level, p.provinsi_id, p.kabupaten_id, wp.nama AS provinsi_nama, wk.nama AS kabupaten_nama,
-	p.status, p.keterangan_status,
+	` + pengurusStatusEfektifExpr + ` AS status, p.keterangan_status,
 	sk.tanggal_berakhir AS sk_tanggal_berakhir,
 	p.tanggal_mulai, p.tanggal_selesai, p.created_at`
 
@@ -592,6 +600,30 @@ func (r *pengurusRepo) Mutate(ctx context.Context, in MutateInput) (int, error) 
 	return newID, nil
 }
 
+// CloseExpiredAppointments menutup pengurus Aktif yang masa bakti SK-nya sudah
+// lewat, lalu mengembalikan daftar yang ditutup (untuk audit). Satu statement
+// atomik + idempoten.
+func (r *pengurusRepo) CloseExpiredAppointments(ctx context.Context) ([]domain.ExpiredAppointment, error) {
+	items := make([]domain.ExpiredAppointment, 0)
+	query := `
+		UPDATE pengurus p
+		SET status = 'Demisioner',
+		    keterangan_status = 'Otomatis: masa bakti SK berakhir',
+		    tanggal_selesai = COALESCE(p.tanggal_selesai, sk.tanggal_berakhir, CURRENT_DATE),
+		    updated_at = CURRENT_TIMESTAMP
+		FROM surat_keputusan sk
+		WHERE p.surat_keputusan_id = sk.id
+		  AND p.status = 'Aktif'
+		  AND sk.status = 'Aktif'
+		  AND sk.tanggal_berakhir IS NOT NULL
+		  AND sk.tanggal_berakhir < CURRENT_DATE
+		RETURNING p.id, p.anggota_id, p.surat_keputusan_id, sk.nomor_sk`
+	if err := r.db.SelectContext(ctx, &items, query); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (r *pengurusRepo) Remove(ctx context.Context, pengurusID int) error {
 	res, err := r.db.ExecContext(ctx, `DELETE FROM pengurus WHERE id = $1`, pengurusID)
 	if err != nil {
@@ -642,7 +674,7 @@ func pengurusWhere(f PengurusFilter) (string, []interface{}) {
 	}
 	if s := strings.TrimSpace(f.Status); s != "" {
 		args = append(args, s)
-		where = append(where, fmt.Sprintf("p.status = $%d", len(args)))
+		where = append(where, fmt.Sprintf("%s = $%d", pengurusStatusEfektifExpr, len(args)))
 	}
 	if l := strings.TrimSpace(f.Level); l != "" {
 		args = append(args, l)
@@ -696,7 +728,7 @@ func (r *pengurusRepo) List(ctx context.Context, f PengurusFilter) ([]domain.Pen
 func (r *pengurusRepo) Stats(ctx context.Context, f PengurusFilter) (domain.PengurusStats, error) {
 	var out domain.PengurusStats
 	args := []interface{}{}
-	where := []string{"p.status = 'Aktif'"}
+	where := []string{pengurusStatusEfektifExpr + " = 'Aktif'"}
 	if f.ProvinsiID != nil {
 		args = append(args, *f.ProvinsiID)
 		where = append(where, fmt.Sprintf("p.provinsi_id = $%d", len(args)))
@@ -781,7 +813,8 @@ func (r *pengurusRepo) ListPromosi(ctx context.Context, provinsiID, kabupatenID 
 		limit = 20
 	}
 	where := []string{"a.status = 'Aktif'",
-		"NOT EXISTS (SELECT 1 FROM pengurus p2 WHERE p2.anggota_id = a.id AND p2.status = 'Aktif')"}
+		`NOT EXISTS (SELECT 1 FROM pengurus p2 JOIN surat_keputusan sk2 ON sk2.id = p2.surat_keputusan_id
+			WHERE p2.anggota_id = a.id AND pengurus_status_efektif(p2.status, sk2.status, sk2.tanggal_berakhir, CURRENT_DATE) = 'Aktif')`}
 	args := []interface{}{}
 	if provinsiID != nil {
 		args = append(args, *provinsiID)

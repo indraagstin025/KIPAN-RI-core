@@ -87,6 +87,9 @@ func (f *fakePengurusRepo) AddWithPromotion(context.Context, repository.PromoteI
 func (f *fakePengurusRepo) Mutate(context.Context, repository.MutateInput) (int, error) {
 	return 2, nil
 }
+func (f *fakePengurusRepo) CloseExpiredAppointments(context.Context) ([]domain.ExpiredAppointment, error) {
+	return nil, nil
+}
 func (f *fakePengurusRepo) Remove(context.Context, int) error { return nil }
 func (f *fakePengurusRepo) GetByID(context.Context, int) (*domain.PengurusDetail, error) {
 	if f.detail == nil {
