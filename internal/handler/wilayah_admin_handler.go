@@ -37,11 +37,13 @@ func (h *WilayahAdminHandler) List(c *fiber.Ctx) error {
 	if n := c.QueryInt("provinsi_id", 0); n > 0 {
 		prov = &n
 	}
-	items, err := h.service.List(c.Context(), actor, c.Query("type"), c.Query("search"), c.Query("status"), prov)
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 25)
+	items, total, err := h.service.List(c.Context(), actor, c.Query("type"), c.Query("search"), c.Query("status"), prov, page, limit)
 	if err != nil {
 		return response.FromError(c, err)
 	}
-	return response.Success(c, "Daftar wilayah", items)
+	return response.Paginated(c, "Daftar wilayah", items, paginationMeta(page, limit, total))
 }
 
 func (h *WilayahAdminHandler) Detail(c *fiber.Ctx) error {

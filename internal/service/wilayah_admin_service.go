@@ -19,7 +19,7 @@ type WilayahCards struct {
 // WilayahAdminService melayani master wilayah untuk Super/Nasional.
 type WilayahAdminService interface {
 	Cards(ctx context.Context, actor domain.ActorContext) (*WilayahCards, error)
-	List(ctx context.Context, actor domain.ActorContext, tipe, search, status string, provinsiID *int) ([]domain.WilayahAdminItem, error)
+	List(ctx context.Context, actor domain.ActorContext, tipe, search, status string, provinsiID *int, page, limit int) ([]domain.WilayahAdminItem, int, error)
 	Detail(ctx context.Context, actor domain.ActorContext, tipe string, id int) (*domain.WilayahDetailAdmin, error)
 	Pengurus(ctx context.Context, actor domain.ActorContext, tipe string, id int, all bool) ([]domain.PengurusDetail, error)
 	SetStatus(ctx context.Context, actor domain.ActorContext, audit domain.AuditContext, tipe string, id int, active bool) error
@@ -79,18 +79,45 @@ func (s *wilayahAdminSvc) Cards(ctx context.Context, actor domain.ActorContext) 
 	return &WilayahCards{TotalProvinsi: p, TotalKabupaten: k, TotalPengurus: g}, nil
 }
 
-func (s *wilayahAdminSvc) List(ctx context.Context, actor domain.ActorContext, tipe, search, status string, provinsiID *int) ([]domain.WilayahAdminItem, error) {
+func (s *wilayahAdminSvc) List(ctx context.Context, actor domain.ActorContext, tipe, search, status string, provinsiID *int, page, limit int) ([]domain.WilayahAdminItem, int, error) {
 	if err := s.guard(actor); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	t := normTipe(tipe)
 	if t == "" {
-		return nil, domain.NewValidationError("Tipe wilayah harus provinsi/kabupaten")
+		return nil, 0, domain.NewValidationError("Tipe wilayah harus provinsi/kabupaten")
 	}
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := (page - 1) * limit
+
 	if t == "provinsi" {
-		return s.repo.ListProvinsiAdmin(ctx, search, status)
+		items, err := s.repo.ListProvinsiAdmin(ctx, search, status, limit, offset)
+		if err != nil {
+			return nil, 0, err
+		}
+		total, err := s.repo.CountProvinsiAdmin(ctx, search, status)
+		if err != nil {
+			return nil, 0, err
+		}
+		return items, total, nil
 	}
-	return s.repo.ListKabupatenAdmin(ctx, provinsiID, search, status)
+	items, err := s.repo.ListKabupatenAdmin(ctx, provinsiID, search, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.repo.CountKabupatenAdmin(ctx, provinsiID, search, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 // scopeWilayah mengembalikan (level, provinsiID, kabupatenID) untuk detail/pengurus.

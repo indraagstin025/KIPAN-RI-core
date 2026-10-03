@@ -16,8 +16,10 @@ import (
 // Interface terpisah dari WilayahRepository (publik) agar konsumen read-only
 // tak ikut terpengaruh; implementasi sama-sama di *wilayahRepo.
 type WilayahAdminRepository interface {
-	ListProvinsiAdmin(ctx context.Context, search, status string) ([]domain.WilayahAdminItem, error)
-	ListKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string) ([]domain.WilayahAdminItem, error)
+	ListProvinsiAdmin(ctx context.Context, search, status string, limit, offset int) ([]domain.WilayahAdminItem, error)
+	CountProvinsiAdmin(ctx context.Context, search, status string) (int, error)
+	ListKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string, limit, offset int) ([]domain.WilayahAdminItem, error)
+	CountKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string) (int, error)
 	GetProvinsi(ctx context.Context, id int) (*domain.WilayahProvinsi, error)
 	GetKabupaten(ctx context.Context, id int) (*domain.WilayahKabupaten, error)
 	SetProvinsiActive(ctx context.Context, id int, active bool) error
@@ -58,8 +60,7 @@ func statusClause(col, status string) string {
 	return ""
 }
 
-func (r *wilayahRepo) ListProvinsiAdmin(ctx context.Context, search, status string) ([]domain.WilayahAdminItem, error) {
-	items := make([]domain.WilayahAdminItem, 0)
+func provinsiAdminWhere(search, status string) (string, []interface{}) {
 	where := []string{"1 = 1"}
 	args := []interface{}{}
 	if s := strings.TrimSpace(search); s != "" {
@@ -69,19 +70,10 @@ func (r *wilayahRepo) ListProvinsiAdmin(ctx context.Context, search, status stri
 	if c := statusClause("wp.is_active", status); c != "" {
 		where = append(where, c)
 	}
-	q := `SELECT wp.id, wp.kode, wp.nama, wp.is_active,
-		(SELECT COUNT(*) FROM wilayah_kabupaten k WHERE k.provinsi_id = wp.id) AS jml_kabupaten,
-		(SELECT COUNT(*) FROM pengurus p WHERE p.provinsi_id = wp.id AND p.level = 'PROVINSI' AND p.status = 'Aktif') AS jml_pengurus,
-		` + ketuaSubqueryProvinsi + `
-		FROM wilayah_provinsi wp WHERE ` + strings.Join(where, " AND ") + ` ORDER BY wp.nama`
-	if err := r.db.SelectContext(ctx, &items, q, args...); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return strings.Join(where, " AND "), args
 }
 
-func (r *wilayahRepo) ListKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string) ([]domain.WilayahAdminItem, error) {
-	items := make([]domain.WilayahAdminItem, 0)
+func kabupatenAdminWhere(provinsiID *int, search, status string) (string, []interface{}) {
 	where := []string{"1 = 1"}
 	args := []interface{}{}
 	if provinsiID != nil {
@@ -95,17 +87,68 @@ func (r *wilayahRepo) ListKabupatenAdmin(ctx context.Context, provinsiID *int, s
 	if c := statusClause("wk.is_active", status); c != "" {
 		where = append(where, c)
 	}
+	return strings.Join(where, " AND "), args
+}
+
+func (r *wilayahRepo) ListProvinsiAdmin(ctx context.Context, search, status string, limit, offset int) ([]domain.WilayahAdminItem, error) {
+	limit = boundLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
+	where, args := provinsiAdminWhere(search, status)
+	items := make([]domain.WilayahAdminItem, 0)
+	args = append(args, limit, offset)
+	q := `SELECT wp.id, wp.kode, wp.nama, wp.is_active,
+		(SELECT COUNT(*) FROM wilayah_kabupaten k WHERE k.provinsi_id = wp.id) AS jml_kabupaten,
+		(SELECT COUNT(*) FROM pengurus p WHERE p.provinsi_id = wp.id AND p.level = 'PROVINSI' AND p.status = 'Aktif') AS jml_pengurus,
+		` + ketuaSubqueryProvinsi + `
+		FROM wilayah_provinsi wp WHERE ` + where + ` ORDER BY wp.nama` +
+		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, len(args)-1, len(args))
+	if err := r.db.SelectContext(ctx, &items, q, args...); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *wilayahRepo) CountProvinsiAdmin(ctx context.Context, search, status string) (int, error) {
+	where, args := provinsiAdminWhere(search, status)
+	var n int
+	if err := r.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM wilayah_provinsi wp WHERE `+where, args...); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (r *wilayahRepo) ListKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string, limit, offset int) ([]domain.WilayahAdminItem, error) {
+	limit = boundLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
+	where, args := kabupatenAdminWhere(provinsiID, search, status)
+	items := make([]domain.WilayahAdminItem, 0)
+	args = append(args, limit, offset)
 	q := `SELECT wk.id, wk.kode, wk.nama, wk.is_active, wk.provinsi_id, wp.nama AS provinsi_nama,
 		0 AS jml_kabupaten,
 		(SELECT COUNT(*) FROM pengurus p WHERE p.kabupaten_id = wk.id AND p.level = 'KABUPATEN' AND p.status = 'Aktif') AS jml_pengurus,
 		` + ketuaSubqueryKabupaten + `
 		FROM wilayah_kabupaten wk
 		JOIN wilayah_provinsi wp ON wp.id = wk.provinsi_id
-		WHERE ` + strings.Join(where, " AND ") + ` ORDER BY wp.nama, wk.nama`
+		WHERE ` + where + ` ORDER BY wp.nama, wk.nama` +
+		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, len(args)-1, len(args))
 	if err := r.db.SelectContext(ctx, &items, q, args...); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *wilayahRepo) CountKabupatenAdmin(ctx context.Context, provinsiID *int, search, status string) (int, error) {
+	where, args := kabupatenAdminWhere(provinsiID, search, status)
+	var n int
+	if err := r.db.GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM wilayah_kabupaten wk JOIN wilayah_provinsi wp ON wp.id = wk.provinsi_id WHERE `+where, args...); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func (r *wilayahRepo) GetProvinsi(ctx context.Context, id int) (*domain.WilayahProvinsi, error) {
