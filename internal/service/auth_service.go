@@ -24,12 +24,14 @@ import (
 // ============================================================
 
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"`
+	Email string `json:"email" validate:"required,email"`
+	// max=128 selaras password_strength (min 8, maks 128): membatasi input
+	// argon2id (anti-DoS CPU) sekaligus menerima seluruh password sah.
+	Password string `json:"password" validate:"required,max=128"`
 }
 
 type ChangePasswordRequest struct {
-	OldPassword string `json:"old_password" validate:"required"`
+	OldPassword string `json:"old_password" validate:"required,max=128"`
 	NewPassword string `json:"new_password" validate:"required,password_strength"`
 }
 
@@ -47,6 +49,7 @@ type UserResponse struct {
 	Email         string      `json:"email"`
 	Name          string      `json:"name"`
 	Role          domain.Role `json:"role"`
+	TipeUser      string      `json:"tipe_user,omitempty"`
 	Status        string      `json:"status"`
 	ProvinsiID    *int        `json:"provinsi_id,omitempty"`
 	ProvinsiNama  *string     `json:"provinsi_nama,omitempty"`
@@ -445,6 +448,7 @@ func (s *authService) generateAccessToken(user *domain.User) (string, time.Durat
 		Email:       user.Email,
 		Name:        user.Name,
 		Role:        user.Role,
+		TipeUser:    string(user.TipeUser),
 		ProvinsiID:  user.ProvinsiID,
 		KabupatenID: user.KabupatenID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -487,6 +491,10 @@ func (s *authService) mapUserResponse(u *domain.User) UserResponse {
 		wilayah = *u.ProvinsiNama
 	} else if u.Role == domain.RoleAdminKabupaten && u.KabupatenNama != nil {
 		wilayah = *u.KabupatenNama
+	} else if u.Role == domain.RoleUser && u.KabupatenNama != nil {
+		wilayah = *u.KabupatenNama
+	} else if u.Role == domain.RoleUser && u.ProvinsiNama != nil {
+		wilayah = *u.ProvinsiNama
 	}
 
 	return UserResponse{
@@ -494,6 +502,7 @@ func (s *authService) mapUserResponse(u *domain.User) UserResponse {
 		Email:         u.Email,
 		Name:          u.Name,
 		Role:          u.Role,
+		TipeUser:      string(u.TipeUser),
 		Status:        string(u.Status),
 		ProvinsiID:    u.ProvinsiID,
 		ProvinsiNama:  u.ProvinsiNama,

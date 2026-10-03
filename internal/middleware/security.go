@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"strings"
 	"time"
 
@@ -11,6 +12,19 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
+
+// RequireInternalToken membatasi endpoint internal (mis. /internal/health)
+// dengan header rahasia X-Internal-Token. Perbandingan constant-time dan
+// respons 404 (bukan 403) agar keberadaan endpoint tidak menjadi sinyal recon.
+func RequireInternalToken(expected string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		got := c.Get("X-Internal-Token")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
+			return response.NotFound(c, "Endpoint tidak ditemukan")
+		}
+		return c.Next()
+	}
+}
 
 // SecurityHeaders menetapkan header keamanan standar untuk API.
 //
@@ -144,6 +158,37 @@ func LoginAttemptLimiter(rdb *redis.Client, maxAttempts int, window time.Duratio
 		LimitReached: func(c *fiber.Ctx) error {
 			return response.TooManyRequests(c,
 				"Terlalu banyak percobaan login untuk akun ini. Coba lagi dalam beberapa menit.")
+		},
+	}
+
+	if rdb != nil {
+		cfg.Storage = fiberredis.NewFromConnection(rdb)
+	}
+
+	return limiter.New(cfg)
+}
+
+// PasswordResetLimiter membatasi permintaan reset password PER PASANGAN
+// email+IP (Batch 3): mencegah spam email ke satu target (email bombing)
+// sekaligus pembatasan per-IP dari RateLimit("pw_reset"). Pesan 429 tidak
+// membocorkan keterdaftaran email.
+func PasswordResetLimiter(rdb *redis.Client, maxAttempts int, window time.Duration) fiber.Handler {
+	cfg := limiter.Config{
+		Max:        maxAttempts,
+		Expiration: window,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			var body struct {
+				Email string `json:"email"`
+			}
+			_ = c.BodyParser(&body)
+			if body.Email != "" {
+				return "pwreset:" + strings.ToLower(strings.TrimSpace(body.Email)) + ":" + c.IP()
+			}
+			return "pwreset:ip:" + c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return response.TooManyRequests(c,
+				"Terlalu banyak permintaan reset kata sandi. Coba lagi beberapa menit lagi.")
 		},
 	}
 

@@ -86,13 +86,18 @@ func ScopeWilayah() fiber.Handler {
 			if claims.KabupatenID == nil {
 				return response.Forbidden(c, "Akun Admin Kabupaten belum terhubung ke wilayah kabupaten")
 			}
-			// Admin Kabupaten juga wajib punya ProvinsiID untuk konsistensi filter hierarki.
-			scope = WilayahScope{
-				ProvinsiID:  claims.ProvinsiID, // boleh nil jika legacy data
-				KabupatenID: claims.KabupatenID,
-			}
+		// Admin Kabupaten juga wajib punya ProvinsiID untuk konsistensi filter hierarki.
+		scope = WilayahScope{
+			ProvinsiID:  claims.ProvinsiID, // boleh nil jika legacy data
+			KabupatenID: claims.KabupatenID,
+		}
 
-		default:
+	case domain.RoleUser:
+		// Akun anggota tidak memiliki yurisdiksi admin. Tolak eksplisit
+		// agar tidak jatuh ke scope nasional diam-diam (fail-closed).
+		return response.Forbidden(c, "Akun user tidak memiliki akses wilayah admin")
+
+	default:
 			return response.Forbidden(c, "Role tidak dikenal untuk scope wilayah")
 		}
 

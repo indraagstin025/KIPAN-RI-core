@@ -132,3 +132,55 @@ func TestScopeWilayah(t *testing.T) {
 
 	// ... lanjutkan test runner
 }
+
+func TestScopeWilayahUserDitolak(t *testing.T) {
+	// Batch 2: akun USER tidak memiliki yurisdiksi admin — wajib 403
+	// eksplisit, bukan scope nasional diam-diam.
+	app := fiber.New()
+	app.Get("/scope", func(c *fiber.Ctx) error {
+		c.Locals("user", &JWTClaims{UserID: "u1", Role: domain.RoleUser})
+		return c.Next()
+	}, ScopeWilayah(), func(c *fiber.Ctx) error {
+		return c.SendString("SUCCESS")
+	})
+
+	req := httptest.NewRequest("GET", "/scope", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusForbidden {
+		t.Errorf("Expected 403 Forbidden untuk USER, got %d", resp.StatusCode)
+	}
+}
+
+func TestRequireRolesUser(t *testing.T) {
+	// Batch 2: USER lolos di route USER-only, ditolak di route admin.
+	newApp := func(role domain.Role, allowed ...domain.Role) *fiber.App {
+		app := fiber.New()
+		app.Get("/x", func(c *fiber.Ctx) error {
+			c.Locals("user", &JWTClaims{UserID: "u1", Role: role})
+			return c.Next()
+		}, RequireRoles(allowed...), func(c *fiber.Ctx) error {
+			return c.SendString("SUCCESS")
+		})
+		return app
+	}
+	get := func(app *fiber.App) int {
+		resp, err := app.Test(httptest.NewRequest("GET", "/x", nil))
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		return resp.StatusCode
+	}
+
+	if code := get(newApp(domain.RoleUser, domain.RoleUser)); code != fiber.StatusOK {
+		t.Errorf("USER di route USER-only harap 200, dapat %d", code)
+	}
+	if code := get(newApp(domain.RoleAdminKabupaten, domain.RoleUser)); code != fiber.StatusForbidden {
+		t.Errorf("ADMIN di route USER-only harap 403, dapat %d", code)
+	}
+	if code := get(newApp(domain.RoleUser, domain.RoleSuperAdmin)); code != fiber.StatusForbidden {
+		t.Errorf("USER di route admin harap 403, dapat %d", code)
+	}
+}

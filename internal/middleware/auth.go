@@ -54,8 +54,14 @@ func (m *AuthMiddleware) Authenticate() fiber.Handler {
 			return response.Unauthorized(c, "Token tidak valid atau telah kedaluwarsa")
 		}
 
-		// Cek blacklist by jti (Claims.ID)
-		if m.isBlacklisted(c.Context(), claims.ID) {
+		// Cek blacklist by jti (Claims.ID). T4: error Redis = fail-closed
+		// (503), bukan meloloskan token yang mungkin sudah dicabut.
+		revoked, err := m.isBlacklisted(c.Context(), claims.ID)
+		if err != nil {
+			return response.FromError(c, domain.NewUnavailableError(
+				"Verifikasi sesi sedang tidak tersedia. Coba beberapa saat lagi"))
+		}
+		if revoked {
 			return response.Unauthorized(c, "Token telah dicabut. Silakan login kembali")
 		}
 
@@ -85,9 +91,14 @@ func ExtractBearerToken(authHeader string) (string, error) {
 
 // isBlacklisted memeriksa apakah jti token sudah dicabut via logout.
 // Key: "blacklist:jti:<uuid>" — bukan token penuh.
-func (m *AuthMiddleware) isBlacklisted(ctx context.Context, jti string) bool {
+//
+// T4 (fail-closed): error selain "key tidak ada" dikembalikan sebagai error
+// agar Authenticate menolak request (503) alih-alih meloloskan token yang
+// mungkin sudah dicabut saat Redis sedang bermasalah. rdb == nil hanya
+// mungkin di dev (produksi menolak start tanpa Redis).
+func (m *AuthMiddleware) isBlacklisted(ctx context.Context, jti string) (bool, error) {
 	if m.rdb == nil || jti == "" {
-		return false
+		return false, nil
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -95,7 +106,13 @@ func (m *AuthMiddleware) isBlacklisted(ctx context.Context, jti string) bool {
 
 	key := fmt.Sprintf("blacklist:jti:%s", jti)
 	val, err := m.rdb.Get(reqCtx, key).Result()
-	return err == nil && val != ""
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("gagal memeriksa blacklist: %w", err)
+	}
+	return val != "", nil
 }
 
 // validateToken memverifikasi signature JWT dan mengekstrak claims.

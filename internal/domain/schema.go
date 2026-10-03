@@ -16,6 +16,7 @@ type JWTClaims struct {
 	Email       string `json:"email"`
 	Name        string `json:"name,omitempty"`
 	Role        Role   `json:"role"`
+	TipeUser    string `json:"tipe_user,omitempty"`
 	ProvinsiID  *int   `json:"provinsi_id,omitempty"`
 	KabupatenID *int   `json:"kabupaten_id,omitempty"`
 	jwt.RegisteredClaims
@@ -34,15 +35,30 @@ const (
 	RoleAdminNasional  Role = "ADMIN_NASIONAL"
 	RoleAdminProvinsi  Role = "ADMIN_PROVINSI"
 	RoleAdminKabupaten Role = "ADMIN_KABUPATEN"
+	// RoleUser adalah akun anggota (bukan admin): dibuat otomatis saat
+	// pendaftaran DISETUJUI. Tanpa akses /admin/* (deny-by-default di
+	// RequireRoles + ScopeWilayah). Pembedaan Kader vs Pengurus memakai
+	// UserTipe, bukan role terpisah.
+	RoleUser Role = "USER"
 )
 
 func (r Role) IsValid() bool {
 	switch r {
-	case RoleSuperAdmin, RoleAdminNasional, RoleAdminProvinsi, RoleAdminKabupaten:
+	case RoleSuperAdmin, RoleAdminNasional, RoleAdminProvinsi, RoleAdminKabupaten, RoleUser:
 		return true
 	}
 	return false
 }
+
+// UserTipe membedakan jenis akun: KADER (default saat approve) / PENGURUS
+// (diangkat via SK) untuk role USER, dan ADMIN untuk akun admin (role<>USER).
+type UserTipe string
+
+const (
+	UserTipeKader    UserTipe = "KADER"
+	UserTipePengurus UserTipe = "PENGURUS"
+	UserTipeAdmin    UserTipe = "ADMIN"
+)
 
 // UserStatus status akun admin
 type UserStatus string
@@ -57,11 +73,12 @@ const (
 type PendaftaranStatus string
 
 const (
-	PendaftaranStatusDiajukan     PendaftaranStatus = "DIAJUKAN"
+	PendaftaranStatusDraft        PendaftaranStatus = "DRAFT"
 	PendaftaranStatusDiverifikasi PendaftaranStatus = "DIVERIFIKASI"
 	PendaftaranStatusPerbaikan    PendaftaranStatus = "PERBAIKAN"
 	PendaftaranStatusDisetujui    PendaftaranStatus = "DISETUJUI"
 	PendaftaranStatusDitolak      PendaftaranStatus = "DITOLAK"
+	PendaftaranStatusKedaluwarsa  PendaftaranStatus = "KEDALUWARSA"
 )
 
 // AnggotaStatus status resmi kader KIPAN
@@ -150,11 +167,36 @@ type WilayahKabupaten struct {
 	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// Jabatan referensi jabatan struktural pengurus KIPAN
+// WilayahKecamatan adalah entri kecamatan dari upstream wilayah.id.
+// TIDAK disimpan di DB (submit kecamatan tetap teks bebas); hanya bantuan
+// dropdown. Kode dinormalisasi tanpa titik agar konsisten dengan kolom kode.
+type WilayahKecamatan struct {
+	Kode string `json:"kode"` // 6 digit tanpa titik, e.g. "327301"
+	Nama string `json:"nama"`
+}
+
+// WilayahDesa adalah entri desa/kelurahan dari upstream wilayah.id.
+// Sama seperti kecamatan: tidak disimpan, hanya saran dropdown.
+type WilayahDesa struct {
+	Kode string `json:"kode"` // 10 digit tanpa titik, e.g. "3273081001"
+	Nama string `json:"nama"`
+}
+
+// WilayahKodepos adalah satu opsi kode pos hasil pencocokan.
+// Dropdown hanya menampilkan kode (tanpa nama).
+type WilayahKodepos struct {
+	KodePos string `json:"kode_pos"` // 5 digit, e.g. "40559"
+}
+
+// Jabatan referensi jabatan struktural pengurus KIPAN (master terkonfigurasi).
+// Jabatan inti (is_inti) hanya boleh satu pemegang per SK. Jabatan berlevel
+// (NASIONAL/PROVINSI/KABUPATEN); nama boleh sama di tiap level.
 type Jabatan struct {
 	ID        int            `db:"id" json:"id"`
-	Nama      string         `db:"nama" json:"nama"`   // Ketua Umum, Sekretaris Jenderal, dst
-	Level     TingkatWilayah `db:"level" json:"level"` // NASIONAL | PROVINSI | KABUPATEN
+	Nama      string         `db:"nama" json:"nama"` // Ketua, Sekretaris, Bendahara, dst
+	Level     TingkatWilayah `db:"level" json:"level"`
+	IsInti    bool           `db:"is_inti" json:"is_inti"`
+	IsActive  bool           `db:"is_active" json:"is_active"`
 	Urutan    int            `db:"urutan" json:"urutan"`
 	CreatedAt time.Time      `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time      `db:"updated_at" json:"updated_at"`
@@ -172,6 +214,7 @@ type User struct {
 	PasswordHash  string     `db:"password_hash" json:"-"` // Argon2id hash
 	Name          string     `db:"name" json:"name"`
 	Role          Role       `db:"role" json:"role"`
+	TipeUser      UserTipe   `db:"tipe_user" json:"tipe_user,omitempty"`
 	Status        UserStatus `db:"status" json:"status"`
 	AvatarURL     *string    `db:"avatar_url" json:"avatar_url,omitempty"`
 	ProvinsiID    *int       `db:"provinsi_id" json:"provinsi_id,omitempty"`
@@ -233,6 +276,7 @@ type Pendaftaran struct {
 	SuratPernyataanKey   string            `db:"surat_pernyataan_key" json:"surat_pernyataan_key"`
 	SuratSehatKey        string            `db:"surat_sehat_key" json:"surat_sehat_key"` // PRIVATE bucket
 	Status               PendaftaranStatus `db:"status" json:"status"`
+	Tipe                 TipePendaftaran   `db:"tipe_pendaftaran" json:"tipe_pendaftaran"`
 	CatatanPerbaikan     *string           `db:"catatan_perbaikan" json:"catatan_perbaikan,omitempty"`
 	RevisiTokenHash      *string           `db:"revisi_token_hash" json:"-"`
 	RevisiTokenExpiresAt *time.Time        `db:"revisi_token_expires_at" json:"-"`
@@ -260,41 +304,42 @@ type PendaftaranRiwayat struct {
 
 // Anggota data kader resmi ber-Nomor Induk Anggota (NIA)
 type Anggota struct {
-	ID                 int           `db:"id" json:"id"`
-	NIA                string        `db:"nia" json:"nia"` // KIPAN.{prov}.{kab}.{tahun}.{seq}
-	NamaLengkap        string        `db:"nama_lengkap" json:"nama_lengkap"`
-	NIKHash            string        `db:"nik_hash" json:"-"`      // HMAC Blind Index UNIQUE
-	NIKEncrypted       string        `db:"nik_encrypted" json:"-"` // AES-256-GCM
-	TempatLahir        string        `db:"tempat_lahir" json:"tempat_lahir"`
-	TanggalLahir       time.Time     `db:"tanggal_lahir" json:"tanggal_lahir"`
-	JenisKelamin       string        `db:"jenis_kelamin" json:"jenis_kelamin"`
-	Agama              string        `db:"agama" json:"agama"`
-	Pendidikan         string        `db:"pendidikan" json:"pendidikan"`
-	Pekerjaan          string        `db:"pekerjaan" json:"pekerjaan"`
-	Alamat             string        `db:"alamat" json:"alamat"`
-	ProvinsiID         int           `db:"provinsi_id" json:"provinsi_id"`
-	KabupatenID        int           `db:"kabupaten_id" json:"kabupaten_id"`
-	Kecamatan          string        `db:"kecamatan" json:"kecamatan"`
-	Desa               string        `db:"desa" json:"desa"`
-	KodePos            string        `db:"kode_pos" json:"kode_pos"`
-	Email              string        `db:"email" json:"email"`
-	Whatsapp           string        `db:"whatsapp" json:"whatsapp"`
-	FotoKey            string        `db:"foto_key" json:"foto_key"` // PUBLIC bucket
-	KTPKey             string        `db:"ktp_key" json:"ktp_key"`   // PRIVATE bucket
-	CVKey              string        `db:"cv_key" json:"cv_key"`
-	SKKey              string        `db:"sk_key" json:"sk_key"`
-	SuratPernyataanKey string        `db:"surat_pernyataan_key" json:"surat_pernyataan_key"`
-	SuratSehatKey      string        `db:"surat_sehat_key" json:"surat_sehat_key"`
-	Status             AnggotaStatus `db:"status" json:"status"`
-	Angkatan           string        `db:"angkatan" json:"angkatan"`
-	KTAQRHash          *string       `db:"kta_qr_hash" json:"kta_qr_hash,omitempty"` // HMAC digital signature anti-palsu
-	KTAPDFKey          *string       `db:"kta_pdf_key" json:"kta_pdf_key,omitempty"`
-	PendaftaranID      *int          `db:"pendaftaran_id" json:"pendaftaran_id,omitempty"`
-	UserID             *string       `db:"user_id" json:"user_id,omitempty"` // Relasi ke akun admin (jika ada)
-	TanggalDaftar      time.Time     `db:"tanggal_daftar" json:"tanggal_daftar"`
-	TanggalAngkat      time.Time     `db:"tanggal_angkat" json:"tanggal_angkat"`
-	CreatedAt          time.Time     `db:"created_at" json:"created_at"`
-	UpdatedAt          time.Time     `db:"updated_at" json:"updated_at"`
+	ID                 int             `db:"id" json:"id"`
+	NIA                string          `db:"nia" json:"nia"` // KIPAN-IND-{kab}-{tahun}-{seq}
+	NamaLengkap        string          `db:"nama_lengkap" json:"nama_lengkap"`
+	NIKHash            string          `db:"nik_hash" json:"-"`      // HMAC Blind Index UNIQUE
+	NIKEncrypted       string          `db:"nik_encrypted" json:"-"` // AES-256-GCM
+	TempatLahir        string          `db:"tempat_lahir" json:"tempat_lahir"`
+	TanggalLahir       time.Time       `db:"tanggal_lahir" json:"tanggal_lahir"`
+	JenisKelamin       string          `db:"jenis_kelamin" json:"jenis_kelamin"`
+	Agama              string          `db:"agama" json:"agama"`
+	Pendidikan         string          `db:"pendidikan" json:"pendidikan"`
+	Pekerjaan          string          `db:"pekerjaan" json:"pekerjaan"`
+	Alamat             string          `db:"alamat" json:"alamat"`
+	ProvinsiID         int             `db:"provinsi_id" json:"provinsi_id"`
+	KabupatenID        int             `db:"kabupaten_id" json:"kabupaten_id"`
+	Kecamatan          string          `db:"kecamatan" json:"kecamatan"`
+	Desa               string          `db:"desa" json:"desa"`
+	KodePos            string          `db:"kode_pos" json:"kode_pos"`
+	Email              string          `db:"email" json:"email"`
+	Whatsapp           string          `db:"whatsapp" json:"whatsapp"`
+	FotoKey            string          `db:"foto_key" json:"foto_key"` // PUBLIC bucket
+	KTPKey             string          `db:"ktp_key" json:"ktp_key"`   // PRIVATE bucket
+	CVKey              string          `db:"cv_key" json:"cv_key"`
+	SKKey              string          `db:"sk_key" json:"sk_key"`
+	SuratPernyataanKey string          `db:"surat_pernyataan_key" json:"surat_pernyataan_key"`
+	SuratSehatKey      string          `db:"surat_sehat_key" json:"surat_sehat_key"`
+	Status             AnggotaStatus   `db:"status" json:"status"`
+	Tipe               TipePendaftaran `db:"tipe" json:"tipe"`
+	Angkatan           string          `db:"angkatan" json:"angkatan"`
+	KTAQRHash          *string         `db:"kta_qr_hash" json:"kta_qr_hash,omitempty"` // HMAC digital signature anti-palsu
+	KTAPDFKey          *string         `db:"kta_pdf_key" json:"kta_pdf_key,omitempty"`
+	PendaftaranID      *int            `db:"pendaftaran_id" json:"pendaftaran_id,omitempty"`
+	UserID             *string         `db:"user_id" json:"user_id,omitempty"` // Relasi ke akun admin (jika ada)
+	TanggalDaftar      time.Time       `db:"tanggal_daftar" json:"tanggal_daftar"`
+	TanggalAngkat      time.Time       `db:"tanggal_angkat" json:"tanggal_angkat"`
+	CreatedAt          time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 // KTAQRHashValue mengembalikan signature QR ("" bila belum terbit).

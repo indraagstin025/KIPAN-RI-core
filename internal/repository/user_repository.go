@@ -48,7 +48,7 @@ func NewUserRepository(db *sqlx.DB) UserRepository {
 
 const selectUserSQL = `
 	SELECT 
-		u.id, u.email, u.password_hash, u.name, u.role, u.status, u.avatar_url, 
+		u.id, u.email, u.password_hash, u.name, u.role, u.tipe_user, u.status, u.avatar_url, 
 		u.provinsi_id, p.nama AS provinsi_nama,
 		u.kabupaten_id, k.nama AS kabupaten_nama,
 		u.last_login_at, u.created_at, u.updated_at, u.deleted_at 
@@ -87,9 +87,9 @@ func (r *userRepo) Create(ctx context.Context, u *domain.User) error {
 	if u.ID == "" {
 		u.ID = uuid.NewString()
 	}
-	query := `INSERT INTO users (id, email, password_hash, name, role, status, avatar_url, provinsi_id, kabupaten_id, created_at, updated_at)
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-	_, err := r.db.ExecContext(ctx, query, u.ID, u.Email, u.PasswordHash, u.Name, u.Role, u.Status, u.AvatarURL, u.ProvinsiID, u.KabupatenID)
+	query := `INSERT INTO users (id, email, password_hash, name, role, tipe_user, status, avatar_url, provinsi_id, kabupaten_id, created_at, updated_at)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+	_, err := r.db.ExecContext(ctx, query, u.ID, u.Email, u.PasswordHash, u.Name, u.Role, u.TipeUser, u.Status, u.AvatarURL, u.ProvinsiID, u.KabupatenID)
 	return err
 }
 
