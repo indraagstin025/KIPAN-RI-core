@@ -26,12 +26,13 @@ type KepengurusanService interface {
 	ListSK(ctx context.Context, actor domain.ActorContext, level, status, approval, search string, withTotal bool, page, limit int) ([]domain.SKListItem, int, error)
 	GetSK(ctx context.Context, id int, actor domain.ActorContext) (*SKDetail, error)
 	ApproveSK(ctx context.Context, id int, action domain.SKApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) error
-	SetSKStatus(ctx context.Context, id int, status domain.SKStatus, actor domain.ActorContext, audit domain.AuditContext) error
+	SetSKStatus(ctx context.Context, id int, status domain.SKStatus, pengurusStatus domain.PengurusStatus, keterangan string, actor domain.ActorContext, audit domain.AuditContext) error
 
 	AddPengurus(ctx context.Context, skID int, in domain.AddPengurusRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.PengurusDetail, error)
 	RemovePengurus(ctx context.Context, skID, pengurusID int, actor domain.ActorContext, audit domain.AuditContext) error
 	ListPengurus(ctx context.Context, actor domain.ActorContext, level, status, masaJabatan, search string, provFilter, kabFilter *int, withTotal bool, page, limit int) ([]domain.PengurusDetail, int, error)
 	PengurusStats(ctx context.Context, actor domain.ActorContext) (*domain.PengurusStats, error)
+	ListPromosi(ctx context.Context, actor domain.ActorContext, search string, limit int) ([]domain.PromosiCandidate, error)
 	UpdatePengurusStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string, actor domain.ActorContext, audit domain.AuditContext) error
 	UpdatePengurusJabatan(ctx context.Context, id int, in domain.UpdateJabatanRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.PengurusDetail, error)
 }
@@ -507,12 +508,23 @@ func (s *kepengurusanSvc) ApproveSK(ctx context.Context, id int, action domain.S
 	return nil
 }
 
-func (s *kepengurusanSvc) SetSKStatus(ctx context.Context, id int, status domain.SKStatus, actor domain.ActorContext, audit domain.AuditContext) error {
+func (s *kepengurusanSvc) SetSKStatus(ctx context.Context, id int, status domain.SKStatus, pengurusStatus domain.PengurusStatus, keterangan string, actor domain.ActorContext, audit domain.AuditContext) error {
 	if id <= 0 {
 		return domain.NewValidationError("ID SK tidak valid")
 	}
 	if status != domain.SKStatusAktif && status != domain.SKStatusTidakAktif && status != domain.SKStatusDigantikan {
 		return domain.NewValidationError("Status SK tidak valid")
+	}
+	// Saat menonaktifkan SK: wajib keterangan + status pengurus terpilih.
+	if status == domain.SKStatusTidakAktif {
+		switch pengurusStatus {
+		case "", domain.PengurusStatusDemisioner, domain.PengurusStatusDiberhentikan:
+		default:
+			return domain.NewValidationError("Status pengurus tidak valid (Demisioner/Diberhentikan)")
+		}
+		if strings.TrimSpace(keterangan) == "" {
+			return domain.NewValidationError("Keterangan wajib diisi saat menonaktifkan SK")
+		}
 	}
 	if s.skRepo == nil {
 		return unavailable("surat keputusan")
@@ -524,7 +536,7 @@ func (s *kepengurusanSvc) SetSKStatus(ctx context.Context, id int, status domain
 	if !actor.CanAccessWilayah(derefInt(sk.ProvinsiID), derefInt(sk.KabupatenID)) {
 		return domain.NewForbiddenError("SK di luar wilayah kerja Anda")
 	}
-	if err := s.skRepo.SetStatus(ctx, id, status); err != nil {
+	if err := s.skRepo.SetStatusWithDemotion(ctx, id, status, pengurusStatus, keterangan); err != nil {
 		return err
 	}
 	meta := `{"event":"sk_status","to":"` + string(status) + `"}`
@@ -605,10 +617,15 @@ func (s *kepengurusanSvc) AddPengurus(ctx context.Context, skID int, in domain.A
 	if member.UserID != nil {
 		userID = *member.UserID
 	}
+	// Tanggal mulai jabatan: pakai input bila diisi, selain itu tanggal terbit SK.
+	mulai := sk.TanggalTerbit
+	if in.TanggalMulai != nil && !in.TanggalMulai.IsZero() {
+		mulai = *in.TanggalMulai
+	}
 	newID, err := s.pengurus.AddWithPromotion(ctx, repository.PromoteInput{
 		AnggotaID: in.AnggotaID, SKID: skID, UserID: userID,
 		Level: string(sk.Level), ProvinsiID: sk.ProvinsiID, KabupatenID: sk.KabupatenID,
-		JabatanID: in.JabatanID, TanggalMulai: sk.TanggalTerbit,
+		JabatanID: in.JabatanID, TanggalMulai: mulai,
 		TanggalSelesai: time.Now(), Keterangan: "Digantikan pengurus baru",
 	})
 	if err != nil {
@@ -717,6 +734,16 @@ func (s *kepengurusanSvc) PengurusStats(ctx context.Context, actor domain.ActorC
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ListPromosi mengembalikan kandidat "Promosi Pengurus" (anggota AKTIF
+// ber-riwayat kepengurusan yang tidak sedang aktif menjabat).
+func (s *kepengurusanSvc) ListPromosi(ctx context.Context, actor domain.ActorContext, search string, limit int) ([]domain.PromosiCandidate, error) {
+	if s.pengurus == nil {
+		return nil, unavailable("pengurus")
+	}
+	prov, kab := scopeForActor(actor)
+	return s.pengurus.ListPromosi(ctx, prov, kab, strings.TrimSpace(search), limit)
 }
 
 func (s *kepengurusanSvc) UpdatePengurusStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string, actor domain.ActorContext, audit domain.AuditContext) error {

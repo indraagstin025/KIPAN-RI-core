@@ -153,13 +153,16 @@ func (h *KepengurusanHandler) SetSKStatus(c *fiber.Ctx) error {
 		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
 	var body struct {
-		Status string `json:"status"`
+		Status         string `json:"status"`
+		StatusPengurus string `json:"status_pengurus"`
+		Keterangan     string `json:"keterangan"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return response.BadRequest(c, "Format permintaan tidak valid")
 	}
 	status := domain.SKStatus(strings.TrimSpace(body.Status))
-	if err := h.service.SetSKStatus(c.Context(), id, status, actor, auditContextOf(c)); err != nil {
+	pengurusStatus := domain.PengurusStatus(strings.TrimSpace(body.StatusPengurus))
+	if err := h.service.SetSKStatus(c.Context(), id, status, pengurusStatus, body.Keterangan, actor, auditContextOf(c)); err != nil {
 		return response.FromError(c, err)
 	}
 	return response.Success(c, "Status SK diperbarui", nil)
@@ -219,6 +222,19 @@ func (h *KepengurusanHandler) PengurusStats(c *fiber.Ctx) error {
 		return response.FromError(c, err)
 	}
 	return response.Success(c, "Statistik pengurus", out)
+}
+
+// ListPromosi mengembalikan kandidat promosi pengurus (ter-scope).
+func (h *KepengurusanHandler) ListPromosi(c *fiber.Ctx) error {
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	items, err := h.service.ListPromosi(c.Context(), actor, c.Query("search"), c.QueryInt("limit", 20))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Kandidat promosi pengurus", items)
 }
 
 func (h *KepengurusanHandler) ListPengurus(c *fiber.Ctx) error {

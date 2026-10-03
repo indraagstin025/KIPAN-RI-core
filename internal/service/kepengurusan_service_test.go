@@ -69,7 +69,9 @@ func (f *fakeSKRepo) FinalizeSK(_ context.Context, _ int, _ domain.SKApprovalSta
 	f.updatedTo = domain.SKApprovalStatusDisetujui
 	return nil
 }
-func (f *fakeSKRepo) SetStatus(context.Context, int, domain.SKStatus) error { return nil }
+func (f *fakeSKRepo) SetStatusWithDemotion(context.Context, int, domain.SKStatus, domain.PengurusStatus, string) error {
+	return nil
+}
 
 type fakePengurusRepo struct {
 	detail       *domain.PengurusDetail
@@ -98,6 +100,9 @@ func (f *fakePengurusRepo) List(_ context.Context, in repository.PengurusFilter)
 func (f *fakePengurusRepo) Stats(_ context.Context, in repository.PengurusFilter) (domain.PengurusStats, error) {
 	f.lastFilter = in
 	return domain.PengurusStats{}, nil
+}
+func (f *fakePengurusRepo) ListPromosi(context.Context, *int, *int, string, int) ([]domain.PromosiCandidate, error) {
+	return nil, nil
 }
 func (f *fakePengurusRepo) UpdateStatus(context.Context, int, domain.PengurusStatus, string) error {
 	return nil

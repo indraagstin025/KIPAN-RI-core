@@ -371,6 +371,7 @@ func registerKepengurusanRoutes(
 	grp.Delete("/sk/:id/pengurus/:pengurusId", handler.RemovePengurus)
 	grp.Get("/pengurus", handler.ListPengurus)
 	grp.Get("/pengurus/stats", handler.PengurusStats)
+	grp.Get("/pengurus/promosi", handler.ListPromosi)
 	grp.Patch("/pengurus/:id", handler.UpdatePengurusStatus)
 	grp.Patch("/pengurus/:id/jabatan", handler.UpdatePengurusJabatan)
 

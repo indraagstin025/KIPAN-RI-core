@@ -123,7 +123,9 @@ type SKRepository interface {
 	UpdateApproval(ctx context.Context, id int, from, to domain.SKApprovalStatus, catatan *string, approvedBy *string, approvedAt *time.Time) error
 	// FinalizeSK mengesahkan SK ke DISETUJUI (compare-and-swap) + Single Active SK rule (atomik).
 	FinalizeSK(ctx context.Context, id int, from domain.SKApprovalStatus, approvedBy *string, approvedAt *time.Time) error
-	SetStatus(ctx context.Context, id int, status domain.SKStatus) error
+	// SetStatusWithDemotion mengubah status SK; bila menjadi TidakAktif,
+	// pengurus aktif SK tsb didemosi (Demisioner/Diberhentikan) + keterangan.
+	SetStatusWithDemotion(ctx context.Context, id int, status domain.SKStatus, pengurusStatus domain.PengurusStatus, keterangan string) error
 }
 
 type skRepo struct{ db *sqlx.DB }
@@ -260,8 +262,17 @@ func (r *skRepo) UpdateApproval(ctx context.Context, id int, from, to domain.SKA
 	return nil
 }
 
-func (r *skRepo) SetStatus(ctx context.Context, id int, status domain.SKStatus) error {
-	res, err := r.db.ExecContext(ctx,
+// SetStatusWithDemotion mengubah status SK. Bila menjadi TidakAktif, seluruh
+// pengurus aktif SK tsb didemosi (status dipilih + keterangan) dalam transaksi
+// yang sama, selaras perilaku lama.
+func (r *skRepo) SetStatusWithDemotion(ctx context.Context, id int, status domain.SKStatus, pengurusStatus domain.PengurusStatus, keterangan string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx,
 		`UPDATE surat_keputusan SET status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, id, status)
 	if err != nil {
 		return err
@@ -273,7 +284,19 @@ func (r *skRepo) SetStatus(ctx context.Context, id int, status domain.SKStatus) 
 	if rows == 0 {
 		return domain.ErrNotFound
 	}
-	return nil
+	if status == domain.SKStatusTidakAktif {
+		ps := pengurusStatus
+		if ps == "" {
+			ps = domain.PengurusStatusDemisioner
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE pengurus SET status = $2, keterangan_status = $3, updated_at = CURRENT_TIMESTAMP
+			 WHERE surat_keputusan_id = $1 AND status = 'Aktif'`,
+			id, string(ps), strings.TrimSpace(keterangan)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // FinalizeSK mengesahkan SK (compare-and-swap ke DISETUJUI) lalu menjalankan
@@ -427,6 +450,9 @@ type PengurusRepository interface {
 	UpdateJabatan(ctx context.Context, id int, jabatanID int) error
 	ExistsInSK(ctx context.Context, skID, anggotaID int) (bool, error)
 	CountJabatanInSK(ctx context.Context, skID, jabatanID, excludeAnggotaID int) (int, error)
+	// ListPromosi kandidat promosi: anggota AKTIF ber-riwayat pengurus yang
+	// TIDAK sedang aktif menjabat (ter-scope). Untuk mode "Promosi Pengurus".
+	ListPromosi(ctx context.Context, provinsiID, kabupatenID *int, search string, limit int) ([]domain.PromosiCandidate, error)
 }
 
 type pengurusRepo struct{ db *sqlx.DB }
@@ -680,4 +706,47 @@ func (r *pengurusRepo) CountJabatanInSK(ctx context.Context, skID, jabatanID, ex
 		return 0, err
 	}
 	return n, nil
+}
+
+// ListPromosi mengembalikan kandidat promosi (anggota AKTIF ber-riwayat
+// pengurus, tidak sedang aktif menjabat) dengan jabatan/level terakhir.
+func (r *pengurusRepo) ListPromosi(ctx context.Context, provinsiID, kabupatenID *int, search string, limit int) ([]domain.PromosiCandidate, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	where := []string{"a.status = 'Aktif'",
+		"NOT EXISTS (SELECT 1 FROM pengurus p2 WHERE p2.anggota_id = a.id AND p2.status = 'Aktif')"}
+	args := []interface{}{}
+	if provinsiID != nil {
+		args = append(args, *provinsiID)
+		where = append(where, fmt.Sprintf("a.provinsi_id = $%d", len(args)))
+	}
+	if kabupatenID != nil {
+		args = append(args, *kabupatenID)
+		where = append(where, fmt.Sprintf("a.kabupaten_id = $%d", len(args)))
+	}
+	if q := strings.TrimSpace(search); q != "" {
+		args = append(args, "%"+q+"%")
+		where = append(where, fmt.Sprintf("(a.nama_lengkap ILIKE $%d OR a.nia ILIKE $%d)", len(args), len(args)))
+	}
+	args = append(args, limit)
+	items := make([]domain.PromosiCandidate, 0)
+	query := `SELECT a.id AS anggota_id, a.nia, a.nama_lengkap, a.provinsi_id, a.kabupaten_id,
+		wp.nama AS provinsi_nama, wk.nama AS kabupaten_nama,
+		last.jabatan, last.level, last.status
+		FROM anggota a
+		LEFT JOIN wilayah_provinsi wp ON wp.id = a.provinsi_id
+		LEFT JOIN wilayah_kabupaten wk ON wk.id = a.kabupaten_id
+		JOIN LATERAL (
+			SELECT j.nama AS jabatan, p.level, p.status
+			FROM pengurus p JOIN jabatan j ON j.id = p.jabatan_id
+			WHERE p.anggota_id = a.id
+			ORDER BY p.created_at DESC LIMIT 1
+		) last ON TRUE
+		WHERE ` + strings.Join(where, " AND ") + ` ORDER BY a.nama_lengkap` +
+		fmt.Sprintf(` LIMIT $%d`, len(args))
+	if err := r.db.SelectContext(ctx, &items, query, args...); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

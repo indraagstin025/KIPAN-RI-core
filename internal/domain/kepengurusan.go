@@ -54,10 +54,12 @@ type SKListItem struct {
 }
 
 // AddPengurusRequest payload pengangkatan anggota ke sebuah SK.
+// TanggalMulai opsional (default = tanggal terbit SK).
 type AddPengurusRequest struct {
-	AnggotaID  int  `json:"anggota_id"`
-	JabatanID  int  `json:"jabatan_id"`
-	Konfirmasi bool `json:"konfirmasi"`
+	AnggotaID    int        `json:"anggota_id"`
+	JabatanID    int        `json:"jabatan_id"`
+	Konfirmasi   bool       `json:"konfirmasi"`
+	TanggalMulai *time.Time `json:"tanggal_mulai"`
 }
 
 // PengurusDetail proyeksi pengurus (join anggota + jabatan + SK) untuk
@@ -92,6 +94,21 @@ type PengurusStats struct {
 	Provinsi     int `db:"provinsi" json:"provinsi"`
 	Kabupaten    int `db:"kabupaten" json:"kabupaten"`
 	AkanBerakhir int `db:"akan_berakhir" json:"akan_berakhir"`
+}
+
+// PromosiCandidate kandidat promosi pengurus: anggota AKTIF yang punya
+// riwayat kepengurusan dan TIDAK sedang aktif menjabat (untuk diangkat ulang).
+type PromosiCandidate struct {
+	AnggotaID     int     `db:"anggota_id" json:"anggota_id"`
+	NIA           string  `db:"nia" json:"nia"`
+	NamaLengkap   string  `db:"nama_lengkap" json:"nama_lengkap"`
+	ProvinsiID    int     `db:"provinsi_id" json:"provinsi_id"`
+	KabupatenID   int     `db:"kabupaten_id" json:"kabupaten_id"`
+	ProvinsiNama  *string `db:"provinsi_nama" json:"provinsi_nama,omitempty"`
+	KabupatenNama *string `db:"kabupaten_nama" json:"kabupaten_nama,omitempty"`
+	Jabatan       string  `db:"jabatan" json:"jabatan"`
+	Level         string  `db:"level" json:"level"`
+	Status        string  `db:"status" json:"status"`
 }
 
 // JabatanRequest payload kelola master jabatan (Super/Nasional).
