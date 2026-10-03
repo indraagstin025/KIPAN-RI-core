@@ -111,13 +111,13 @@ type PromosiCandidate struct {
 	Status        string  `db:"status" json:"status"`
 }
 
-// JabatanRequest payload kelola master jabatan (Super/Nasional).
+// JabatanRequest payload kelola master jabatan. Tanpa level (tingkat dari SK).
 type JabatanRequest struct {
-	Nama     string `json:"nama"`
-	Level    string `json:"level"`
-	IsInti   bool   `json:"is_inti"`
-	IsActive bool   `json:"is_active"`
-	Urutan   int    `json:"urutan"`
+	Nama        string `json:"nama"`
+	IsKetuaUmum bool   `json:"is_ketua_umum"`
+	IsInti      bool   `json:"is_inti"`
+	IsActive    bool   `json:"is_active"`
+	Urutan      int    `json:"urutan"`
 }
 
 // UpdateJabatanRequest payload ganti jabatan pengurus.

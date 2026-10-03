@@ -73,9 +73,6 @@ func (s *pengurusSvc) AddPengurus(ctx context.Context, skID int, in domain.AddPe
 	if !jabatan.IsActive {
 		return nil, domain.NewValidationError("Jabatan tidak aktif")
 	}
-	if jabatan.Level != sk.Level {
-		return nil, domain.NewValidationError("Jabatan tidak sesuai tingkat SK")
-	}
 
 	if exists, err := s.pengurus.ExistsInSK(ctx, skID, in.AnggotaID); err != nil {
 		return nil, err
@@ -315,9 +312,6 @@ func (s *pengurusSvc) UpdatePengurusJabatan(ctx context.Context, id int, in doma
 	}
 	if !jabatan.IsActive {
 		return nil, domain.NewValidationError("Jabatan tidak aktif")
-	}
-	if jabatan.Level != sk.Level {
-		return nil, domain.NewValidationError("Jabatan tidak sesuai tingkat SK")
 	}
 	if jabatan.IsInti {
 		n, err := s.pengurus.CountJabatanInSK(ctx, sk.ID, in.JabatanID, p.AnggotaID)

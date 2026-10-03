@@ -46,8 +46,9 @@ func registerKepengurusanRoutes(
 	grp.Patch("/pengurus/:id", h.UpdatePengurusStatus)
 	grp.Patch("/pengurus/:id/jabatan", h.UpdatePengurusJabatan)
 
-	// Master jabatan (mutasi) hanya Nasional/Super.
-	master := grp.Group("/jabatan", middleware.RequireRoles(domain.RoleSuperAdmin, domain.RoleAdminNasional))
-	master.Post("", h.CreateJabatan)
+	// Tambah jabatan: SEMUA admin (kab/prov bisa butuh jabatan sendiri, TDD D14).
+	grp.Post("/jabatan", middleware.RequireCapability(domain.CapCreateJabatan), h.CreateJabatan)
+	// Ubah/nonaktifkan jabatan: Super/Nasional.
+	master := grp.Group("/jabatan", middleware.RequireCapability(domain.CapManageJabatan))
 	master.Put("/:id", h.UpdateJabatan)
 }

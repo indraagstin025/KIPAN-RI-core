@@ -211,17 +211,18 @@ type WilayahKodepos struct {
 }
 
 // Jabatan referensi jabatan struktural pengurus KIPAN (master terkonfigurasi).
-// Jabatan inti (is_inti) hanya boleh satu pemegang per SK. Jabatan berlevel
-// (NASIONAL/PROVINSI/KABUPATEN); nama boleh sama di tiap level.
+// Tidak berlevel — tingkat ditentukan oleh SK, bukan jabatan (nama unik global).
+// Jabatan inti (is_inti) hanya boleh satu pemegang per SK. IsKetuaUmum menandai
+// jabatan pimpinan tertinggi untuk etalase publik.
 type Jabatan struct {
-	ID        int            `db:"id" json:"id"`
-	Nama      string         `db:"nama" json:"nama"` // Ketua, Sekretaris, Bendahara, dst
-	Level     TingkatWilayah `db:"level" json:"level"`
-	IsInti    bool           `db:"is_inti" json:"is_inti"`
-	IsActive  bool           `db:"is_active" json:"is_active"`
-	Urutan    int            `db:"urutan" json:"urutan"`
-	CreatedAt time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time      `db:"updated_at" json:"updated_at"`
+	ID          int       `db:"id" json:"id"`
+	Nama        string    `db:"nama" json:"nama"` // Ketua, Sekretaris, Bendahara, dst
+	IsKetuaUmum bool      `db:"is_ketua_umum" json:"is_ketua_umum"`
+	IsInti      bool      `db:"is_inti" json:"is_inti"`
+	IsActive    bool      `db:"is_active" json:"is_active"`
+	Urutan      int       `db:"urutan" json:"urutan"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // ============================================================

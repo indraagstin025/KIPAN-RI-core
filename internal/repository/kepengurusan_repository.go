@@ -17,14 +17,14 @@ import (
 // JABATAN (MASTER)
 // ============================================================
 
-// JabatanRepository mengelola master jabatan struktural.
+// JabatanRepository mengelola master jabatan struktural (tanpa level).
 type JabatanRepository interface {
-	List(ctx context.Context, includeInactive bool, level string) ([]domain.Jabatan, error)
+	List(ctx context.Context, includeInactive bool) ([]domain.Jabatan, error)
 	GetByID(ctx context.Context, id int) (*domain.Jabatan, error)
 	Create(ctx context.Context, in domain.JabatanRequest) (*domain.Jabatan, error)
 	Update(ctx context.Context, id int, in domain.JabatanRequest) (*domain.Jabatan, error)
-	// CountPengurus menghitung pengurus yang memakai jabatan ini (untuk
-	// mencegah perubahan level jabatan yang sedang dipakai).
+	// CountPengurus menghitung pengurus yang memakai jabatan ini (dicadangkan
+	// untuk pengaman penghapusan/penonaktifan jabatan).
 	CountPengurus(ctx context.Context, jabatanID int) (int, error)
 }
 
@@ -32,18 +32,13 @@ type jabatanRepo struct{ db *sqlx.DB }
 
 func NewJabatanRepository(db *sqlx.DB) JabatanRepository { return &jabatanRepo{db: db} }
 
-const jabatanColumns = `id, nama, level, is_inti, is_active, urutan, created_at, updated_at`
+const jabatanColumns = `id, nama, is_ketua_umum, is_inti, is_active, urutan, created_at, updated_at`
 
-func (r *jabatanRepo) List(ctx context.Context, includeInactive bool, level string) ([]domain.Jabatan, error) {
+// List mengembalikan master jabatan (opsional termasuk yang nonaktif).
+func (r *jabatanRepo) List(ctx context.Context, includeInactive bool) ([]domain.Jabatan, error) {
 	items := make([]domain.Jabatan, 0)
-	where := []string{"($1 OR is_active)"}
-	args := []interface{}{includeInactive}
-	if l := strings.TrimSpace(level); l != "" {
-		args = append(args, l)
-		where = append(where, fmt.Sprintf("level = $%d", len(args)))
-	}
-	query := `SELECT ` + jabatanColumns + ` FROM jabatan WHERE ` + strings.Join(where, " AND ") + ` ORDER BY urutan, nama`
-	if err := r.db.SelectContext(ctx, &items, query, args...); err != nil {
+	query := `SELECT ` + jabatanColumns + ` FROM jabatan WHERE ($1 OR is_active) ORDER BY urutan, nama`
+	if err := r.db.SelectContext(ctx, &items, query, includeInactive); err != nil {
 		return nil, err
 	}
 	return items, nil
@@ -63,12 +58,12 @@ func (r *jabatanRepo) GetByID(ctx context.Context, id int) (*domain.Jabatan, err
 
 func (r *jabatanRepo) Create(ctx context.Context, in domain.JabatanRequest) (*domain.Jabatan, error) {
 	var j domain.Jabatan
-	query := `INSERT INTO jabatan (nama, level, is_inti, is_active, urutan)
+	query := `INSERT INTO jabatan (nama, is_ketua_umum, is_inti, is_active, urutan)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING ` + jabatanColumns
 	if err := r.db.GetContext(ctx, &j, query,
-		strings.TrimSpace(in.Nama), in.Level, in.IsInti, in.IsActive, in.Urutan); err != nil {
-		return nil, mapDBError(err, "Jabatan dengan nama & level tersebut sudah ada")
+		strings.TrimSpace(in.Nama), in.IsKetuaUmum, in.IsInti, in.IsActive, in.Urutan); err != nil {
+		return nil, mapDBError(err, "Jabatan dengan nama tersebut sudah ada")
 	}
 	return &j, nil
 }
@@ -76,15 +71,15 @@ func (r *jabatanRepo) Create(ctx context.Context, in domain.JabatanRequest) (*do
 func (r *jabatanRepo) Update(ctx context.Context, id int, in domain.JabatanRequest) (*domain.Jabatan, error) {
 	var j domain.Jabatan
 	query := `UPDATE jabatan
-		SET nama = $2, level = $3, is_inti = $4, is_active = $5, urutan = $6, updated_at = CURRENT_TIMESTAMP
+		SET nama = $2, is_ketua_umum = $3, is_inti = $4, is_active = $5, urutan = $6, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
 		RETURNING ` + jabatanColumns
 	if err := r.db.GetContext(ctx, &j, query,
-		id, strings.TrimSpace(in.Nama), in.Level, in.IsInti, in.IsActive, in.Urutan); err != nil {
+		id, strings.TrimSpace(in.Nama), in.IsKetuaUmum, in.IsInti, in.IsActive, in.Urutan); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}
-		return nil, mapDBError(err, "Jabatan dengan nama & level tersebut sudah ada")
+		return nil, mapDBError(err, "Jabatan dengan nama tersebut sudah ada")
 	}
 	return &j, nil
 }

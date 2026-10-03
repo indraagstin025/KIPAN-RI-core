@@ -30,7 +30,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 | 0.4 | Tooling migrasi (preflight + snapshot + klon) + state-machine SK tersurat | ✅ Selesai |
 
 ### Fase A — Kepengurusan
-- A1 Master Jabatan TDD — migrasi `000026` (expand→dedupe→contract).
+- A1 Master Jabatan TDD — migrasi `000026` ✅ **Selesai**.
 - A2 Jabatan ganda lintas tingkat — migrasi `000027` (partial unique).
 - A3 PAW + Mutasi.
 - A4 Kedaluwarsa dinamis (pakai `pengurus_status_efektif` + job harian).
@@ -108,3 +108,22 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 
 > **Fondasi (Batch 0) SELESAI.** Lanjut ke **Fase A** (mulai A1 Master Jabatan,
 > migrasi `000026`) — ingat: jalankan preflight + snapshot dulu.
+
+## 7. Catatan Fase A — A1 Master Jabatan (TDD D14)
+
+- **Migrasi `000026`**: `ADD is_ketua_umum`; dedupe 27→9 (pilih survivor per
+  nama: prioritas NASIONAL lalu id terkecil, **remap `pengurus.jabatan_id`**
+  ke survivor, hapus duplikat); `DROP level`; `UNIQUE(nama)`. `Ketua` ditandai
+  `is_ketua_umum = TRUE`.
+- **Backend**: `domain.Jabatan`/`JabatanRequest` tanpa `Level` + `IsKetuaUmum`;
+  `JabatanRepository.List(ctx, includeInactive)` tanpa filter level; validasi
+  `jabatan.level == sk.level` dihapus dari `pengurus_service.go`.
+- **Otorisasi** (capability): `create_jabatan` = **semua admin**;
+  `manage_jabatan` = Super/Nasional (ubah/nonaktif). Handler/routes disesuaikan.
+- **Frontend**: `JabatanPage` (hapus kolom/filter/form Level; tambah penanda
+  Ketua Umum; form tampil untuk semua admin, tombol Ubah hanya Nasional/Super);
+  route `/admin/jabatan` dibuka untuk semua admin; nav "Master Jabatan" tampil
+  untuk semua admin; dropdown jabatan di SK/Pengurus/Wizard tanpa filter level.
+- **Verifikasi**: preflight + snapshot diambil; `build`/`vet`/`test` hijau;
+  `tsc`/`lint`/`build` hijau; E2E: Kab `POST` 201, Kab `PUT` 403, Nas `PUT` 200.
+- **Catatan**: perubahan ini menggantikan fitur "jabatan berlevel" (batch B2 lama).

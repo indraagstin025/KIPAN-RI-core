@@ -25,7 +25,7 @@ func NewKepengurusanHandler(service service.KepengurusanService) *KepengurusanHa
 
 func (h *KepengurusanHandler) ListJabatan(c *fiber.Ctx) error {
 	includeInactive := c.QueryBool("include_inactive", false)
-	items, err := h.service.ListJabatan(c.Context(), includeInactive, c.Query("level"))
+	items, err := h.service.ListJabatan(c.Context(), includeInactive)
 	if err != nil {
 		return response.FromError(c, err)
 	}

@@ -18,7 +18,7 @@ type fakeJabatanRepo struct {
 	pengurusCount int
 }
 
-func (f *fakeJabatanRepo) List(context.Context, bool, string) ([]domain.Jabatan, error) {
+func (f *fakeJabatanRepo) List(context.Context, bool) ([]domain.Jabatan, error) {
 	return f.list, nil
 }
 func (f *fakeJabatanRepo) GetByID(context.Context, int) (*domain.Jabatan, error) {
@@ -391,7 +391,7 @@ func TestUpdatePengurusJabatan(t *testing.T) {
 
 	// Sukses ganti jabatan non-inti.
 	pgr := &fakePengurusRepo{detail: detail}
-	jab := &fakeJabatanRepo{jab: &domain.Jabatan{ID: 2, Nama: "Sekretaris", Level: domain.LevelKabupaten, IsActive: true}}
+	jab := &fakeJabatanRepo{jab: &domain.Jabatan{ID: 2, Nama: "Sekretaris", IsActive: true}}
 	svc := kepSvcFull(&fakeSKRepo{sk: baseSK(false)}, jab, pgr)
 	if _, err := svc.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 2}, kabActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("ganti jabatan gagal: %v", err)
@@ -407,7 +407,7 @@ func TestUpdatePengurusJabatan(t *testing.T) {
 	}
 
 	// Jabatan inti ganda => 409.
-	jabInti := &fakeJabatanRepo{jab: &domain.Jabatan{ID: 3, Nama: "Ketua", Level: domain.LevelKabupaten, IsInti: true, IsActive: true}}
+	jabInti := &fakeJabatanRepo{jab: &domain.Jabatan{ID: 3, Nama: "Ketua", IsInti: true, IsActive: true}}
 	pgrInti := &fakePengurusRepo{detail: detail, jabatanCount: 1}
 	svcInti := kepSvcFull(&fakeSKRepo{sk: baseSK(false)}, jabInti, pgrInti)
 	if _, err := svcInti.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 3}, kabActor(), domain.AuditContext{}); err == nil {
@@ -427,19 +427,34 @@ func TestUpdatePengurusJabatan(t *testing.T) {
 	}
 }
 
-func TestCreateJabatanHanyaNasionalSuper(t *testing.T) {
+func TestCreateJabatanSemuaAdmin(t *testing.T) {
 	ctx := context.Background()
-	in := domain.JabatanRequest{Nama: "Ketua", Level: "NASIONAL", IsInti: true, IsActive: true, Urutan: 1}
+	in := domain.JabatanRequest{Nama: "Ketua", IsInti: true, IsActive: true, Urutan: 1}
 
-	if _, err := kepSvc(nil, &fakeJabatanRepo{}).CreateJabatan(ctx, in, provActor(), domain.AuditContext{}); err == nil {
-		t.Fatal("CreateJabatan oleh Provinsi seharusnya ditolak")
+	// TDD D14: semua admin boleh menambah jabatan (kab/prov butuh jabatan sendiri).
+	for _, tc := range []struct {
+		name  string
+		actor domain.ActorContext
+	}{
+		{"kabupaten", kabActor()},
+		{"provinsi", provActor()},
+		{"nasional", nasActor()},
+		{"super", superActor()},
+	} {
+		repo := &fakeJabatanRepo{}
+		if _, err := kepSvc(nil, repo).CreateJabatan(ctx, in, tc.actor, domain.AuditContext{}); err != nil {
+			t.Fatalf("CreateJabatan oleh %s gagal: %v", tc.name, err)
+		}
+		if !repo.created {
+			t.Fatalf("jabatan tidak tersimpan untuk %s", tc.name)
+		}
 	}
-	repo := &fakeJabatanRepo{}
-	if _, err := kepSvc(nil, repo).CreateJabatan(ctx, in, nasActor(), domain.AuditContext{}); err != nil {
-		t.Fatalf("CreateJabatan oleh Nasional gagal: %v", err)
-	}
-	if !repo.created {
-		t.Fatal("jabatan tidak tersimpan")
+
+	// USER tidak boleh menambah jabatan.
+	if _, err := kepSvc(nil, &fakeJabatanRepo{}).CreateJabatan(ctx, in,
+		domain.ActorContext{UserID: "u-user", Name: "User", Role: domain.RoleUser},
+		domain.AuditContext{}); err == nil {
+		t.Fatal("USER tidak boleh menambah jabatan")
 	}
 }
 
@@ -483,7 +498,7 @@ func TestAddPengurusEnqueuePengangkatan(t *testing.T) {
 		Email: "budi@example.com", Status: domain.AnggotaStatusAktif,
 		ProvinsiID: 32, KabupatenID: 3273,
 	}
-	jab := &domain.Jabatan{ID: 1, Nama: "Ketua", Level: domain.LevelKabupaten, IsActive: true}
+	jab := &domain.Jabatan{ID: 1, Nama: "Ketua", IsActive: true}
 	outbox := &fakeOutboxRepo{}
 	svc := NewKepengurusanService(nil, KepengurusanDeps{
 		SKRepo: sk2Repo(sk), JabatanRepo: &fakeJabatanRepo{jab: jab},

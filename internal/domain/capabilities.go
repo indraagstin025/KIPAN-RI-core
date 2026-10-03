@@ -15,7 +15,8 @@ const (
 	CapCreateSK           Capability = "create_sk"           // susun & ajukan SK
 	CapManageOutbox       Capability = "manage_outbox"       // kelola antrian email
 	CapViewAudit          Capability = "view_audit"          // penelusur audit
-	CapManageJabatan      Capability = "manage_jabatan"      // master jabatan
+	CapCreateJabatan      Capability = "create_jabatan"      // tambah entri master jabatan (semua admin)
+	CapManageJabatan      Capability = "manage_jabatan"      // ubah/nonaktifkan master jabatan
 	CapManageWilayah      Capability = "manage_wilayah"      // master wilayah
 	CapManageUsers        Capability = "manage_users"        // manajemen akun admin
 	CapManageOrganisasi   Capability = "manage_organisasi"   // profil organisasi
@@ -42,7 +43,8 @@ var capabilityRegistry = []CapabilityInfo{
 	{CapCreateSK, "Buat & Ajukan SK", "Menyusun dan mengajukan Surat Keputusan.", allAdminRoles},
 	{CapManageOutbox, "Kelola Antrian Email", "Melihat & mengirim ulang email outbox.", allAdminRoles},
 	{CapViewAudit, "Lihat Audit", "Menelusuri jejak audit (filter & ekspor).", []Role{RoleSuperAdmin, RoleAdminNasional}},
-	{CapManageJabatan, "Master Jabatan", "Mengelola daftar jabatan.", []Role{RoleSuperAdmin, RoleAdminNasional}},
+	{CapCreateJabatan, "Tambah Jabatan", "Menambah entri jabatan baru (tanpa level).", allAdminRoles},
+	{CapManageJabatan, "Kelola Jabatan", "Mengubah/menonaktifkan master jabatan.", []Role{RoleSuperAdmin, RoleAdminNasional}},
 	{CapManageWilayah, "Master Wilayah", "Mengelola master data wilayah.", []Role{RoleSuperAdmin, RoleAdminNasional}},
 	{CapManageUsers, "Manajemen Pengguna", "Mengelola akun admin.", []Role{RoleSuperAdmin}},
 	{CapManageOrganisasi, "Profil Organisasi", "Mengelola profil organisasi & halaman publik.", []Role{RoleSuperAdmin}},
