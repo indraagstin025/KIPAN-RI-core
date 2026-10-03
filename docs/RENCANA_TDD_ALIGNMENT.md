@@ -31,7 +31,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 
 ### Fase A — Kepengurusan
 - A1 Master Jabatan TDD — migrasi `000026` ✅ **Selesai**.
-- A2 Jabatan ganda lintas tingkat — migrasi `000027` (partial unique).
+- A2 Jabatan ganda lintas tingkat — migrasi `000027` (partial unique) ✅ **Selesai**.
 - A3 PAW + Mutasi.
 - A4 Kedaluwarsa dinamis (pakai `pengurus_status_efektif` + job harian).
 
@@ -127,3 +127,21 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 - **Verifikasi**: preflight + snapshot diambil; `build`/`vet`/`test` hijau;
   `tsc`/`lint`/`build` hijau; E2E: Kab `POST` 201, Kab `PUT` 403, Nas `PUT` 200.
 - **Catatan**: perubahan ini menggantikan fitur "jabatan berlevel" (batch B2 lama).
+
+## 8. Catatan Fase A — A2 Larangan Jabatan Ganda Lintas Tingkat (TDD D10)
+
+- **Migrasi `000027`**: cleanup defensif (jika ada >1 pengurus `Aktif` per
+  anggota, pertahankan yang terbaru & demosikan sisanya) + **unique index
+  parsial** `uq_pengurus_single_active ON pengurus (anggota_id) WHERE status='Aktif'`.
+- **Kenapa tidak menolak di AddPengurus**: alur pengangkatan (`AddWithPromotion`)
+  sudah **menutup record lama** (demote) sebelum membuka yang baru — itulah
+  mekanisme "mutasi". Sehingga invariant "satu jabatan aktif per anggota"
+  sudah terjaga; indeks parsial menjadi **jaring pengaman DB** (kondisi
+  balapan / jalur tulis lain).
+- **Error mapping**: pelanggaran indeks pada `AddWithPromotion` (insert) &
+  `UpdateStatus` (reaktivasi) dipetakan ke **409** yang jelas via `mapDBError`.
+- **Test integrasi** `TestPengurusSingleActiveIndex`: memverifikasi keberadaan
+  + predikat indeks dan perilaku (baris `Aktif` kedua untuk anggota sama →
+  `unique_violation` 23505).
+- Semua alur lain (termasuk `FinalizeSK` yang menonaktifkan SK lama + demosi)
+  tetap memenuhi invariant.

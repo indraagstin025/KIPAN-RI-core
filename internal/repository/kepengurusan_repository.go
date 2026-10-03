@@ -504,7 +504,9 @@ func (r *pengurusRepo) AddWithPromotion(ctx context.Context, in PromoteInput) (i
 		 RETURNING id`,
 		in.AnggotaID, in.SKID, in.Level, in.ProvinsiID, in.KabupatenID, in.JabatanID,
 		string(domain.PengurusStatusAktif), in.TanggalMulai).Scan(&newID); err != nil {
-		return 0, fmt.Errorf("gagal menyimpan pengurus: %w", err)
+		// Pelanggaran uq_pengurus_single_active (anggota sudah Aktif di SK lain)
+		// → 409 yang jelas, bukan 500.
+		return 0, mapDBError(err, "Anggota sudah menjabat aktif. Satu anggota hanya boleh satu jabatan aktif.")
 	}
 
 	if _, err := tx.ExecContext(ctx,
@@ -663,7 +665,8 @@ func (r *pengurusRepo) UpdateStatus(ctx context.Context, id int, status domain.P
 		`UPDATE pengurus SET status = $2, keterangan_status = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
 		id, string(status), strings.TrimSpace(keterangan))
 	if err != nil {
-		return err
+		// Reaktivasi ke 'Aktif' saat anggota sudah Aktif di tempat lain → 409.
+		return mapDBError(err, "Anggota sudah menjabat aktif. Nonaktifkan jabatan lain lebih dulu.")
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
