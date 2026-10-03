@@ -32,7 +32,7 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
 ### Fase A — Kepengurusan
 - A1 Master Jabatan TDD — migrasi `000026` ✅ **Selesai**.
 - A2 Jabatan ganda lintas tingkat — migrasi `000027` (partial unique) ✅ **Selesai**.
-- A3 PAW + Mutasi.
+- A3 PAW + Mutasi ✅ **Selesai**.
 - A4 Kedaluwarsa dinamis (pakai `pengurus_status_efektif` + job harian).
 
 ### Fase B — Pendaftaran & Keanggotaan
@@ -145,3 +145,24 @@ Alur tiap batch: (migrasi → preflight+snapshot+klon bila perlu) → backend (d
   `unique_violation` 23505).
 - Semua alur lain (termasuk `FinalizeSK` yang menonaktifkan SK lama + demosi)
   tetap memenuhi invariant.
+
+## 9. Catatan Fase A — A3 PAW + Mutasi (TDD §5.6)
+
+- **PAW** `PUT /admin/pengurus/:id/paw` (body `{aksi, keterangan}`), aksi:
+  `DEMISIONER` / `DIBERHENTIKAN` / `MENGUNDURKAN_DIRI` / `MENINGGAL`.
+  - Keterangan wajib; hanya pengurus berstatus `Aktif`.
+  - Otorisasi (`canPaws`): Super semua; **DIBERHENTIKAN** khusus Admin
+    Provinsi seprov atau Nasional (TDD Tabel 20); lainnya `canManageSK`.
+  - Aksi `MENINGGAL` sekaligus menetapkan `anggota.status = MENINGGAL`
+    (`AnggotaRepository.SetStatus` baru).
+- **Mutasi** `PUT /admin/pengurus/:id/mutasi` (body `{sk_id, jabatan_id,
+  tanggal_mulai?, keterangan?}`): menutup record lama (Demisioner, alasan
+  "Mutasi ke …") lalu membuka record baru pada SK/jabatan/wilayah tujuan —
+  **satu transaksi** (`PengurusRepository.Mutate`). Wewenang: pengelola SK
+  tujuan (`canManageSK`); SK tujuan wajib aktif, belum final, ber-file;
+  anggota belum tercantum; jabatan aktif & inti tunggal.
+- **Frontend** `PengurusListPage`: aksi **PAW** & **Mutasi** (inline) untuk
+  pengurus `Aktif`; API `adminPaws`/`adminMutasi`.
+- **Verifikasi**: `build`/`vet`/`test` hijau (test unit PAW/Mutasi +
+  `tsc`/`lint`/`build` hijau); E2E: PAW Demisioner 200; Mutasi → record lama
+  Demisioner & baru Aktif di SK tujuan.

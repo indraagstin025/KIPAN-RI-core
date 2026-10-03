@@ -41,6 +41,13 @@ func (f *fakeAnggotaRepo) SetKTAPDFKey(_ context.Context, _ int, _ string) error
 	return nil
 }
 
+func (f *fakeAnggotaRepo) SetStatus(_ context.Context, id int, status domain.AnggotaStatus) error {
+	if a, ok := f.byID[id]; ok && a != nil {
+		a.Status = status
+	}
+	return nil
+}
+
 func (f *fakeAnggotaRepo) SetUserID(_ context.Context, id int, userID string) error {
 	if f.links == nil {
 		f.links = map[int]string{}

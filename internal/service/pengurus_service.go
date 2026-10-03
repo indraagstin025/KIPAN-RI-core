@@ -22,6 +22,11 @@ type PengurusService interface {
 	ListPromosi(ctx context.Context, actor domain.ActorContext, search string, limit int) ([]domain.PromosiCandidate, error)
 	UpdatePengurusStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string, actor domain.ActorContext, audit domain.AuditContext) error
 	UpdatePengurusJabatan(ctx context.Context, id int, in domain.UpdateJabatanRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.PengurusDetail, error)
+	// Paws mengakhiri masa bakti individual (Demisioner/Diberhentikan/
+	// Mengundurkan diri/Meninggal) sesuai TDD §5.6.
+	Paws(ctx context.Context, pengurusID int, in domain.PawsRequest, actor domain.ActorContext, audit domain.AuditContext) error
+	// Mutasi memindahkan pengurus ke SK/jabatan tujuan (tutup lama, buka baru).
+	Mutasi(ctx context.Context, pengurusID int, in domain.MutasiRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.PengurusDetail, error)
 }
 
 type pengurusSvc struct{ *kepengurusanBase }
@@ -328,6 +333,149 @@ func (s *pengurusSvc) UpdatePengurusJabatan(ctx context.Context, id int, in doma
 	meta := `{"event":"pengurus_ganti_jabatan","from_jabatan_id":` + strconv.Itoa(p.JabatanID) + `,"to_jabatan_id":` + strconv.Itoa(in.JabatanID) + `}`
 	s.audit(ctx, audit, actor, "pengurus", strconv.Itoa(id), "UPDATE", &meta)
 	out, err := s.pengurus.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// canPaws menilai wewenang aksi PAW. Umumnya mengikuti canManageSK; khusus
+// DIBERHENTIKAN dibatasi Admin Provinsi seprov atau Nasional (TDD Tabel 20).
+func canPaws(actor domain.ActorContext, sk *domain.SuratKeputusan, action domain.PengurusPAWAction) bool {
+	if actor.Role == domain.RoleSuperAdmin {
+		return true
+	}
+	if action == domain.PAWDiberhentikan {
+		if actor.Role == domain.RoleAdminNasional {
+			return true
+		}
+		return actor.Role == domain.RoleAdminProvinsi &&
+			actor.ProvinsiID != nil && sk.ProvinsiID != nil && *actor.ProvinsiID == *sk.ProvinsiID
+	}
+	return canManageSK(actor, sk)
+}
+
+// Paws mengakhiri masa bakti individual pengurus. Aksi MENINGGAL sekaligus
+// mengubah status keanggotaan anggota menjadi MENINGGAL.
+func (s *pengurusSvc) Paws(ctx context.Context, pengurusID int, in domain.PawsRequest, actor domain.ActorContext, audit domain.AuditContext) error {
+	if pengurusID <= 0 {
+		return domain.NewValidationError("ID pengurus tidak valid")
+	}
+	if s.pengurus == nil || s.skRepo == nil {
+		return unavailable("kepengurusan")
+	}
+	action := domain.PengurusPAWAction(strings.ToUpper(strings.TrimSpace(in.Aksi)))
+	status, ok := domain.MapPAWAction(action)
+	if !ok {
+		return domain.NewValidationError("Aksi PAW tidak valid (DEMISIONER/DIBERHENTIKAN/MENGUNDURKAN_DIRI/MENINGGAL)")
+	}
+	note := strings.TrimSpace(in.Keterangan)
+	if note == "" {
+		return domain.NewValidationError("Keterangan wajib diisi untuk aksi PAW")
+	}
+	p, err := s.pengurus.GetByID(ctx, pengurusID)
+	if err != nil {
+		return err
+	}
+	if p.Status != string(domain.PengurusStatusAktif) {
+		return domain.NewConflictError("Pengurus tidak berstatus aktif")
+	}
+	sk, err := s.skRepo.GetByID(ctx, p.SuratKeputusanID)
+	if err != nil {
+		return err
+	}
+	if !canPaws(actor, sk, action) {
+		return domain.NewForbiddenError("Anda tidak berwenang melakukan aksi PAW ini")
+	}
+	if err := s.pengurus.UpdateStatus(ctx, pengurusID, status, note); err != nil {
+		return err
+	}
+	// Efek ke keanggotaan: meninggal dunia.
+	if status == domain.PengurusStatusMeninggal && s.anggotaRepo != nil {
+		if err := s.anggotaRepo.SetStatus(ctx, p.AnggotaID, domain.AnggotaStatusMeninggal); err != nil {
+			return err
+		}
+	}
+	meta := `{"event":"pengurus_paw","aksi":"` + string(action) + `","to":"` + string(status) + `"}`
+	s.audit(ctx, audit, actor, "pengurus", strconv.Itoa(pengurusID), "UPDATE", &meta)
+	return nil
+}
+
+// Mutasi memindahkan pengurus aktif ke SK/jabatan tujuan (tutup lama → buka
+// baru, satu transaksi). Wewenang: pengelola SK tujuan (canManageSK).
+func (s *pengurusSvc) Mutasi(ctx context.Context, pengurusID int, in domain.MutasiRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.PengurusDetail, error) {
+	if pengurusID <= 0 || in.SKID <= 0 || in.JabatanID <= 0 {
+		return nil, domain.NewValidationError("Data mutasi tidak lengkap")
+	}
+	if s.pengurus == nil || s.skRepo == nil || s.jabatanRepo == nil {
+		return nil, unavailable("kepengurusan")
+	}
+	src, err := s.pengurus.GetByID(ctx, pengurusID)
+	if err != nil {
+		return nil, err
+	}
+	if src.Status != string(domain.PengurusStatusAktif) {
+		return nil, domain.NewConflictError("Hanya pengurus aktif yang dapat dimutasi")
+	}
+	if src.SuratKeputusanID == in.SKID {
+		return nil, domain.NewValidationError("Untuk SK yang sama gunakan Ganti Jabatan")
+	}
+	target, err := s.skRepo.GetByID(ctx, in.SKID)
+	if err != nil {
+		return nil, err
+	}
+	if !canManageSK(actor, target) {
+		return nil, domain.NewForbiddenError("Anda tidak berwenang mengelola SK tujuan")
+	}
+	if target.Status != domain.SKStatusAktif {
+		return nil, domain.NewValidationError("SK tujuan tidak aktif")
+	}
+	if target.ApprovalStatus == domain.SKApprovalStatusDisetujui {
+		return nil, domain.NewForbiddenError("SK tujuan sudah final. Susunan pengurus terkunci.")
+	}
+	if strings.TrimSpace(target.FileSKKey) == "" {
+		return nil, domain.NewValidationError("SK tujuan belum memiliki file")
+	}
+	if exists, err := s.pengurus.ExistsInSK(ctx, in.SKID, src.AnggotaID); err != nil {
+		return nil, err
+	} else if exists {
+		return nil, domain.NewConflictError("Anggota sudah tercantum pada SK tujuan")
+	}
+	jabatan, err := s.jabatanRepo.GetByID(ctx, in.JabatanID)
+	if err != nil {
+		return nil, err
+	}
+	if !jabatan.IsActive {
+		return nil, domain.NewValidationError("Jabatan tidak aktif")
+	}
+	if jabatan.IsInti {
+		n, err := s.pengurus.CountJabatanInSK(ctx, in.SKID, in.JabatanID, src.AnggotaID)
+		if err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			return nil, domain.NewConflictError("Jabatan inti " + jabatan.Nama + " sudah terisi pada SK tujuan")
+		}
+	}
+	mulai := time.Now()
+	if in.TanggalMulai != nil && !in.TanggalMulai.IsZero() {
+		mulai = *in.TanggalMulai
+	}
+	reason := strings.TrimSpace(in.Keterangan)
+	if reason == "" {
+		reason = "Mutasi ke " + jabatan.Nama
+	}
+	newID, err := s.pengurus.Mutate(ctx, repository.MutateInput{
+		PengurusID: pengurusID, TargetSKID: in.SKID, Level: string(target.Level),
+		ProvinsiID: target.ProvinsiID, KabupatenID: target.KabupatenID,
+		JabatanID: in.JabatanID, TanggalMulai: mulai, Keterangan: reason,
+	})
+	if err != nil {
+		return nil, err
+	}
+	meta := `{"event":"pengurus_mutasi","from_sk":` + strconv.Itoa(src.SuratKeputusanID) + `,"to_sk":` + strconv.Itoa(in.SKID) + `,"jabatan_id":` + strconv.Itoa(in.JabatanID) + `}`
+	s.audit(ctx, audit, actor, "pengurus", strconv.Itoa(newID), "UPDATE", &meta)
+	out, err := s.pengurus.GetByID(ctx, newID)
 	if err != nil {
 		return nil, err
 	}

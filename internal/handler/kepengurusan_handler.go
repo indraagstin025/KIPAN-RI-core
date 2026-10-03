@@ -306,6 +306,47 @@ func (h *KepengurusanHandler) UpdatePengurusJabatan(c *fiber.Ctx) error {
 	return response.Success(c, "Jabatan pengurus diperbarui", out)
 }
 
+// Paws mengakhiri masa bakti individual (PUT /admin/pengurus/:id/paw).
+func (h *KepengurusanHandler) Paws(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID pengurus tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	var body domain.PawsRequest
+	if err := c.BodyParser(&body); err != nil {
+		return response.BadRequest(c, "Format permintaan tidak valid")
+	}
+	if err := h.service.Paws(c.Context(), id, body, actor, auditContextOf(c)); err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Aksi PAW berhasil", nil)
+}
+
+// Mutasi memindahkan pengurus ke SK/jabatan tujuan (PUT /admin/pengurus/:id/mutasi).
+func (h *KepengurusanHandler) Mutasi(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID pengurus tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	var body domain.MutasiRequest
+	if err := c.BodyParser(&body); err != nil {
+		return response.BadRequest(c, "Format permintaan tidak valid")
+	}
+	out, err := h.service.Mutasi(c.Context(), id, body, actor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Pengurus berhasil dimutasi", out)
+}
+
 // paginationMeta menghitung meta pagination standar.
 func paginationMeta(page, limit, total int) fiber.Map {
 	if page < 1 {

@@ -78,10 +78,14 @@ type fakePengurusRepo struct {
 	updatedJab   int
 	jabatanCount int
 	lastFilter   repository.PengurusFilter
+	lastStatus   domain.PengurusStatus
 }
 
 func (f *fakePengurusRepo) AddWithPromotion(context.Context, repository.PromoteInput) (int, error) {
 	return 1, nil
+}
+func (f *fakePengurusRepo) Mutate(context.Context, repository.MutateInput) (int, error) {
+	return 2, nil
 }
 func (f *fakePengurusRepo) Remove(context.Context, int) error { return nil }
 func (f *fakePengurusRepo) GetByID(context.Context, int) (*domain.PengurusDetail, error) {
@@ -104,7 +108,8 @@ func (f *fakePengurusRepo) Stats(_ context.Context, in repository.PengurusFilter
 func (f *fakePengurusRepo) ListPromosi(context.Context, *int, *int, string, int) ([]domain.PromosiCandidate, error) {
 	return nil, nil
 }
-func (f *fakePengurusRepo) UpdateStatus(context.Context, int, domain.PengurusStatus, string) error {
+func (f *fakePengurusRepo) UpdateStatus(_ context.Context, _ int, status domain.PengurusStatus, _ string) error {
+	f.lastStatus = status
 	return nil
 }
 func (f *fakePengurusRepo) UpdateJabatan(_ context.Context, _ int, jabatanID int) error {
@@ -545,5 +550,102 @@ func TestActorScope(t *testing.T) {
 	// Role USER tidak diizinkan mengakses scope wilayah.
 	if _, _, err := (domain.ActorContext{Role: domain.RoleUser}).Scope(); err == nil {
 		t.Fatal("role USER harus ditolak Scope()")
+	}
+}
+
+// ---- PAW & Mutasi (A3) ----
+
+func activePengurus() *domain.PengurusDetail {
+	return &domain.PengurusDetail{
+		ID: 5, SuratKeputusanID: 1, AnggotaID: 9, JabatanID: 1,
+		Level: "KABUPATEN", ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), Status: "Aktif",
+	}
+}
+
+func activeKabSK() *domain.SuratKeputusan {
+	return &domain.SuratKeputusan{
+		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDisetujui, FileSKKey: "uploads/sk/a.pdf",
+	}
+}
+
+func TestPawsMeninggalUbahStatus(t *testing.T) {
+	ctx := context.Background()
+	pgr := &fakePengurusRepo{detail: activePengurus()}
+	member := &domain.Anggota{ID: 9, Status: domain.AnggotaStatusAktif}
+	svc := NewKepengurusanService(nil, KepengurusanDeps{
+		SKRepo: &fakeSKRepo{sk: activeKabSK()}, PengurusRepo: pgr,
+		AnggotaRepo: &fakeAnggotaRepo{byID: map[int]*domain.Anggota{9: member}},
+	})
+	if err := svc.Paws(ctx, 5, domain.PawsRequest{Aksi: "MENINGGAL", Keterangan: "Wafat"}, kabActor(), domain.AuditContext{}); err != nil {
+		t.Fatalf("PAW meninggal gagal: %v", err)
+	}
+	if pgr.lastStatus != domain.PengurusStatusMeninggal {
+		t.Fatalf("status pengurus harus Meninggal, dapat %q", pgr.lastStatus)
+	}
+	if member.Status != domain.AnggotaStatusMeninggal {
+		t.Fatalf("status anggota harus MENINGGAL, dapat %q", member.Status)
+	}
+}
+
+func TestPawsValidasiDanOtorisasi(t *testing.T) {
+	ctx := context.Background()
+	svcKab := NewKepengurusanService(nil, KepengurusanDeps{
+		SKRepo: &fakeSKRepo{sk: activeKabSK()}, PengurusRepo: &fakePengurusRepo{detail: activePengurus()},
+	})
+	// Aksi tak dikenal.
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "NGAWUR", Keterangan: "x"}, kabActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("aksi PAW tak dikenal harus ditolak")
+	}
+	// Keterangan kosong.
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DEMISIONER"}, kabActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("keterangan kosong harus ditolak")
+	}
+	// DIBERHENTIKAN oleh Kabupaten ditolak (TDD: Provinsi/Nasional).
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DIBERHENTIKAN", Keterangan: "sanksi"}, kabActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("DIBERHENTIKAN oleh Kabupaten harus ditolak")
+	}
+	// DIBERHENTIKAN oleh Provinsi seprov: boleh.
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DIBERHENTIKAN", Keterangan: "sanksi"}, provActor(), domain.AuditContext{}); err != nil {
+		t.Fatalf("DIBERHENTIKAN oleh Provinsi seprov harus boleh: %v", err)
+	}
+	// Non-aktif → konflik.
+	pgrNon := &fakePengurusRepo{detail: &domain.PengurusDetail{ID: 5, SuratKeputusanID: 1, AnggotaID: 9, Status: "Demisioner"}}
+	svcNon := NewKepengurusanService(nil, KepengurusanDeps{SKRepo: &fakeSKRepo{sk: activeKabSK()}, PengurusRepo: pgrNon})
+	if err := svcNon.Paws(ctx, 5, domain.PawsRequest{Aksi: "DEMISIONER", Keterangan: "x"}, kabActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("pengurus non-aktif harus ditolak")
+	}
+}
+
+func TestMutasi(t *testing.T) {
+	ctx := context.Background()
+	src := activePengurus() // SK 1
+	target := &domain.SuratKeputusan{
+		ID: 2, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi, FileSKKey: "uploads/sk/b.pdf",
+	}
+	jab := &domain.Jabatan{ID: 2, Nama: "Sekretaris", IsActive: true}
+	deps := KepengurusanDeps{
+		SKRepo: &fakeSKRepo{sk: target}, PengurusRepo: &fakePengurusRepo{detail: src}, JabatanRepo: &fakeJabatanRepo{jab: jab},
+	}
+
+	// Sumber == tujuan → tolak.
+	svc := NewKepengurusanService(nil, deps)
+	if _, err := svc.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 1, JabatanID: 2}, kabActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("mutasi ke SK yang sama harus ditolak")
+	}
+	// Sukses (SK tujuan beda, belum final).
+	if out, err := svc.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, kabActor(), domain.AuditContext{}); err != nil || out == nil {
+		t.Fatalf("mutasi sah harus sukses: out=%v err=%v", out, err)
+	}
+
+	// SK tujuan final → tolak.
+	targetFinal := *target
+	targetFinal.ApprovalStatus = domain.SKApprovalStatusDisetujui
+	svcFinal := NewKepengurusanService(nil, KepengurusanDeps{
+		SKRepo: &fakeSKRepo{sk: &targetFinal}, PengurusRepo: &fakePengurusRepo{detail: src}, JabatanRepo: &fakeJabatanRepo{jab: jab},
+	})
+	if _, err := svcFinal.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, kabActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("mutasi ke SK final harus ditolak")
 	}
 }

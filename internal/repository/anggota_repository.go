@@ -34,6 +34,8 @@ type AnggotaRepository interface {
 	SetUserID(ctx context.Context, id int, userID string) error
 	// GetByUserID mengambil anggota milik akun USER (layanan mandiri).
 	GetByUserID(ctx context.Context, userID string) (*domain.Anggota, error)
+	// SetStatus mengubah status keanggotaan (mis. MENINGGAL saat PAW).
+	SetStatus(ctx context.Context, id int, status domain.AnggotaStatus) error
 }
 
 type anggotaRepo struct {
@@ -110,6 +112,24 @@ func (r *anggotaRepo) SetUserID(ctx context.Context, id int, userID string) erro
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE anggota SET user_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
 		strings.TrimSpace(userID), id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// SetStatus mengubah status keanggotaan (mis. MENINGGAL saat PAW meninggal).
+func (r *anggotaRepo) SetStatus(ctx context.Context, id int, status domain.AnggotaStatus) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE anggota SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+		string(status), id)
 	if err != nil {
 		return err
 	}

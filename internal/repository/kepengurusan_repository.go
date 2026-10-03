@@ -439,9 +439,24 @@ type PengurusRepository interface {
 	PengurusQueryRepository
 }
 
+// MutateInput payload mutasi jabatan/wilayah aktif (buka record baru).
+type MutateInput struct {
+	PengurusID   int
+	TargetSKID   int
+	Level        string
+	ProvinsiID   *int
+	KabupatenID  *int
+	JabatanID    int
+	TanggalMulai time.Time
+	Keterangan   string
+}
+
 // PengurusWriteRepository — mutasi kepengurusan.
 type PengurusWriteRepository interface {
 	AddWithPromotion(ctx context.Context, in PromoteInput) (int, error)
+	// Mutate menutup record lama (Demisioner) lalu membuka record baru pada
+	// SK/jabatan tujuan dalam SATU transaksi (TDD D3, tanpa jabatan ganda).
+	Mutate(ctx context.Context, in MutateInput) (int, error)
 	Remove(ctx context.Context, pengurusID int) error
 	UpdateStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string) error
 	UpdateJabatan(ctx context.Context, id int, jabatanID int) error
@@ -526,6 +541,49 @@ func (r *pengurusRepo) AddWithPromotion(ctx context.Context, in PromoteInput) (i
 			in.UserID); err != nil {
 			return 0, fmt.Errorf("gagal mencabut sesi anggota: %w", err)
 		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return newID, nil
+}
+
+// Mutate memindahkan pengurus ke SK/jabatan tujuan: tutup record lama sebagai
+// Demisioner + buka record baru Aktif, atomik. anggota_id tetap sama.
+func (r *pengurusRepo) Mutate(ctx context.Context, in MutateInput) (int, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("gagal memulai transaksi: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var anggotaID int
+	if err := tx.GetContext(ctx, &anggotaID,
+		`SELECT anggota_id FROM pengurus WHERE id = $1`, in.PengurusID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, domain.ErrNotFound
+		}
+		return 0, err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE pengurus
+		 SET status = $2, keterangan_status = $3, tanggal_selesai = CURRENT_DATE, updated_at = CURRENT_TIMESTAMP
+		 WHERE id = $1`,
+		in.PengurusID, string(domain.PengurusStatusDemisioner), strings.TrimSpace(in.Keterangan)); err != nil {
+		return 0, fmt.Errorf("gagal menutup pengurus lama: %w", err)
+	}
+
+	var newID int
+	if err := tx.QueryRowxContext(ctx,
+		`INSERT INTO pengurus
+			(anggota_id, surat_keputusan_id, level, provinsi_id, kabupaten_id, jabatan_id, status, tanggal_mulai)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING id`,
+		anggotaID, in.TargetSKID, in.Level, in.ProvinsiID, in.KabupatenID, in.JabatanID,
+		string(domain.PengurusStatusAktif), in.TanggalMulai).Scan(&newID); err != nil {
+		return 0, mapDBError(err, "Anggota sudah menjabat aktif. Satu anggota hanya boleh satu jabatan aktif.")
 	}
 
 	if err := tx.Commit(); err != nil {

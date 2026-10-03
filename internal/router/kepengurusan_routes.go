@@ -45,6 +45,8 @@ func registerKepengurusanRoutes(
 	grp.Get("/pengurus/promosi", h.ListPromosi)
 	grp.Patch("/pengurus/:id", h.UpdatePengurusStatus)
 	grp.Patch("/pengurus/:id/jabatan", h.UpdatePengurusJabatan)
+	grp.Put("/pengurus/:id/paw", h.Paws)
+	grp.Put("/pengurus/:id/mutasi", h.Mutasi)
 
 	// Tambah jabatan: SEMUA admin (kab/prov bisa butuh jabatan sendiri, TDD D14).
 	grp.Post("/jabatan", middleware.RequireCapability(domain.CapCreateJabatan), h.CreateJabatan)

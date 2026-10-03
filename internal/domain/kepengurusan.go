@@ -124,3 +124,43 @@ type JabatanRequest struct {
 type UpdateJabatanRequest struct {
 	JabatanID int `json:"jabatan_id"`
 }
+
+// PengurusPAWAction aksi pengakhiran masa bakti individual (PAW) — TDD §5.6.
+type PengurusPAWAction string
+
+const (
+	PAWDemisioner       PengurusPAWAction = "DEMISIONER"        // purna tugas lebih awal
+	PAWDiberhentikan    PengurusPAWAction = "DIBERHENTIKAN"     // sanksi pelanggaran AD/ART
+	PAWMengundurkanDiri PengurusPAWAction = "MENGUNDURKAN_DIRI" // atas surat resmi
+	PAWMeninggal        PengurusPAWAction = "MENINGGAL"         // purna tugas permanen
+)
+
+// MapPAWAction memetakan aksi PAW ke status pengurus. ok=false bila tidak dikenal.
+func MapPAWAction(a PengurusPAWAction) (PengurusStatus, bool) {
+	switch a {
+	case PAWDemisioner:
+		return PengurusStatusDemisioner, true
+	case PAWDiberhentikan:
+		return PengurusStatusDiberhentikan, true
+	case PAWMengundurkanDiri:
+		return PengurusStatusMengundurkanDiri, true
+	case PAWMeninggal:
+		return PengurusStatusMeninggal, true
+	}
+	return "", false
+}
+
+// PawsRequest payload PAW (pengakhiran individual).
+type PawsRequest struct {
+	Aksi       string `json:"aksi"`
+	Keterangan string `json:"keterangan"`
+}
+
+// MutasiRequest payload mutasi jabatan/wilayah aktif (TDD D3): tutup record
+// lama sebagai Demisioner, buka record baru pada SK/jabatan tujuan.
+type MutasiRequest struct {
+	SKID         int        `json:"sk_id"`
+	JabatanID    int        `json:"jabatan_id"`
+	TanggalMulai *time.Time `json:"tanggal_mulai"`
+	Keterangan   string     `json:"keterangan"`
+}
