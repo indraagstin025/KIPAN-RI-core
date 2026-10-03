@@ -21,6 +21,7 @@ type Config struct {
 	Crypto   CryptoConfig
 	WA       WAConfig
 	Mail     MailConfig
+	Outbox   OutboxConfig
 }
 
 type AppConfig struct {
@@ -61,6 +62,14 @@ type MailConfig struct {
 
 func (m MailConfig) Enabled() bool {
 	return strings.TrimSpace(m.Host) != ""
+}
+
+// OutboxConfig mengatur worker antrian email (email_outbox).
+type OutboxConfig struct {
+	Interval      time.Duration // jeda poll worker
+	Batch         int           // jumlah email per siklus
+	MaxAttempts   int           // batas percobaan sebelum gagal (DLQ)
+	SetupTokenTTL time.Duration // masa berlaku tautan set-password
 }
 
 type DatabaseConfig struct {
@@ -168,6 +177,12 @@ func Load() (*Config, error) {
 	v.SetDefault("MAIL_FROM_EMAIL", "no-reply@kipan.id")
 	v.SetDefault("MAIL_FROM_NAME", "Sistem Informasi KIPAN")
 
+	// Worker antrian email.
+	v.SetDefault("EMAIL_WORKER_INTERVAL", "10s")
+	v.SetDefault("EMAIL_WORKER_BATCH", 25)
+	v.SetDefault("EMAIL_WORKER_MAX_ATTEMPTS", 5)
+	v.SetDefault("SETUP_TOKEN_TTL", "168h")
+
 	v.SetDefault("STORAGE_REGION", "auto")
 	v.SetDefault("STORAGE_BUCKET_PUBLIC", "kipan-public")
 	v.SetDefault("STORAGE_BUCKET_PRIVATE", "kipan-private")
@@ -181,6 +196,8 @@ func Load() (*Config, error) {
 	accessTTL := mustParseDuration(v.GetString("AUTH_ACCESS_TOKEN_TTL"), 15*time.Minute, "AUTH_ACCESS_TOKEN_TTL")
 	refreshTTL := mustParseDuration(v.GetString("AUTH_REFRESH_TOKEN_TTL"), 7*24*time.Hour, "AUTH_REFRESH_TOKEN_TTL")
 	presignedTTL := mustParseDuration(v.GetString("STORAGE_PRESIGNED_TTL"), 5*time.Minute, "STORAGE_PRESIGNED_TTL")
+	emailInterval := mustParseDuration(v.GetString("EMAIL_WORKER_INTERVAL"), 10*time.Second, "EMAIL_WORKER_INTERVAL")
+	setupTTL := mustParseDuration(v.GetString("SETUP_TOKEN_TTL"), 168*time.Hour, "SETUP_TOKEN_TTL")
 
 	// ============================================================
 	// Build DSN
@@ -214,14 +231,14 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:             v.GetString("APP_NAME"),
-			Env:              v.GetString("APP_ENV"),
-			Port:             v.GetString("APP_PORT"),
-			AllowOrigin:      normalizeOrigins(v.GetString("APP_ALLOW_ORIGIN")),
-			Debug:            v.GetBool("APP_DEBUG"),
-			TrustedProxies:   v.GetString("APP_TRUSTED_PROXIES"),
-			KTAVerifyBaseURL: strings.TrimRight(strings.TrimSpace(v.GetString("KTA_VERIFY_BASE_URL")), "/"),
-			PublicURL:        strings.TrimRight(strings.TrimSpace(v.GetString("APP_PUBLIC_URL")), "/"),
+			Name:                v.GetString("APP_NAME"),
+			Env:                 v.GetString("APP_ENV"),
+			Port:                v.GetString("APP_PORT"),
+			AllowOrigin:         normalizeOrigins(v.GetString("APP_ALLOW_ORIGIN")),
+			Debug:               v.GetBool("APP_DEBUG"),
+			TrustedProxies:      v.GetString("APP_TRUSTED_PROXIES"),
+			KTAVerifyBaseURL:    strings.TrimRight(strings.TrimSpace(v.GetString("KTA_VERIFY_BASE_URL")), "/"),
+			PublicURL:           strings.TrimRight(strings.TrimSpace(v.GetString("APP_PUBLIC_URL")), "/"),
 			InternalHealthToken: strings.TrimSpace(v.GetString("INTERNAL_HEALTH_TOKEN")),
 		},
 		Database: DatabaseConfig{
@@ -276,6 +293,12 @@ func Load() (*Config, error) {
 			Password:  v.GetString("MAIL_PASSWORD"),
 			FromEmail: strings.TrimSpace(v.GetString("MAIL_FROM_EMAIL")),
 			FromName:  strings.TrimSpace(v.GetString("MAIL_FROM_NAME")),
+		},
+		Outbox: OutboxConfig{
+			Interval:      emailInterval,
+			Batch:         v.GetInt("EMAIL_WORKER_BATCH"),
+			MaxAttempts:   v.GetInt("EMAIL_WORKER_MAX_ATTEMPTS"),
+			SetupTokenTTL: setupTTL,
 		},
 	}
 

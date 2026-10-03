@@ -152,6 +152,24 @@ func catatanBlock(catatan string) string {
 	return "\nCatatan: " + catatan + "\n"
 }
 
+// AccountSetupEmail menyusun email tautan "buat kata sandi" untuk akun anggota
+// baru (Opsi A: tanpa password plaintext di email/DB).
+func AccountSetupEmail(nama, link string) EmailContent {
+	if strings.TrimSpace(nama) == "" {
+		nama = "Anggota"
+	}
+	lines := []string{
+		"Halo " + nama + ",",
+		"Akun keanggotaan KIPAN Anda telah aktif.",
+		"Buat kata sandi Anda melalui tautan berikut (berlaku 7 hari dan hanya dapat dipakai sekali).",
+	}
+	return EmailContent{
+		Subject:  "Buat Kata Sandi Akun KIPAN",
+		TextBody: "Halo " + nama + ",\n\nAkun keanggotaan KIPAN Anda aktif.\nBuat kata sandi melalui tautan berikut (berlaku 7 hari, sekali pakai):\n" + link + emailSignature,
+		HTMLBody: emailHTML("Buat Kata Sandi Akun", lines, "Buat Kata Sandi", link),
+	}
+}
+
 // PengangkatanEmail menyusun email pemberitahuan pengangkatan kader menjadi
 // pengurus melalui SK.
 func PengangkatanEmail(nama, nia, jabatan, nomorSK, publicURL string) EmailContent {

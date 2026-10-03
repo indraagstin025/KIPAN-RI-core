@@ -64,6 +64,7 @@ func RegisterRoutes(
 	auditRepo := repository.NewAuditLogRepository(db)
 	pendaftaranRepo := repository.NewPendaftaranRepository(db)
 	notifRepo := repository.NewNotificationRepository(db)
+	emailOutboxRepo := repository.NewEmailOutboxRepository(db)
 	authService := service.NewAuthService(cfg, service.AuthDeps{
 		UserRepo: userRepo, RDB: rdb, AuditRepo: auditRepo,
 	})
@@ -92,6 +93,9 @@ func RegisterRoutes(
 	// Batch 3: email SMTP (Mailpit dev / Mailtrap sandbox / produksi).
 	// Host kosong = LogMailSender (HANYA dev; produksi fail-fast).
 	mailSender := wireMailSender(cfg)
+	// Worker antrian email (outbox): kirim status & tautan set-password.
+	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo)
+	go emailWorker.Run(context.Background())
 	revisionSvc := service.NewRevisionService(cfg, service.RevisionDeps{
 		Repo: pendaftaranRepo, StorageSvc: storageService, AuditRepo: auditRepo,
 		Mail: mailSender,
