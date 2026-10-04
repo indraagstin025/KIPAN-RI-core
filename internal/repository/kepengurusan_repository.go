@@ -469,6 +469,9 @@ type PengurusWriteRepository interface {
 type PengurusQueryRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.PengurusDetail, error)
 	ListBySK(ctx context.Context, skID int) ([]domain.PengurusDetail, error)
+	// ListByAnggota mengambil seluruh riwayat kepengurusan (semua status) milik
+	// satu anggota, terurut naik menurut tanggal mulai.
+	ListByAnggota(ctx context.Context, anggotaID int) ([]domain.PengurusDetail, error)
 	List(ctx context.Context, f PengurusFilter) ([]domain.PengurusDetail, int, error)
 	Stats(ctx context.Context, f PengurusFilter) (domain.PengurusStats, error)
 	ExistsInSK(ctx context.Context, skID, anggotaID int) (bool, error)
@@ -649,6 +652,17 @@ func (r *pengurusRepo) GetByID(ctx context.Context, id int) (*domain.PengurusDet
 		return nil, err
 	}
 	return &p, nil
+}
+
+// ListByAnggota mengambil semua baris kepengurusan (riwayat) milik anggota.
+func (r *pengurusRepo) ListByAnggota(ctx context.Context, anggotaID int) ([]domain.PengurusDetail, error) {
+	items := make([]domain.PengurusDetail, 0)
+	query := `SELECT ` + pengurusDetailColumns + ` ` + pengurusDetailJoins +
+		` WHERE p.anggota_id = $1 ORDER BY p.tanggal_mulai ASC, p.id ASC`
+	if err := r.db.SelectContext(ctx, &items, query, anggotaID); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (r *pengurusRepo) ListBySK(ctx context.Context, skID int) ([]domain.PengurusDetail, error) {

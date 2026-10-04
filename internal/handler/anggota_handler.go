@@ -80,6 +80,40 @@ func (h *AnggotaHandler) Detail(c *fiber.Ctx) error {
 	return response.Success(c, "Detail anggota", item)
 }
 
+// Riwayat mengembalikan timeline riwayat anggota (pendaftaran + kepengurusan).
+func (h *AnggotaHandler) Riwayat(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID anggota tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	items, err := h.service.AnggotaRiwayat(c.Context(), id, actor)
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Riwayat anggota", items)
+}
+
+// Activity mengembalikan jejak audit (activity_logs) milik anggota.
+func (h *AnggotaHandler) Activity(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID anggota tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	items, err := h.service.AnggotaActivity(c.Context(), id, actor)
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Aktivitas anggota", items)
+}
+
 // CheckPublic adalah pengganti cek-anggota lama: pencarian hanya by NIA,
 // tanpa NIK, alamat, kontak, maupun object key. Rate-limit ketat anti scraping.
 func (h *AnggotaHandler) CheckPublic(c *fiber.Ctx) error {

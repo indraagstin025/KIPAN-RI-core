@@ -47,6 +47,10 @@ type AnggotaService interface {
 	SetAnggotaStatus(ctx context.Context, id int, in domain.AnggotaStatusRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.Anggota, error)
 	// ExportCSV mengekspor daftar anggota ter-scope (NIA, Nama, Pekerjaan, Riwayat, wilayah, status).
 	ExportCSV(ctx context.Context, actor domain.ActorContext, status, search string) ([]byte, error)
+	// AnggotaRiwayat mengembalikan timeline riwayat anggota (pendaftaran + kepengurusan).
+	AnggotaRiwayat(ctx context.Context, id int, actor domain.ActorContext) ([]domain.AnggotaRiwayatItem, error)
+	// AnggotaActivity mengembalikan jejak audit (activity_logs) milik anggota.
+	AnggotaActivity(ctx context.Context, id int, actor domain.ActorContext) ([]domain.ActivityLog, error)
 }
 
 type AnggotaDeps struct {
@@ -57,6 +61,7 @@ type AnggotaDeps struct {
 	ListRepo        repository.ListKeysetRepository
 	OutboxRepo      repository.EmailOutboxRepository
 	PendaftaranRepo repository.PendaftaranCoreRepository
+	PengurusRepo    repository.PengurusRepository
 }
 
 type anggotaService struct {
@@ -68,6 +73,7 @@ type anggotaService struct {
 	listRepo        repository.ListKeysetRepository
 	outboxRepo      repository.EmailOutboxRepository
 	pendaftaranRepo repository.PendaftaranCoreRepository
+	pengurusRepo    repository.PengurusRepository
 }
 
 func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
@@ -80,6 +86,7 @@ func NewAnggotaService(cfg *config.Config, deps AnggotaDeps) AnggotaService {
 		listRepo:        deps.ListRepo,
 		outboxRepo:      deps.OutboxRepo,
 		pendaftaranRepo: deps.PendaftaranRepo,
+		pengurusRepo:    deps.PengurusRepo,
 	}
 }
 
@@ -219,6 +226,11 @@ func (s *anggotaService) GetAnggotaDetail(ctx context.Context, id int, actor dom
 	}
 	if m, err := s.anggotaRepo.RiwayatByAnggotaIDs(ctx, []int{id}); err == nil {
 		item.Riwayat = m[id]
+	}
+	if s.wilayahRepo != nil {
+		if prov, kab, err := s.wilayahRepo.GetNames(ctx, item.ProvinsiID, item.KabupatenID); err == nil {
+			item.ProvinsiNama, item.KabupatenNama = prov, kab
+		}
 	}
 	return item, nil
 }

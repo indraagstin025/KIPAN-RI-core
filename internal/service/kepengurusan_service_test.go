@@ -100,6 +100,9 @@ func (f *fakePengurusRepo) GetByID(context.Context, int) (*domain.PengurusDetail
 func (f *fakePengurusRepo) ListBySK(context.Context, int) ([]domain.PengurusDetail, error) {
 	return nil, nil
 }
+func (f *fakePengurusRepo) ListByAnggota(context.Context, int) ([]domain.PengurusDetail, error) {
+	return nil, nil
+}
 func (f *fakePengurusRepo) List(_ context.Context, in repository.PengurusFilter) ([]domain.PengurusDetail, int, error) {
 	f.lastFilter = in
 	return nil, 0, nil

@@ -365,6 +365,9 @@ type Anggota struct {
 	UpdatedAt          time.Time       `db:"updated_at" json:"updated_at"`
 	// Riwayat bukan kolom DB; diisi server-side saat detail (TDD §5.5).
 	Riwayat string `db:"-" json:"riwayat,omitempty"`
+	// Nama wilayah (bukan kolom DB) untuk tampilan detail.
+	ProvinsiNama  string `db:"-" json:"provinsi_nama,omitempty"`
+	KabupatenNama string `db:"-" json:"kabupaten_nama,omitempty"`
 }
 
 // KTAQRHashValue mengembalikan signature QR ("" bila belum terbit).

@@ -7,6 +7,7 @@ import "time"
 type AuditFilter struct {
 	Action    string     // aksi (mis. SETUJU_SK, LOGIN)
 	Entity    string     // entitas (mis. pengurus, surat_keputusan)
+	EntityID  string     // id entitas spesifik (mis. id anggota)
 	Actor     string     // pencarian nama aktor (ILIKE)
 	From      *time.Time // created_at >=
 	To        *time.Time // created_at <=

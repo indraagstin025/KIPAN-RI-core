@@ -36,6 +36,8 @@ func registerAnggotaRoutes(
 	adminAnggota.Get("", middleware.ScopeWilayah(), h.List)
 	adminAnggota.Get("/export.csv", middleware.ScopeWilayah(), h.Export)
 	adminAnggota.Get("/:id", middleware.ScopeWilayah(), h.Detail)
+	adminAnggota.Get("/:id/riwayat", middleware.ScopeWilayah(), h.Riwayat)
+	adminAnggota.Get("/:id/activity", middleware.ScopeWilayah(), h.Activity)
 	adminAnggota.Get("/:id/kta", middleware.ScopeWilayah(), ktaHandler.DownloadKTA)
 	// Reset kata sandi akun USER anggota (tautan set-password via antrian email).
 	adminAnggota.Post("/:id/reset-password", middleware.ScopeWilayah(), h.ResetPassword)

@@ -67,6 +67,10 @@ func (r *auditLogRepo) List(ctx context.Context, f domain.AuditFilter) ([]domain
 		args = append(args, v)
 		where = append(where, fmt.Sprintf("entity_name = $%d", len(args)))
 	}
+	if v := strings.TrimSpace(f.EntityID); v != "" {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf("entity_id = $%d", len(args)))
+	}
 	if v := strings.TrimSpace(f.Actor); v != "" {
 		args = append(args, "%"+v+"%")
 		where = append(where, fmt.Sprintf("actor_name ILIKE $%d", len(args)))

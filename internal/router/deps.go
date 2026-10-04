@@ -92,6 +92,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 		ListRepo:        repository.NewListKeysetRepository(db),
 		OutboxRepo:      emailOutboxRepo,
 		PendaftaranRepo: pendaftaranRepo,
+		PengurusRepo:    repository.NewPengurusRepository(db),
 	})
 	wilayahService := service.NewWilayahService(wilayahRepo)
 	wilayahAdminService := service.NewWilayahAdminService(repository.NewWilayahAdminRepository(db), auditRepo)
