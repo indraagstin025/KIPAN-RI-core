@@ -47,13 +47,56 @@ func (s *pendaftaranQuerySvc) GetTracking(ctx context.Context, nomor string) (*d
 	if status == domain.PendaftaranStatusDraft && time.Since(item.CreatedAt) > 30*24*time.Hour {
 		status = domain.PendaftaranStatusKedaluwarsa
 	}
-	return &domain.PendaftaranTrackingResponse{
+	resp := &domain.PendaftaranTrackingResponse{
 		NomorPendaftaran: item.NomorPendaftaran,
 		Status:           string(status),
 		StatusLabel:      domain.TrackingStatusLabel(status),
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
-	}, nil
+	}
+	// Sub-status pengiriman kredensial hanya relevan setelah DISETUJUI.
+	if status == domain.PendaftaranStatusDisetujui {
+		s.fillKredensialStatus(ctx, item, resp)
+	}
+	return resp, nil
+}
+
+// fillKredensialStatus mengisi sub-status pengiriman email kredensial dari
+// outbox (best-effort). Bila belum ada baris (belum diproses) → "menunggu".
+func (s *pendaftaranQuerySvc) fillKredensialStatus(ctx context.Context, item *domain.Pendaftaran, resp *domain.PendaftaranTrackingResponse) {
+	email := item.Email
+	resp.KredensialStatus = "menunggu"
+	if s.outboxRepo != nil {
+		row, err := s.outboxRepo.LatestByPendaftaran(ctx, item.ID,
+			string(domain.EmailOutboxSetPassword), string(domain.EmailOutboxAkunTerhubung))
+		if err == nil && row != nil {
+			email = row.ToEmail
+			switch row.Status {
+			case domain.EmailOutboxSent:
+				resp.KredensialStatus = "terkirim"
+			case domain.EmailOutboxFailed:
+				resp.KredensialStatus = "gagal"
+			default:
+				resp.KredensialStatus = "menunggu"
+			}
+		}
+	}
+	resp.KredensialEmail = maskEmail(email)
+}
+
+// maskEmail menyamarkan email untuk tampilan publik: 3 karakter pertama
+// local-part dipertahankan. mis. ind***@gmail.com.
+func maskEmail(email string) string {
+	e := strings.TrimSpace(email)
+	at := strings.LastIndexByte(e, '@')
+	if at <= 0 {
+		return e
+	}
+	local, domain := e[:at], e[at:]
+	if len(local) <= 3 {
+		return "***" + domain
+	}
+	return local[:3] + "***" + domain
 }
 
 // GetDetail melayani admin: tolak objek di luar wilayah kerja aktor (RULES 7).

@@ -31,6 +31,9 @@ type EmailOutboxRepository interface {
 	MarkSent(ctx context.Context, id int64) error
 	MarkFailed(ctx context.Context, id int64, errMsg string, nextRetry time.Time, dead bool) error
 	List(ctx context.Context, f OutboxFilter) ([]domain.EmailOutbox, int, error)
+	// LatestByPendaftaran mengambil baris outbox TERBARU milik satu pendaftaran
+	// untuk jenis tertentu (mis. kredensial). ErrNotFound bila tidak ada.
+	LatestByPendaftaran(ctx context.Context, pendaftaranID int, jenis ...string) (*domain.EmailOutbox, error)
 	RetryNow(ctx context.Context, id int64) error
 	RetryPending(ctx context.Context, provinsiID, kabupatenID *int) (int64, error)
 	RetryMany(ctx context.Context, ids []int64) (int64, error)
@@ -58,6 +61,39 @@ func (r *emailOutboxRepo) Enqueue(ctx context.Context, item *domain.EmailOutbox)
 func (r *emailOutboxRepo) GetByID(ctx context.Context, id int64) (*domain.EmailOutbox, error) {
 	var it domain.EmailOutbox
 	if err := r.db.GetContext(ctx, &it, `SELECT `+outboxColumns+` FROM email_outbox WHERE id = $1`, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &it, nil
+}
+
+// LatestByPendaftaran mengambil baris outbox terbaru milik satu pendaftaran
+// (opsional difilter jenis). ErrNotFound bila tidak ada.
+func (r *emailOutboxRepo) LatestByPendaftaran(ctx context.Context, pendaftaranID int, jenis ...string) (*domain.EmailOutbox, error) {
+	clean := make([]string, 0, len(jenis))
+	for _, j := range jenis {
+		if s := strings.TrimSpace(j); s != "" {
+			clean = append(clean, s)
+		}
+	}
+	base := `SELECT ` + outboxColumns + ` FROM email_outbox WHERE pendaftaran_id = ?`
+	args := []interface{}{pendaftaranID}
+	if len(clean) > 0 {
+		base += ` AND jenis IN (?)`
+		args = append(args, clean)
+	}
+	base += ` ORDER BY id DESC LIMIT 1`
+
+	query, qArgs, err := sqlx.In(base, args...)
+	if err != nil {
+		return nil, err
+	}
+	query = r.db.Rebind(query)
+
+	var it domain.EmailOutbox
+	if err := r.db.GetContext(ctx, &it, query, qArgs...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrNotFound
 		}

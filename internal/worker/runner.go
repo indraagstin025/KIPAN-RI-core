@@ -33,9 +33,10 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, rdb *redis.Client) *Runner {
 	anggotaRepo := repository.NewAnggotaRepository(db)
 	auditRepo := repository.NewAuditLogRepository(db)
 	pengurusRepo := repository.NewPengurusRepository(db)
+	notifRepo := repository.NewNotificationRepository(db)
 	mailSender := infra.MailSender(cfg)
 
-	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo)
+	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
 	expirySvc := service.NewPengurusExpiryService(pengurusRepo, auditRepo)
 
 	sched := NewScheduler(NewAdvisoryLocker(db), resolveLocation(cfg.Worker.Timezone))

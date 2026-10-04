@@ -73,6 +73,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 		Repo: pendaftaranRepo, AnggotaRepo: anggotaRepo, AuditRepo: auditRepo,
 		StorageSvc: storageService, WilayahRepo: wilayahRepo, NotifRepo: notifRepo,
 		OTPSvc: otpSvc, WAGateway: waGateway, ListRepo: repository.NewListKeysetRepository(db),
+		OutboxRepo: emailOutboxRepo,
 	})
 	revisionSvc := service.NewRevisionService(cfg, service.RevisionDeps{
 		Repo: pendaftaranRepo, StorageSvc: storageService, AuditRepo: auditRepo,
@@ -102,7 +103,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	})
 	// Worker email dipakai untuk pengiriman manual sinkron (tombol admin);
 	// pengiriman otomatis tetap di biner cmd/worker.
-	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo)
+	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
 	outboxService := service.NewOutboxService(emailOutboxRepo, emailWorker)
 	notifService := service.NewNotificationService(cfg, notifRepo)
 	dashboardService := service.NewDashboardService(repository.NewDashboardRepository(db))

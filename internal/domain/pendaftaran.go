@@ -107,6 +107,11 @@ type PendaftaranTrackingResponse struct {
 	StatusLabel      string    `json:"status_label"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+	// KredensialStatus: kondisi pengiriman email kredensial (khusus DISETUJUI):
+	// "menunggu" | "terkirim" | "gagal". Kosong bila belum disetujui.
+	KredensialStatus string `json:"kredensial_status,omitempty"`
+	// KredensialEmail: email penerima kredensial (tersamar), mis. ind***@gmail.com.
+	KredensialEmail string `json:"kredensial_email,omitempty"`
 }
 
 // TrackingTimelineItem adalah satu baris riwayat publik: aksi + waktu

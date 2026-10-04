@@ -37,6 +37,7 @@ type PendaftaranDeps struct {
 	OTPSvc      OTPService
 	WAGateway   gateway.WAGateway
 	ListRepo    repository.ListKeysetRepository
+	OutboxRepo  repository.EmailOutboxRepository
 }
 
 // pendaftaranBase menampung dependensi bersama + helper lintas sub-service.
@@ -51,6 +52,7 @@ type pendaftaranBase struct {
 	otpSvc      OTPService
 	waGateway   gateway.WAGateway
 	listRepo    repository.ListKeysetRepository
+	outboxRepo  repository.EmailOutboxRepository
 }
 
 // pendaftaranAggregate menyalurkan method ke sub-service terkait.
@@ -72,6 +74,7 @@ func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) Pendaftaran
 		otpSvc:      deps.OTPSvc,
 		waGateway:   deps.WAGateway,
 		listRepo:    deps.ListRepo,
+		outboxRepo:  deps.OutboxRepo,
 	}
 	return &pendaftaranAggregate{
 		PendaftaranSubmitService: &pendaftaranSubmitSvc{pendaftaranBase: base},

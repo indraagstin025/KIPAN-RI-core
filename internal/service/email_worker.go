@@ -32,6 +32,7 @@ type EmailWorker struct {
 	rdb         *redis.Client
 	userRepo    repository.UserRepository
 	anggotaRepo repository.AnggotaRepository
+	notifRepo   repository.NotificationRepository
 	cfg         *config.Config
 	interval    time.Duration
 	batch       int
@@ -46,6 +47,7 @@ func NewEmailWorker(
 	rdb *redis.Client,
 	userRepo repository.UserRepository,
 	anggotaRepo repository.AnggotaRepository,
+	notifRepo repository.NotificationRepository,
 ) *EmailWorker {
 	interval, batch, maxAttempts, setupTTL := 10*time.Second, 25, 5, 168*time.Hour
 	if cfg != nil {
@@ -63,7 +65,7 @@ func NewEmailWorker(
 		}
 	}
 	return &EmailWorker{
-		outbox: outbox, mail: mail, rdb: rdb, userRepo: userRepo, anggotaRepo: anggotaRepo, cfg: cfg,
+		outbox: outbox, mail: mail, rdb: rdb, userRepo: userRepo, anggotaRepo: anggotaRepo, notifRepo: notifRepo, cfg: cfg,
 		interval: interval, batch: batch, maxAttempts: maxAttempts, setupTTL: setupTTL,
 	}
 }
@@ -155,4 +157,28 @@ func (w *EmailWorker) fail(ctx context.Context, it domain.EmailOutbox, msg strin
 	log.Warn().Int64("outbox_id", it.ID).Str("jenis", string(it.Jenis)).Bool("dead", dead).
 		Msg("Email worker: pengiriman gagal")
 	_ = w.outbox.MarkFailed(ctx, it.ID, msg, next, dead)
+	// DLQ: beri tahu admin (best-effort) agar bisa kirim ulang manual.
+	if dead {
+		w.notifyFailed(ctx, it, msg)
+	}
+}
+
+// notifyFailed mengirim notifikasi in-app ke admin yang berwenang saat sebuah
+// email masuk DLQ (gagal permanen). No-op bila bukan email kredensial atau
+// repo notifikasi tidak tersedia.
+func (w *EmailWorker) notifyFailed(ctx context.Context, it domain.EmailOutbox, msg string) {
+	if w.notifRepo == nil || (it.Jenis != domain.EmailOutboxSetPassword && it.Jenis != domain.EmailOutboxAkunTerhubung) {
+		return
+	}
+	prov, kab := 0, 0
+	if it.ProvinsiID != nil {
+		prov = *it.ProvinsiID
+	}
+	if it.KabupatenID != nil {
+		kab = *it.KabupatenID
+	}
+	message := "Email kredensial gagal dikirim ke " + maskEmail(it.ToEmail) + " (jenis " + string(it.Jenis) + "). Silakan kirim ulang dari menu Antrian Email."
+	if err := w.notifRepo.NotifyAdmins(ctx, "Email kredensial gagal terkirim", message, domain.NotifTypeSistem, "#admin?page=email-outbox", prov, kab); err != nil {
+		log.Warn().Err(err).Int64("outbox_id", it.ID).Msg("Gagal membuat notifikasi admin untuk email DLQ")
+	}
 }
