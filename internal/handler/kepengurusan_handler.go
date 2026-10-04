@@ -254,6 +254,25 @@ func (h *KepengurusanHandler) ListPengurus(c *fiber.Ctx) error {
 	return response.Paginated(c, "Daftar pengurus", items, paginationMeta(page, limit, total))
 }
 
+// GetPengurus mengembalikan detail lengkap satu pengurus
+// (GET /admin/pengurus/:id): jabatan+SK+wilayah, biodata anggota tertaut,
+// dan riwayat kepengurusannya. Yurisdiksi ditegakkan di service.
+func (h *KepengurusanHandler) GetPengurus(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID pengurus tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	detail, err := h.service.GetPengurusDetail(c.Context(), id, actor)
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	return response.Success(c, "Detail pengurus", detail)
+}
+
 // optionalQueryInt mengembalikan pointer int bila query ada dan > 0.
 func optionalQueryInt(c *fiber.Ctx, key string) *int {
 	if n := c.QueryInt(key, 0); n > 0 {

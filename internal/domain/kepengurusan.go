@@ -87,6 +87,14 @@ type PengurusDetail struct {
 	CreatedAt         time.Time  `db:"created_at" json:"created_at"`
 }
 
+// PengurusDetailResponse adalah detail lengkap satu pengurus: baris kepengurusan
+// (jabatan+SK+wilayah) + biodata anggota tertaut + riwayat kepengurusannya.
+type PengurusDetailResponse struct {
+	Pengurus PengurusDetail   `json:"pengurus"`
+	Anggota  *Anggota         `json:"anggota,omitempty"`
+	Riwayat  []PengurusDetail `json:"riwayat"`
+}
+
 // PengurusStats ringkasan jumlah pengurus aktif (ter-scope) untuk kartu dasbor.
 type PengurusStats struct {
 	Total        int `db:"total" json:"total"`

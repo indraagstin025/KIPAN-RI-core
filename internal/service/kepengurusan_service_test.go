@@ -75,6 +75,7 @@ func (f *fakeSKRepo) SetStatusWithDemotion(context.Context, int, domain.SKStatus
 
 type fakePengurusRepo struct {
 	detail       *domain.PengurusDetail
+	byAnggota    []domain.PengurusDetail
 	updatedJab   int
 	jabatanCount int
 	lastFilter   repository.PengurusFilter
@@ -101,7 +102,7 @@ func (f *fakePengurusRepo) ListBySK(context.Context, int) ([]domain.PengurusDeta
 	return nil, nil
 }
 func (f *fakePengurusRepo) ListByAnggota(context.Context, int) ([]domain.PengurusDetail, error) {
-	return nil, nil
+	return f.byAnggota, nil
 }
 func (f *fakePengurusRepo) List(_ context.Context, in repository.PengurusFilter) ([]domain.PengurusDetail, int, error) {
 	f.lastFilter = in
@@ -653,5 +654,59 @@ func TestMutasi(t *testing.T) {
 	})
 	if _, err := svcFinal.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, kabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("mutasi ke SK final harus ditolak")
+	}
+}
+
+// TestGetPengurusDetail memverifikasi komposisi detail (pengurus + anggota +
+// riwayat) dan otorisasi yurisdiksi (kabupaten/provinsi/nasional).
+func TestGetPengurusDetail(t *testing.T) {
+	ctx := context.Background()
+	prov, kab := 32, 3273
+	p := &domain.PengurusDetail{
+		ID: 5, AnggotaID: 7, NIA: "KIPAN-IND-3273-2026-000001", NamaLengkap: "Budi",
+		Jabatan: "Ketua Umum", Level: "KABUPATEN", Status: "Aktif",
+		ProvinsiID: &prov, KabupatenID: &kab,
+	}
+	member := &domain.Anggota{ID: 7, NIA: p.NIA, NamaLengkap: "Budi", Status: domain.AnggotaStatusAktif, ProvinsiID: prov, KabupatenID: kab}
+	riwayat := []domain.PengurusDetail{*p}
+	pgr := &fakePengurusRepo{detail: p, byAnggota: riwayat}
+	angg := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{7: member}}
+	wil := &fakeWilayahRepo{prov: "JAWA BARAT", kab: "KOTA BANDUNG"}
+	svc := NewKepengurusanService(nil, KepengurusanDeps{
+		PengurusRepo: pgr, AnggotaRepo: angg, WilayahRepo: wil,
+	})
+
+	// Kabupaten seyurisdiksi → sukses, komponen lengkap.
+	out, err := svc.GetPengurusDetail(ctx, 5, kabActor())
+	if err != nil {
+		t.Fatalf("detail pengurus seyurisdiksi harus sukses: %v", err)
+	}
+	if out.Pengurus.ID != 5 || out.Anggota == nil || out.Anggota.NamaLengkap != "Budi" {
+		t.Fatalf("komposisi detail tidak lengkap: %+v", out)
+	}
+	if out.Anggota.ProvinsiNama != "JAWA BARAT" || out.Anggota.KabupatenNama != "KOTA BANDUNG" {
+		t.Fatalf("nama wilayah anggota tidak terisi: %q/%q", out.Anggota.ProvinsiNama, out.Anggota.KabupatenNama)
+	}
+	if len(out.Riwayat) != 1 {
+		t.Fatalf("riwayat kepengurusan mau 1 baris, dapat %d", len(out.Riwayat))
+	}
+
+	// Provinsi lain → 403.
+	otherProv := 33
+	stranger := domain.ActorContext{UserID: "u-x", Name: "X", Role: domain.RoleAdminProvinsi, ProvinsiID: &otherProv}
+	if _, err := svc.GetPengurusDetail(ctx, 5, stranger); err == nil {
+		t.Fatal("pengurus di luar yurisdiksi harus ditolak")
+	}
+
+	// Pengurus level NASIONAL (prov/kab nil): Nasional boleh, Kabupaten tolak.
+	pNas := &domain.PengurusDetail{ID: 6, AnggotaID: 8, Level: "NASIONAL", Status: "Aktif"}
+	svcNas := NewKepengurusanService(nil, KepengurusanDeps{
+		PengurusRepo: &fakePengurusRepo{detail: pNas}, AnggotaRepo: angg, WilayahRepo: wil,
+	})
+	if _, err := svcNas.GetPengurusDetail(ctx, 6, nasActor()); err != nil {
+		t.Fatalf("Nasional harus boleh melihat pengurus Nasional: %v", err)
+	}
+	if _, err := svcNas.GetPengurusDetail(ctx, 6, kabActor()); err == nil {
+		t.Fatal("Kabupaten tidak boleh melihat pengurus Nasional")
 	}
 }

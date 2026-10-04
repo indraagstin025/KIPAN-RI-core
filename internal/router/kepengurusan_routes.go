@@ -43,6 +43,7 @@ func registerKepengurusanRoutes(
 	grp.Get("/pengurus", h.ListPengurus)
 	grp.Get("/pengurus/stats", h.PengurusStats)
 	grp.Get("/pengurus/promosi", h.ListPromosi)
+	grp.Get("/pengurus/:id", h.GetPengurus)
 	grp.Patch("/pengurus/:id", h.UpdatePengurusStatus)
 	grp.Patch("/pengurus/:id/jabatan", h.UpdatePengurusJabatan)
 	grp.Put("/pengurus/:id/paw", h.Paws)

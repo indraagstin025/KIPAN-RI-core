@@ -18,6 +18,9 @@ type PengurusService interface {
 	AddPengurus(ctx context.Context, skID int, in domain.AddPengurusRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.PengurusDetail, error)
 	RemovePengurus(ctx context.Context, skID, pengurusID int, actor domain.ActorContext, audit domain.AuditContext) error
 	ListPengurus(ctx context.Context, actor domain.ActorContext, level, status, masaJabatan, search string, provFilter, kabFilter *int, withTotal bool, page, limit int) ([]domain.PengurusDetail, int, error)
+	// GetPengurusDetail mengambil detail lengkap satu pengurus: baris
+	// kepengurusan + biodata anggota tertaut + riwayat kepengurusannya.
+	GetPengurusDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.PengurusDetailResponse, error)
 	PengurusStats(ctx context.Context, actor domain.ActorContext) (*domain.PengurusStats, error)
 	ListPromosi(ctx context.Context, actor domain.ActorContext, search string, limit int) ([]domain.PromosiCandidate, error)
 	UpdatePengurusStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string, actor domain.ActorContext, audit domain.AuditContext) error
@@ -214,6 +217,52 @@ func (s *pengurusSvc) ListPengurus(ctx context.Context, actor domain.ActorContex
 		Status: status, MasaJabatan: strings.TrimSpace(masaJabatan), Search: search,
 		WithTotal: withTotal, Limit: limit, Offset: (page - 1) * limit,
 	})
+}
+
+// GetPengurusDetail mengambil detail lengkap satu pengurus: baris kepengurusan
+// (jabatan+SK+wilayah) + biodata anggota tertaut + riwayat kepengurusannya.
+// Otorisasi memakai yurisdiksi aktor (konsisten dengan scoping daftar): pengurus
+// level NASIONAL (prov/kab nil) hanya terlihat admin Nasional/Super.
+func (s *pengurusSvc) GetPengurusDetail(ctx context.Context, id int, actor domain.ActorContext) (*domain.PengurusDetailResponse, error) {
+	if id <= 0 {
+		return nil, domain.NewValidationError("ID pengurus tidak valid")
+	}
+	if s.pengurus == nil {
+		return nil, unavailable("pengurus")
+	}
+	p, err := s.pengurus.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	provID, kabID := 0, 0
+	if p.ProvinsiID != nil {
+		provID = *p.ProvinsiID
+	}
+	if p.KabupatenID != nil {
+		kabID = *p.KabupatenID
+	}
+	if !actor.CanAccessWilayah(provID, kabID) {
+		return nil, domain.NewForbiddenError("Pengurus di luar wilayah kerja Anda")
+	}
+
+	resp := &domain.PengurusDetailResponse{Pengurus: *p}
+	if s.anggotaRepo != nil && p.AnggotaID > 0 {
+		if member, err := s.anggotaRepo.GetByID(ctx, p.AnggotaID); err == nil && member != nil {
+			if m, err := s.anggotaRepo.RiwayatByAnggotaIDs(ctx, []int{p.AnggotaID}); err == nil {
+				member.Riwayat = m[p.AnggotaID]
+			}
+			if s.wilayahRepo != nil {
+				if prov, kab, err := s.wilayahRepo.GetNames(ctx, member.ProvinsiID, member.KabupatenID); err == nil {
+					member.ProvinsiNama, member.KabupatenNama = prov, kab
+				}
+			}
+			resp.Anggota = member
+		}
+	}
+	if riwayat, err := s.pengurus.ListByAnggota(ctx, p.AnggotaID); err == nil {
+		resp.Riwayat = riwayat
+	}
+	return resp, nil
 }
 
 // PengurusStats ringkasan jumlah pengurus aktif (ter-scope) untuk kartu dasbor.
