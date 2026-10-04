@@ -30,21 +30,6 @@ func (h *OutboxHandler) List(c *fiber.Ctx) error {
 	return response.Paginated(c, "Daftar antrian email", items, paginationMeta(page, limit, total))
 }
 
-func (h *OutboxHandler) Retry(c *fiber.Ctx) error {
-	id, err := c.ParamsInt("id")
-	if err != nil || id <= 0 {
-		return response.BadRequest(c, "ID antrian tidak valid")
-	}
-	actor, ok := actorOf(c)
-	if !ok {
-		return response.Unauthorized(c, "Tidak terotentikasi")
-	}
-	if err := h.service.Retry(c.Context(), actor, int64(id)); err != nil {
-		return response.FromError(c, err)
-	}
-	return response.Success(c, "Email dijadwalkan kirim ulang", nil)
-}
-
 // Send mengirim satu email antrian SEKARANG (sinkron).
 func (h *OutboxHandler) Send(c *fiber.Ctx) error {
 	id, err := c.ParamsInt("id")

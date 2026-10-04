@@ -17,7 +17,6 @@ type EmailDispatcher interface {
 // OutboxService melayani pemantauan & pengiriman antrian email (ter-scope).
 type OutboxService interface {
 	List(ctx context.Context, actor domain.ActorContext, jenis, status string, page, limit int) ([]domain.EmailOutbox, int, error)
-	Retry(ctx context.Context, actor domain.ActorContext, id int64) error
 	RetryPending(ctx context.Context, actor domain.ActorContext) (int64, error)
 	RetryMany(ctx context.Context, actor domain.ActorContext, ids []int64) (int64, error)
 	// SendNow mengirim SATU item antrian sekarang (sinkron), tanpa menunggu worker.
@@ -90,16 +89,6 @@ func (s *outboxSvc) inScope(ctx context.Context, actor domain.ActorContext, id i
 		return domain.NewForbiddenError("Antrian di luar wilayah kerja Anda")
 	}
 	return nil
-}
-
-func (s *outboxSvc) Retry(ctx context.Context, actor domain.ActorContext, id int64) error {
-	if s.repo == nil {
-		return unavailable("antrian email")
-	}
-	if err := s.inScope(ctx, actor, id); err != nil {
-		return err
-	}
-	return s.repo.RetryNow(ctx, id)
 }
 
 func (s *outboxSvc) RetryPending(ctx context.Context, actor domain.ActorContext) (int64, error) {
