@@ -32,4 +32,5 @@ func registerOutboxRoutes(
 	grp.Post("/retry-pending", h.RetryPending)
 	grp.Post("/retry", h.RetryMany)
 	grp.Post("/:id/retry", h.Retry)
+	grp.Post("/:id/send", h.Send)
 }

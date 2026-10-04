@@ -7,6 +7,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -79,7 +80,7 @@ func (w *EmailWorker) ProcessOnce(ctx context.Context) error {
 		return err
 	}
 	for i := range items {
-		w.processOne(ctx, items[i])
+		_ = w.ProcessOne(ctx, items[i])
 	}
 	return nil
 }
@@ -94,7 +95,14 @@ func backoffFor(attempts int) time.Duration {
 	return time.Duration(1<<uint(attempts-1)) * time.Minute
 }
 
-func (w *EmailWorker) processOne(ctx context.Context, it domain.EmailOutbox) {
+// ProcessOne memproses SATU item antrian: render (termasuk set-password) →
+// kirim → tandai sent/failed. Dipakai worker (loop) DAN pengiriman manual
+// sinkron dari admin. Mengembalikan error bila pengiriman gagal (item sudah
+// ditandai failed + last_error).
+func (w *EmailWorker) ProcessOne(ctx context.Context, it domain.EmailOutbox) error {
+	if w == nil || w.outbox == nil || w.mail == nil {
+		return errors.New("worker email tidak siap")
+	}
 	subject, text, html := it.Subject, it.TextBody, ""
 	if it.HTMLBody != nil {
 		html = *it.HTMLBody
@@ -103,21 +111,21 @@ func (w *EmailWorker) processOne(ctx context.Context, it domain.EmailOutbox) {
 	if it.Jenis == domain.EmailOutboxSetPassword {
 		if it.UserID == nil || w.rdb == nil || w.userRepo == nil {
 			w.fail(ctx, it, "konfigurasi set-password tidak lengkap", true)
-			return
+			return errors.New("konfigurasi set-password tidak lengkap")
 		}
 		user, err := w.userRepo.GetByID(ctx, *it.UserID)
 		if err != nil {
 			w.fail(ctx, it, "user tidak ditemukan untuk set-password", true)
-			return
+			return err
 		}
 		token, err := crypto.GenerateSecureToken(32)
 		if err != nil {
 			w.fail(ctx, it, "gagal menerbitkan token", false)
-			return
+			return err
 		}
 		if err := w.rdb.Set(ctx, setupKey(token), user.ID, w.setupTTL).Err(); err != nil {
 			w.fail(ctx, it, "gagal menyimpan token set-password", false)
-			return
+			return err
 		}
 		link := publicURLFrom(w.cfg) + "/set-password?token=" + token
 		nia := ""
@@ -134,11 +142,12 @@ func (w *EmailWorker) processOne(ctx context.Context, it domain.EmailOutbox) {
 	defer cancel()
 	if err := w.mail.Send(sendCtx, it.ToEmail, subject, text, html); err != nil {
 		w.fail(ctx, it, err.Error(), it.Attempts >= w.maxAttempts)
-		return
+		return err
 	}
 	if err := w.outbox.MarkSent(ctx, it.ID); err != nil {
 		log.Warn().Err(err).Int64("outbox_id", it.ID).Msg("Email terkirim tetapi gagal menandai sent")
 	}
+	return nil
 }
 
 func (w *EmailWorker) fail(ctx context.Context, it domain.EmailOutbox, msg string, dead bool) {

@@ -99,7 +99,10 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 		UserRepo: userRepo, AdminRepo: repository.NewUserAdminRepository(db),
 		WilayahRepo: wilayahRepo, AuditRepo: auditRepo,
 	})
-	outboxService := service.NewOutboxService(emailOutboxRepo)
+	// Worker email dipakai untuk pengiriman manual sinkron (tombol admin);
+	// pengiriman otomatis tetap di biner cmd/worker.
+	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo)
+	outboxService := service.NewOutboxService(emailOutboxRepo, emailWorker)
 	notifService := service.NewNotificationService(cfg, notifRepo)
 	dashboardService := service.NewDashboardService(repository.NewDashboardRepository(db))
 	laporanService := service.NewLaporanService(cfg, repository.NewLaporanRepository(db))
