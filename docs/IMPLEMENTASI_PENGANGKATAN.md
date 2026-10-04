@@ -158,6 +158,7 @@ CREATE INDEX IF NOT EXISTS idx_pengurus_anggota ON pengurus (anggota_id, status)
 - `jabatan_repository.go`: `List`, `GetByID`, `Create/Update` (admin), seed-aware.
 - `sk_repository.go`: `Create`, `GetByID`, `List` (filter level/wilayah/status), `SetApproval`, `SetStatus`, `SetFile`.
 - `pengurus_repository.go`: `Add` (transaksional + demote), `Remove` (guard final), `List` (filter + search), `ExistsInSK`, `JabatanTaken`.
+  Aturan jabatan inti tunggal (`CountJabatanInSK`) hanya menghitung pemegang **efektif Aktif**; Demisioner/berakhir tidak memblokir penggantian (TDD §5.4).
 
 ### 4.3 Service (baru + ubah)
 - Baru `sk_service.go` / `pengurus_service.go` (atau satu `kepengurusan_service.go`): implementasi §3.1–§3.3 termasuk flip `tipe`, cabut sesi (`RevokeAllUserTokens`), email notifikasi (reuse `MailSender`, async best-effort), audit tiap aksi.
@@ -189,7 +190,8 @@ Semua: `Authenticate` + `RequireRoles` + `ScopeWilayah` + `CanAccessWilayah` + a
 > **satu wizard** `PromotePengurusWizard` (Stepper: **SK → Anggota → Jabatan →
 > Konfirmasi**) yang dipakai di **tiga pintu masuk**: halaman Pengurus, detail
 > SK (preset SK terkunci), dan detail Anggota (preset Anggota). Wizard menandai
-> **jabatan inti yang sudah terisi (disabled)**, punya empty-state informatif,
+> **jabatan inti yang sudah terisi pemegang AKTIF** (disabled, beserta nama
+> pemegang; pemegang Demisioner/berakhir tidak memblokir — TDD §5.4), punya empty-state informatif,
 > ringkasan efek (tipe KADER→PENGURUS, sesi dicabut, email), dan busy per-aksi.
 > Aturan SK ditampilkan sebagai panduan (Buat → Susun Pengurus → Ajukan →
 > Sahkan) beserta penjelasan *Single Active SK*.

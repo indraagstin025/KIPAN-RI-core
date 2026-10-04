@@ -808,12 +808,16 @@ func (r *pengurusRepo) ExistsInSK(ctx context.Context, skID, anggotaID int) (boo
 	return exists, nil
 }
 
-// CountJabatanInSK menghitung pemegang jabatan (selain anggota tertentu) pada SK.
-// Dipakai menegakkan aturan jabatan inti tunggal.
+// CountJabatanInSK menghitung pemegang jabatan (selain anggota tertentu) pada
+// SK yang MASIH AKTIF secara efektif (TDD §5.4). Dipakai menegakkan aturan
+// jabatan inti tunggal: pemegang Demisioner/berakhir TIDAK memblokir, sehingga
+// jabatan inti yang ditinggalkan dapat diisi pengganti.
 func (r *pengurusRepo) CountJabatanInSK(ctx context.Context, skID, jabatanID, excludeAnggotaID int) (int, error) {
 	var n int
-	query := `SELECT COUNT(*) FROM pengurus
-		WHERE surat_keputusan_id = $1 AND jabatan_id = $2 AND anggota_id <> $3`
+	query := `SELECT COUNT(*) FROM pengurus p
+		JOIN surat_keputusan sk ON sk.id = p.surat_keputusan_id
+		WHERE p.surat_keputusan_id = $1 AND p.jabatan_id = $2 AND p.anggota_id <> $3
+		  AND ` + pengurusStatusEfektifExpr + ` = 'Aktif'`
 	if err := r.db.GetContext(ctx, &n, query, skID, jabatanID, excludeAnggotaID); err != nil {
 		return 0, err
 	}
