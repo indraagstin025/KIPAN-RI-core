@@ -389,7 +389,7 @@ func (s *verificationSvc) RevealNIK(ctx context.Context, id int, actor domain.Ac
 	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
 		return "", domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
 	}
-	key, err := aesKey(s.cfg)
+	key, err := svcutil.AesKey(s.cfg)
 	if err != nil {
 		return "", err
 	}

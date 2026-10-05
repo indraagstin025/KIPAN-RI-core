@@ -60,7 +60,7 @@ func (s *laporanService) detectAnomaliNIA(ctx context.Context, prov, kab *int, d
 		log.Warn().Err(err).Msg("Laporan: gagal memuat kandidat anomali NIA")
 		return
 	}
-	key, err := aesKey(s.cfg)
+	key, err := svcutil.AesKey(s.cfg)
 	if err != nil || len(rows) == 0 {
 		return
 	}

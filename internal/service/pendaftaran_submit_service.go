@@ -34,21 +34,21 @@ func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmi
 	if len([]rune(nama)) < 3 || len([]rune(nama)) > svcutil.MaxNamaLen {
 		return domain.NewValidationError("Nama lengkap wajib 3-150 karakter")
 	}
-	if containsAngleBracket(nama) {
+	if svcutil.ContainsAngleBracket(nama) {
 		return domain.NewValidationError("Nama lengkap tidak boleh mengandung karakter < atau >")
 	}
 	nik := strings.TrimSpace(req.NIK)
 	if !svcutil.NipPattern.MatchString(nik) {
 		return domain.NewValidationError("NIK harus berisi 16 digit angka")
 	}
-	if !isPlausibleNIKDate(nik) {
+	if !svcutil.IsPlausibleNIKDate(nik) {
 		return domain.NewValidationError("Segmen tanggal lahir pada NIK tidak valid")
 	}
 	tempat := strings.TrimSpace(req.TempatLahir)
 	if tempat == "" || len([]rune(tempat)) > svcutil.MaxTempatLahirLen {
 		return domain.NewValidationError("Tempat lahir wajib diisi (maks 100 karakter)")
 	}
-	if containsAngleBracket(tempat) {
+	if svcutil.ContainsAngleBracket(tempat) {
 		return domain.NewValidationError("Tempat lahir tidak boleh mengandung karakter < atau >")
 	}
 	dob, err := time.Parse(time.RFC3339, strings.TrimSpace(req.TanggalLahir))
@@ -71,7 +71,7 @@ func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmi
 	if len([]rune(alamat)) < 10 || len([]rune(alamat)) > svcutil.MaxAlamatLen {
 		return domain.NewValidationError("Alamat wajib 10-2000 karakter")
 	}
-	if containsAngleBracket(alamat) {
+	if svcutil.ContainsAngleBracket(alamat) {
 		return domain.NewValidationError("Alamat tidak boleh mengandung karakter < atau >")
 	}
 	if req.ProvinsiID <= 0 || req.KabupatenID <= 0 {
@@ -115,7 +115,7 @@ func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmi
 	if len([]rune(motivasi)) < minMotivasiLen || len([]rune(motivasi)) > maxMotivasiLen {
 		return domain.NewValidationError("Motivasi wajib 20-1000 karakter")
 	}
-	if containsAngleBracket(motivasi) {
+	if svcutil.ContainsAngleBracket(motivasi) {
 		return domain.NewValidationError("Motivasi tidak boleh mengandung karakter < atau >")
 	}
 	if err := checkPersyaratan(req.Persyaratan); err != nil {
@@ -144,7 +144,7 @@ func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmi
 		if len([]rune(v)) > f.limit {
 			return domain.NewValidationError(f.label + " melebihi batas karakter")
 		}
-		if containsAngleBracket(v) {
+		if svcutil.ContainsAngleBracket(v) {
 			return domain.NewValidationError(f.label + " tidak boleh mengandung karakter < atau >")
 		}
 	}
@@ -173,7 +173,7 @@ func (s *pendaftaranSubmitSvc) BuildRegistrationNumber(ctx context.Context, year
 
 // GenerateBlindIndex mengubah NIK ternormalisasi menjadi blind index HMAC-SHA256.
 func (s *pendaftaranSubmitSvc) GenerateBlindIndex(nik string) (string, error) {
-	key, err := blindIndexKey(s.cfg)
+	key, err := svcutil.BlindIndexKey(s.cfg)
 	if err != nil {
 		return "", err
 	}
@@ -182,7 +182,7 @@ func (s *pendaftaranSubmitSvc) GenerateBlindIndex(nik string) (string, error) {
 
 // EncryptNIK mengenkripsi NIK ternormalisasi agar tidak pernah disimpan plaintext.
 func (s *pendaftaranSubmitSvc) EncryptNIK(nik string) (string, error) {
-	key, err := aesKey(s.cfg)
+	key, err := svcutil.AesKey(s.cfg)
 	if err != nil {
 		return "", err
 	}
