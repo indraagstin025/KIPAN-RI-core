@@ -4,16 +4,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/users"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // UserAdminHandler melayani manajemen akun admin (Super Admin).
 type UserAdminHandler struct {
-	service service.UserAdminService
+	service users.UserAdminService
 }
 
-func NewUserAdminHandler(service service.UserAdminService) *UserAdminHandler {
+func NewUserAdminHandler(service users.UserAdminService) *UserAdminHandler {
 	return &UserAdminHandler{service: service}
 }
 

@@ -265,7 +265,7 @@ func generateOTPCode(digits int) (string, error) {
 	for i := 1; i < digits; i++ {
 		min *= 10
 	}
-	n, err := randIntN(9 * min)
+	n, err := svcutil.RandIntN(9 * min)
 	if err != nil {
 		return "", err
 	}

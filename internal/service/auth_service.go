@@ -86,15 +86,6 @@ type authService struct {
 	rdb       *redis.Client
 }
 
-// Parameter Argon2id sesuai OWASP 2025 & spesifikasi proyek (Rule 9).
-var argon2Params = &argon2id.Params{
-	Memory:      64 * 1024, // 64 MB
-	Iterations:  3,
-	Parallelism: 2,
-	SaltLength:  16,
-	KeyLength:   32,
-}
-
 // AuthDeps adalah dependensi service auth (R1: konsisten dengan pola deps).
 type AuthDeps struct {
 	UserRepo  repository.UserRepository
@@ -120,7 +111,7 @@ func (s *authService) Login(ctx context.Context, req LoginRequest, audit domain.
 	if err != nil {
 		// Timing equalization (fix C-9): jalankan operasi argon2id setara agar
 		// waktu respons tidak membedakan "email tidak ada" vs "password salah".
-		_, _ = argon2id.CreateHash(req.Password, argon2Params)
+		_, _ = argon2id.CreateHash(req.Password, svcutil.Argon2Params)
 		return "", nil, domain.ErrInvalidCredentials
 	}
 
@@ -305,7 +296,7 @@ func (s *authService) ChangePassword(ctx context.Context, userID string, req Cha
 			"Kata sandi baru tidak boleh sama dengan kata sandi saat ini")
 	}
 
-	newHash, err := argon2id.CreateHash(req.NewPassword, argon2Params)
+	newHash, err := argon2id.CreateHash(req.NewPassword, svcutil.Argon2Params)
 	if err != nil {
 		return fmt.Errorf("gagal hash password baru: %w", err)
 	}

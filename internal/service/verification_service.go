@@ -6,10 +6,8 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -287,11 +285,11 @@ func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domai
 		return "", false, err
 	}
 
-	password, err := generateMemberPassword(16)
+	password, err := svcutil.GenerateMemberPassword(16)
 	if err != nil {
 		return "", false, fmt.Errorf("gagal membuat password awal: %w", err)
 	}
-	hash, err := argon2id.CreateHash(password, argon2Params)
+	hash, err := argon2id.CreateHash(password, svcutil.Argon2Params)
 	if err != nil {
 		return "", false, fmt.Errorf("gagal hash password awal: %w", err)
 	}
@@ -323,59 +321,6 @@ func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domai
 	s.auditEvent(ctx, audit, &actorID, actor.Name, string(actor.Role),
 		"users", user.ID, "CREATE", &createMeta)
 	return user.ID, true, nil
-}
-
-// memberPasswordAlphabet aman untuk shell/.env (tanpa kutip, backslash,
-// dolar, atau spasi) — selaras generator password seeder.
-const memberPasswordAlphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%^*-_=+?"
-
-// generateMemberPassword membuat password awal acak (crypto/rand) dengan
-// tiap kelas karakter (kecil, besar, digit, simbol) minimal satu.
-func generateMemberPassword(length int) (string, error) {
-	if length < 12 {
-		length = 12
-	}
-	classes := []string{
-		"abcdefghijkmnopqrstuvwxyz",
-		"ABCDEFGHJKLMNPQRSTUVWXYZ",
-		"23456789",
-		"!@#%^*-_=+?",
-	}
-	out := make([]byte, 0, length)
-	for _, class := range classes {
-		idx, err := randIntN(len(class))
-		if err != nil {
-			return "", err
-		}
-		out = append(out, class[idx])
-	}
-	for len(out) < length {
-		idx, err := randIntN(len(memberPasswordAlphabet))
-		if err != nil {
-			return "", err
-		}
-		out = append(out, memberPasswordAlphabet[idx])
-	}
-	for i := len(out) - 1; i > 0; i-- {
-		j, err := randIntN(i + 1)
-		if err != nil {
-			return "", err
-		}
-		out[i], out[j] = out[j], out[i]
-	}
-	return string(out), nil
-}
-
-// randIntN mengembalikan angka acak [0, max) dari crypto/rand.
-func randIntN(max int) (int, error) {
-	if max <= 0 {
-		return 0, nil
-	}
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
-	if err != nil {
-		return 0, err
-	}
-	return int(n.Int64()), nil
 }
 
 // VerifyKTA memverifikasi keaslian KTA secara kriptografis (RULES 20).

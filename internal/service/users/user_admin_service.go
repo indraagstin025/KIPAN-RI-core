@@ -1,4 +1,4 @@
-package service
+package users
 
 import (
 	"context"
@@ -214,11 +214,11 @@ func (s *userAdminSvc) Create(ctx context.Context, actor domain.ActorContext, au
 		return nil, err
 	}
 
-	password, err := generateMemberPassword(16)
+	password, err := svcutil.GenerateMemberPassword(16)
 	if err != nil {
 		return nil, err
 	}
-	hash, err := argon2id.CreateHash(password, argon2Params)
+	hash, err := argon2id.CreateHash(password, svcutil.Argon2Params)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (s *userAdminSvc) Update(ctx context.Context, actor domain.ActorContext, au
 	if in.ResetPassword || strings.TrimSpace(in.Password) != "" {
 		pw := in.Password
 		if in.ResetPassword || pw == "" {
-			pw, err = generateMemberPassword(16)
+			pw, err = svcutil.GenerateMemberPassword(16)
 			if err != nil {
 				return nil, err
 			}
@@ -314,7 +314,7 @@ func (s *userAdminSvc) Update(ctx context.Context, actor domain.ActorContext, au
 		} else if len(pw) < 8 {
 			return nil, domain.NewValidationError("Password minimal 8 karakter")
 		}
-		hash, err := argon2id.CreateHash(pw, argon2Params)
+		hash, err := argon2id.CreateHash(pw, svcutil.Argon2Params)
 		if err != nil {
 			return nil, err
 		}

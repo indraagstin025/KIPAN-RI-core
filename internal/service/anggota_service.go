@@ -300,11 +300,11 @@ func (s *anggotaService) ResetMemberPassword(ctx context.Context, anggotaID int,
 		return "", domain.NewConflictError("Akun terhubung bukan akun anggota (role " + string(user.Role) + ")")
 	}
 
-	password, err := generateMemberPassword(16)
+	password, err := svcutil.GenerateMemberPassword(16)
 	if err != nil {
 		return "", fmt.Errorf("gagal membuat password baru: %w", err)
 	}
-	hash, err := argon2id.CreateHash(password, argon2Params)
+	hash, err := argon2id.CreateHash(password, svcutil.Argon2Params)
 	if err != nil {
 		return "", fmt.Errorf("gagal hash password baru: %w", err)
 	}

@@ -154,7 +154,7 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, token, newPass
 		return domain.NewValidationError("Kata sandi baru tidak boleh sama dengan kata sandi lama")
 	}
 
-	hash, err := argon2id.CreateHash(newPassword, argon2Params)
+	hash, err := argon2id.CreateHash(newPassword, svcutil.Argon2Params)
 	if err != nil {
 		return fmt.Errorf("gagal hash password baru: %w", err)
 	}
@@ -197,7 +197,7 @@ func (s *passwordResetService) SetPassword(ctx context.Context, token, newPasswo
 	if user.Status != domain.UserStatusAktif {
 		return domain.ErrUserInactive
 	}
-	hash, err := argon2id.CreateHash(newPassword, argon2Params)
+	hash, err := argon2id.CreateHash(newPassword, svcutil.Argon2Params)
 	if err != nil {
 		return fmt.Errorf("gagal hash password baru: %w", err)
 	}

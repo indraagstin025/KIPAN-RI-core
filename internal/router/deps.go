@@ -14,6 +14,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/users"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/wilayah"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
@@ -98,7 +99,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	})
 	wilayahService := wilayah.NewWilayahService(wilayahRepo)
 	wilayahAdminService := wilayah.NewWilayahAdminService(repository.NewWilayahAdminRepository(db), auditRepo)
-	userAdminService := service.NewUserAdminService(service.UserAdminDeps{
+	userAdminService := users.NewUserAdminService(users.UserAdminDeps{
 		UserRepo: userRepo, AdminRepo: repository.NewUserAdminRepository(db),
 		WilayahRepo: wilayahRepo, AuditRepo: auditRepo,
 	})
