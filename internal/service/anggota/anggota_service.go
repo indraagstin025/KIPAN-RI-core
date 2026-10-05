@@ -138,6 +138,8 @@ func (s *anggotaService) ListAnggota(ctx context.Context, actor domain.ActorCont
 }
 
 // attachRiwayat mengisi kolom RIWAYAT (TDD §5.5) untuk sejumlah item daftar.
+// Bila tanpa riwayat kepengurusan, fallback ke label event pendaftaran
+// terakhir agar kolom tidak kosong untuk kader baru.
 func (s *anggotaService) attachRiwayat(ctx context.Context, items []domain.AnggotaListItem) {
 	if s.anggotaRepo == nil || len(items) == 0 {
 		return
@@ -151,9 +153,33 @@ func (s *anggotaService) attachRiwayat(ctx context.Context, items []domain.Anggo
 		log.Warn().Err(err).Msg("Gagal menghitung riwayat anggota; kolom RIWAYAT dikosongkan")
 		return
 	}
+	needFallback := make([]int, 0)
 	for i := range items {
-		if v, ok := byID[items[i].ID]; ok {
+		if v, ok := byID[items[i].ID]; ok && v != "-" {
 			items[i].Riwayat = v
+		} else {
+			needFallback = append(needFallback, items[i].ID)
+		}
+	}
+	if len(needFallback) == 0 {
+		return
+	}
+	fb, err := s.anggotaRepo.LatestPendaftaranAksiByAnggotaIDs(ctx, needFallback)
+	if err != nil {
+		log.Warn().Err(err).Msg("Gagal memuat fallback riwayat pendaftaran")
+		for i := range items {
+			if items[i].Riwayat == "" {
+				items[i].Riwayat = "-"
+			}
+		}
+		return
+	}
+	for i := range items {
+		if items[i].Riwayat != "" {
+			continue
+		}
+		if aksi, ok := fb[items[i].ID]; ok {
+			items[i].Riwayat = labelPendaftaranAksi(aksi)
 		} else {
 			items[i].Riwayat = "-"
 		}

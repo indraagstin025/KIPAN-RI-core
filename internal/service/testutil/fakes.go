@@ -61,6 +61,10 @@ func (f *FakeAnggotaRepo) RiwayatByAnggotaIDs(_ context.Context, ids []int) (map
 	return out, nil
 }
 
+func (f *FakeAnggotaRepo) LatestPendaftaranAksiByAnggotaIDs(_ context.Context, ids []int) (map[int]string, error) {
+	return make(map[int]string, len(ids)), nil
+}
+
 func (f *FakeAnggotaRepo) AllocateNIA(_ context.Context, _, _, year int) (string, error) {
 	return fmt.Sprintf("KIPAN-IND-9999-%d-000001", year), nil
 }

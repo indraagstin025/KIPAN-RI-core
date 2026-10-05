@@ -39,6 +39,10 @@ type AnggotaRepository interface {
 	SetStatus(ctx context.Context, id int, status domain.AnggotaStatus) error
 	// RiwayatByAnggotaIDs menghitung kolom RIWAYAT (TDD §5.5) per anggota.
 	RiwayatByAnggotaIDs(ctx context.Context, ids []int) (map[int]string, error)
+	// LatestPendaftaranAksiByAnggotaIDs mengembalikan aksi pendaftaran
+	// TERAKHIR per anggota (fallback kolom RIWAYAT bila tanpa riwayat
+	// kepengurusan). Anggota tanpa pendaftaran tidak ada di map.
+	LatestPendaftaranAksiByAnggotaIDs(ctx context.Context, ids []int) (map[int]string, error)
 	// AllocateNIA mengalokasikan NIA baru (KIPAN-IND-...) secara atomik.
 	AllocateNIA(ctx context.Context, provinsiID, kabupatenID, year int) (string, error)
 	// Create menyimpan anggota baru (NIA/NIK telah disiapkan service).
@@ -189,6 +193,37 @@ func (r *anggotaRepo) RiwayatByAnggotaIDs(ctx context.Context, ids []int) (map[i
 		} else {
 			out[id] = "-"
 		}
+	}
+	return out, nil
+}
+
+// LatestPendaftaranAksiByAnggotaIDs mengambil aksi pendaftaran terakhir per
+// anggota (satu baris terbaru dari pendaftaran_riwayat via pendaftaran_id
+// anggota). Dipakai sebagai fallback kolom RIWAYAT daftar.
+func (r *anggotaRepo) LatestPendaftaranAksiByAnggotaIDs(ctx context.Context, ids []int) (map[int]string, error) {
+	out := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	query, args, err := sqlx.In(`
+		SELECT DISTINCT ON (a.id) a.id AS anggota_id, pr.aksi
+		FROM anggota a
+		JOIN pendaftaran_riwayat pr ON pr.pendaftaran_id = a.pendaftaran_id
+		WHERE a.id IN (?)
+		ORDER BY a.id, pr.created_at DESC, pr.id DESC`, ids)
+	if err != nil {
+		return nil, err
+	}
+	query = r.db.Rebind(query)
+	rows := make([]struct {
+		AnggotaID int    `db:"anggota_id"`
+		Aksi      string `db:"aksi"`
+	}, 0)
+	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.AnggotaID] = row.Aksi
 	}
 	return out, nil
 }

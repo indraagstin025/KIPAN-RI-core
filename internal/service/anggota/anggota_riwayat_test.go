@@ -54,3 +54,46 @@ func TestAnggotaRiwayatDiangkatPakaiWaktuPengangkatan(t *testing.T) {
 		t.Fatalf("waktu = %v, harap waktu pengangkatan %v", got.Waktu, diangkat)
 	}
 }
+
+// stubRiwayatFallback meniru repo dengan riwayat kepengurusan "-" dan aksi
+// pendaftaran terakhir terkontrol.
+type stubRiwayatFallback struct {
+	*testutil.FakeAnggotaRepo
+	latest map[int]string
+}
+
+func (s *stubRiwayatFallback) LatestPendaftaranAksiByAnggotaIDs(context.Context, []int) (map[int]string, error) {
+	return s.latest, nil
+}
+
+// TestAttachRiwayatFallbackPendaftaranTerakhir mengunci: anggota tanpa
+// riwayat kepengurusan ("-") mendapat label event pendaftaran terakhir;
+// yang sudah punya ringkasan kepengurusan tidak ditimpa.
+func TestAttachRiwayatFallbackPendaftaranTerakhir(t *testing.T) {
+	newSvc := func(latest map[int]string) AnggotaService {
+		return NewAnggotaService(nil, AnggotaDeps{
+			AnggotaRepo: &stubRiwayatFallback{
+				FakeAnggotaRepo: &testutil.FakeAnggotaRepo{},
+				latest:          latest,
+			},
+		})
+	}
+
+	t.Run("fallback mengisi", func(t *testing.T) {
+		svc := newSvc(map[int]string{7: "SETUJUI"})
+		items := []domain.AnggotaListItem{{ID: 7}}
+		svc.(*anggotaService).attachRiwayat(context.Background(), items)
+		if items[0].Riwayat != "Disetujui — diangkat sebagai anggota" {
+			t.Fatalf("riwayat = %q", items[0].Riwayat)
+		}
+	})
+
+	t.Run("tanpa jejak apa pun tetap strip", func(t *testing.T) {
+		svc := newSvc(map[int]string{})
+		items := []domain.AnggotaListItem{{ID: 7}}
+		svc.(*anggotaService).attachRiwayat(context.Background(), items)
+		if items[0].Riwayat != "-" {
+			t.Fatalf("riwayat = %q, harap -", items[0].Riwayat)
+		}
+	})
+}
