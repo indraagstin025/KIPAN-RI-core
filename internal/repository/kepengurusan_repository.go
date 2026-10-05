@@ -861,9 +861,16 @@ func (r *pengurusRepo) UpdateJabatan(ctx context.Context, id int, jabatanID int)
 	return nil
 }
 
+// ExistsInSK: anggota dianggap tercantum bila memegang jabatan AKTIF
+// secara efektif di SK (selaras CountJabatanInSK: Demisioner/berakhir
+// tidak memblokir pengangkatan ulang).
 func (r *pengurusRepo) ExistsInSK(ctx context.Context, skID, anggotaID int) (bool, error) {
 	var exists bool
-	query := `SELECT EXISTS(SELECT 1 FROM pengurus WHERE surat_keputusan_id = $1 AND anggota_id = $2)`
+	query := `SELECT EXISTS(
+		SELECT 1 FROM pengurus p
+		JOIN surat_keputusan sk ON sk.id = p.surat_keputusan_id
+		WHERE p.surat_keputusan_id = $1 AND p.anggota_id = $2
+		  AND ` + pengurusStatusEfektifExpr + ` = 'Aktif')`
 	if err := r.db.GetContext(ctx, &exists, query, skID, anggotaID); err != nil {
 		return false, err
 	}
