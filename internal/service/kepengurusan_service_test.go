@@ -7,6 +7,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
 // ---------- fakes ----------
@@ -142,18 +143,6 @@ func kepSvcW(sk repository.SKRepository, jab repository.JabatanRepository, w rep
 	return NewKepengurusanService(nil, KepengurusanDeps{SKRepo: sk, JabatanRepo: jab, WilayahRepo: w})
 }
 
-func kabActor() domain.ActorContext {
-	prov, kab := 32, 3273
-	return domain.ActorContext{UserID: "u-kab", Name: "Kab", Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &kab}
-}
-func provActor() domain.ActorContext {
-	prov := 32
-	return domain.ActorContext{UserID: "u-prov", Name: "Prov", Role: domain.RoleAdminProvinsi, ProvinsiID: &prov}
-}
-func nasActor() domain.ActorContext {
-	return domain.ActorContext{UserID: "u-nas", Name: "Nas", Role: domain.RoleAdminNasional}
-}
-
 func intPtr(i int) *int   { return &i }
 func mustDate() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
 func mustEnd() time.Time  { return time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC) }
@@ -169,12 +158,12 @@ func newSKReq(level string, prov, kab *int) domain.SKCreateRequest {
 
 func TestCreateSKLevelPerRole(t *testing.T) {
 	ctx := context.Background()
-	w := &fakeWilayahRepo{}
+	w := &testutil.FakeWilayahRepo{}
 	p, k := 32, 3273
 
 	// Kabupaten -> KABUPATEN / DRAFT (wilayah dipaksa dari akun).
 	repoKab := &fakeSKRepo{}
-	out, err := kepSvc(repoKab, &fakeJabatanRepo{}).CreateSK(ctx, newSKReq("", nil, nil), kabActor(), domain.AuditContext{})
+	out, err := kepSvc(repoKab, &fakeJabatanRepo{}).CreateSK(ctx, newSKReq("", nil, nil), testutil.KabActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateSK Kabupaten gagal: %v", err)
 	}
@@ -187,7 +176,7 @@ func TestCreateSKLevelPerRole(t *testing.T) {
 
 	// Provinsi -> PROVINSI / DRAFT.
 	repoProv := &fakeSKRepo{}
-	out, err = kepSvc(repoProv, &fakeJabatanRepo{}).CreateSK(ctx, newSKReq("", nil, nil), provActor(), domain.AuditContext{})
+	out, err = kepSvc(repoProv, &fakeJabatanRepo{}).CreateSK(ctx, newSKReq("", nil, nil), testutil.ProvActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateSK Provinsi gagal: %v", err)
 	}
@@ -200,7 +189,7 @@ func TestCreateSKLevelPerRole(t *testing.T) {
 
 	// Nasional pilih NASIONAL -> NASIONAL / DRAFT (tidak langsung final).
 	repoNas := &fakeSKRepo{}
-	out, err = kepSvcW(repoNas, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("NASIONAL", nil, nil), nasActor(), domain.AuditContext{})
+	out, err = kepSvcW(repoNas, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("NASIONAL", nil, nil), testutil.NasActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateSK Nasional gagal: %v", err)
 	}
@@ -213,7 +202,7 @@ func TestCreateSKLevelPerRole(t *testing.T) {
 
 	// Nasional pilih KABUPATEN (wilayah valid) -> KABUPATEN / DRAFT.
 	repoNasKab := &fakeSKRepo{}
-	out, err = kepSvcW(repoNasKab, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("KABUPATEN", &p, &k), nasActor(), domain.AuditContext{})
+	out, err = kepSvcW(repoNasKab, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("KABUPATEN", &p, &k), testutil.NasActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateSK Nasional KABUPATEN gagal: %v", err)
 	}
@@ -223,7 +212,7 @@ func TestCreateSKLevelPerRole(t *testing.T) {
 
 	// Super pilih PROVINSI -> PROVINSI / DRAFT.
 	repoSup := &fakeSKRepo{}
-	out, err = kepSvcW(repoSup, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("PROVINSI", &p, nil), superActor(), domain.AuditContext{})
+	out, err = kepSvcW(repoSup, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("PROVINSI", &p, nil), testutil.SuperActor(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateSK Super PROVINSI gagal: %v", err)
 	}
@@ -232,7 +221,7 @@ func TestCreateSKLevelPerRole(t *testing.T) {
 	}
 
 	// Level tidak valid -> error.
-	if _, err := kepSvcW(&fakeSKRepo{}, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("XYZ", nil, nil), nasActor(), domain.AuditContext{}); err == nil {
+	if _, err := kepSvcW(&fakeSKRepo{}, &fakeJabatanRepo{}, w).CreateSK(ctx, newSKReq("XYZ", nil, nil), testutil.NasActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("level tidak valid seharusnya ditolak")
 	}
 }
@@ -244,21 +233,21 @@ func TestCreateSKValidasiWajib(t *testing.T) {
 	// File SK kosong.
 	req := newSKReq("", nil, nil)
 	req.FileSKKey = "  "
-	if _, err := svc.CreateSK(ctx, req, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svc.CreateSK(ctx, req, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("CreateSK tanpa file seharusnya ditolak")
 	}
 
 	// Tanggal berakhir kosong.
 	req = newSKReq("", nil, nil)
 	req.TanggalBerakhir = time.Time{}
-	if _, err := svc.CreateSK(ctx, req, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svc.CreateSK(ctx, req, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("CreateSK tanpa tanggal berakhir seharusnya ditolak")
 	}
 
 	// Tanggal berakhir tidak setelah terbit.
 	req = newSKReq("", nil, nil)
 	req.TanggalBerakhir = mustDate()
-	if _, err := svc.CreateSK(ctx, req, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svc.CreateSK(ctx, req, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("CreateSK dengan berakhir <= terbit seharusnya ditolak")
 	}
 }
@@ -269,7 +258,7 @@ func TestApproveSKAjukan(t *testing.T) {
 	// Kabupaten ajukan SK Kabupaten -> MENUNGGU_PROVINSI.
 	kabSK := &domain.SuratKeputusan{ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDraft}
 	repo := &fakeSKRepo{sk: kabSK}
-	if err := kepSvc(repo, &fakeJabatanRepo{}).ApproveSK(ctx, 1, domain.SKActionAjukan, "", kabActor(), domain.AuditContext{}); err != nil {
+	if err := kepSvc(repo, &fakeJabatanRepo{}).ApproveSK(ctx, 1, domain.SKActionAjukan, "", testutil.KabActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("ajukan kabupaten gagal: %v", err)
 	}
 	if repo.updatedTo != domain.SKApprovalStatusMenungguProvinsi || repo.updateHits != 1 {
@@ -279,7 +268,7 @@ func TestApproveSKAjukan(t *testing.T) {
 	// Provinsi ajukan SK Provinsi -> MENUNGGU_NASIONAL.
 	provSK := &domain.SuratKeputusan{ID: 2, Level: domain.LevelProvinsi, ProvinsiID: intPtr(32), Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDraft}
 	repoP := &fakeSKRepo{sk: provSK}
-	if err := kepSvc(repoP, &fakeJabatanRepo{}).ApproveSK(ctx, 2, domain.SKActionAjukan, "", provActor(), domain.AuditContext{}); err != nil {
+	if err := kepSvc(repoP, &fakeJabatanRepo{}).ApproveSK(ctx, 2, domain.SKActionAjukan, "", testutil.ProvActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("ajukan provinsi gagal: %v", err)
 	}
 	if repoP.updatedTo != domain.SKApprovalStatusMenungguNasional {
@@ -289,7 +278,7 @@ func TestApproveSKAjukan(t *testing.T) {
 	// Nasional ajukan SK Nasional -> final (FinalizeSK + Single Active).
 	nasSK := &domain.SuratKeputusan{ID: 3, Level: domain.LevelNasional, Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDraft}
 	repoN := &fakeSKRepo{sk: nasSK}
-	if err := kepSvc(repoN, &fakeJabatanRepo{}).ApproveSK(ctx, 3, domain.SKActionAjukan, "", nasActor(), domain.AuditContext{}); err != nil {
+	if err := kepSvc(repoN, &fakeJabatanRepo{}).ApproveSK(ctx, 3, domain.SKActionAjukan, "", testutil.NasActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("ajukan nasional gagal: %v", err)
 	}
 	if repoN.finalizeHits != 1 {
@@ -298,13 +287,13 @@ func TestApproveSKAjukan(t *testing.T) {
 
 	// Provinsi TIDAK boleh ajukan SK Kabupaten.
 	repoX := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 4, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), ApprovalStatus: domain.SKApprovalStatusDraft}}
-	if err := kepSvc(repoX, &fakeJabatanRepo{}).ApproveSK(ctx, 4, domain.SKActionAjukan, "", provActor(), domain.AuditContext{}); err == nil {
+	if err := kepSvc(repoX, &fakeJabatanRepo{}).ApproveSK(ctx, 4, domain.SKActionAjukan, "", testutil.ProvActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("Provinsi tidak boleh ajukan SK Kabupaten")
 	}
 
 	// Ajukan saat status bukan DRAFT -> konflik.
 	repoY := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 5, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi}}
-	if err := kepSvc(repoY, &fakeJabatanRepo{}).ApproveSK(ctx, 5, domain.SKActionAjukan, "", kabActor(), domain.AuditContext{}); err == nil {
+	if err := kepSvc(repoY, &fakeJabatanRepo{}).ApproveSK(ctx, 5, domain.SKActionAjukan, "", testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("ajukan saat status bukan DRAFT seharusnya ditolak")
 	}
 }
@@ -314,26 +303,26 @@ func TestCanManageSKPerLevel(t *testing.T) {
 	provSK := &domain.SuratKeputusan{Level: domain.LevelProvinsi, ProvinsiID: intPtr(32)}
 	nasSK := &domain.SuratKeputusan{Level: domain.LevelNasional}
 
-	if !canManageSK(kabActor(), kabSK) {
+	if !canManageSK(testutil.KabActor(), kabSK) {
 		t.Fatal("Kabupaten harus boleh kelola SK Kabupaten sekab")
 	}
 	// Opsi A: Admin Provinsi boleh kelola pengurus SK Kabupaten di provinsinya.
-	if !canManageSK(provActor(), kabSK) {
+	if !canManageSK(testutil.ProvActor(), kabSK) {
 		t.Fatal("Opsi A: Provinsi harus boleh kelola SK Kabupaten seprov")
 	}
-	if canManageSK(nasActor(), kabSK) {
+	if canManageSK(testutil.NasActor(), kabSK) {
 		t.Fatal("Nasional TIDAK boleh kelola SK Kabupaten (per level)")
 	}
-	if !canManageSK(provActor(), provSK) {
+	if !canManageSK(testutil.ProvActor(), provSK) {
 		t.Fatal("Provinsi harus boleh kelola SK Provinsi seprov")
 	}
-	if canManageSK(kabActor(), provSK) {
+	if canManageSK(testutil.KabActor(), provSK) {
 		t.Fatal("Kabupaten TIDAK boleh kelola SK Provinsi")
 	}
-	if !canManageSK(nasActor(), nasSK) {
+	if !canManageSK(testutil.NasActor(), nasSK) {
 		t.Fatal("Nasional harus boleh kelola SK Nasional")
 	}
-	if !canManageSK(superActor(), kabSK) || !canManageSK(superActor(), nasSK) {
+	if !canManageSK(testutil.SuperActor(), kabSK) || !canManageSK(testutil.SuperActor(), nasSK) {
 		t.Fatal("Super harus oversight semua level")
 	}
 }
@@ -347,10 +336,10 @@ func TestAddPengurusOtorisasi(t *testing.T) {
 	in := domain.AddPengurusRequest{AnggotaID: 1, JabatanID: 1, Konfirmasi: true}
 	svc := kepSvc(&fakeSKRepo{sk: sk}, &fakeJabatanRepo{})
 
-	if _, err := svc.AddPengurus(ctx, 1, in, provActor(), domain.AuditContext{}); err == nil {
+	if _, err := svc.AddPengurus(ctx, 1, in, testutil.ProvActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("Provinsi tidak boleh mengelola pengurus SK Kabupaten")
 	}
-	if _, err := svc.AddPengurus(ctx, 1, domain.AddPengurusRequest{AnggotaID: 1, JabatanID: 1, Konfirmasi: false}, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svc.AddPengurus(ctx, 1, domain.AddPengurusRequest{AnggotaID: 1, JabatanID: 1, Konfirmasi: false}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("AddPengurus tanpa konfirmasi seharusnya ditolak")
 	}
 }
@@ -361,24 +350,24 @@ func TestApproveSKRantaiPeran(t *testing.T) {
 	// TERUSKAN oleh Nasional ditolak (harus Provinsi wilayah SK).
 	repo := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 1, ProvinsiID: intPtr(32), ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi}}
 	svc := kepSvc(repo, &fakeJabatanRepo{})
-	if err := svc.ApproveSK(ctx, 1, domain.SKActionTeruskan, "", nasActor(), domain.AuditContext{}); err == nil {
+	if err := svc.ApproveSK(ctx, 1, domain.SKActionTeruskan, "", testutil.NasActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("TERUSKAN oleh Nasional seharusnya ditolak")
 	}
 
 	// SAHKAN oleh Provinsi ditolak (harus Nasional/Super).
 	repo2 := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 1, ProvinsiID: intPtr(32), ApprovalStatus: domain.SKApprovalStatusMenungguNasional}}
 	svc2 := kepSvc(repo2, &fakeJabatanRepo{})
-	if err := svc2.ApproveSK(ctx, 1, domain.SKActionSahkan, "", provActor(), domain.AuditContext{}); err == nil {
+	if err := svc2.ApproveSK(ctx, 1, domain.SKActionSahkan, "", testutil.ProvActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("SAHKAN oleh Provinsi seharusnya ditolak")
 	}
 
 	// TOLAK oleh Nasional tanpa catatan => validasi.
-	if err := svc2.ApproveSK(ctx, 1, domain.SKActionTolak, "  ", nasActor(), domain.AuditContext{}); err == nil {
+	if err := svc2.ApproveSK(ctx, 1, domain.SKActionTolak, "  ", testutil.NasActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("TOLAK tanpa catatan seharusnya ditolak")
 	}
 
 	// SAHKAN oleh Nasional pada tahap MENUNGGU_NASIONAL => FinalizeSK (Single Active).
-	if err := svc2.ApproveSK(ctx, 1, domain.SKActionSahkan, "", nasActor(), domain.AuditContext{}); err != nil {
+	if err := svc2.ApproveSK(ctx, 1, domain.SKActionSahkan, "", testutil.NasActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("SAHKAN oleh Nasional gagal: %v", err)
 	}
 	if repo2.finalizeHits != 1 {
@@ -405,7 +394,7 @@ func TestUpdatePengurusJabatan(t *testing.T) {
 	pgr := &fakePengurusRepo{detail: detail}
 	jab := &fakeJabatanRepo{jab: &domain.Jabatan{ID: 2, Nama: "Sekretaris", IsActive: true}}
 	svc := kepSvcFull(&fakeSKRepo{sk: baseSK(false)}, jab, pgr)
-	if _, err := svc.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 2}, kabActor(), domain.AuditContext{}); err != nil {
+	if _, err := svc.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 2}, testutil.KabActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("ganti jabatan gagal: %v", err)
 	}
 	if pgr.updatedJab != 2 {
@@ -414,7 +403,7 @@ func TestUpdatePengurusJabatan(t *testing.T) {
 
 	// Lock final: SK DISETUJUI => 403.
 	svcFinal := kepSvcFull(&fakeSKRepo{sk: baseSK(true)}, jab, &fakePengurusRepo{detail: detail})
-	if _, err := svcFinal.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 2}, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svcFinal.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 2}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("ganti jabatan pada SK final seharusnya ditolak")
 	}
 
@@ -422,12 +411,12 @@ func TestUpdatePengurusJabatan(t *testing.T) {
 	jabInti := &fakeJabatanRepo{jab: &domain.Jabatan{ID: 3, Nama: "Ketua", IsInti: true, IsActive: true}}
 	pgrInti := &fakePengurusRepo{detail: detail, jabatanCount: 1}
 	svcInti := kepSvcFull(&fakeSKRepo{sk: baseSK(false)}, jabInti, pgrInti)
-	if _, err := svcInti.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 3}, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svcInti.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 3}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("jabatan inti ganda seharusnya ditolak")
 	}
 
 	// Opsi A: Provinsi BOLEH ganti jabatan pengurus SK Kabupaten seprov.
-	if _, err := svc.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 2}, provActor(), domain.AuditContext{}); err != nil {
+	if _, err := svc.UpdatePengurusJabatan(ctx, 5, domain.UpdateJabatanRequest{JabatanID: 2}, testutil.ProvActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("Opsi A: Provinsi harus boleh kelola SK Kabupaten seprov: %v", err)
 	}
 
@@ -448,10 +437,10 @@ func TestCreateJabatanSemuaAdmin(t *testing.T) {
 		name  string
 		actor domain.ActorContext
 	}{
-		{"kabupaten", kabActor()},
-		{"provinsi", provActor()},
-		{"nasional", nasActor()},
-		{"super", superActor()},
+		{"kabupaten", testutil.KabActor()},
+		{"provinsi", testutil.ProvActor()},
+		{"nasional", testutil.NasActor()},
+		{"super", testutil.SuperActor()},
 	} {
 		repo := &fakeJabatanRepo{}
 		if _, err := kepSvc(nil, repo).CreateJabatan(ctx, in, tc.actor, domain.AuditContext{}); err != nil {
@@ -476,7 +465,7 @@ func TestListPengurusScopeAndFilter(t *testing.T) {
 	svc := kepSvcFull(&fakeSKRepo{}, &fakeJabatanRepo{}, pgr)
 
 	// Kabupaten: scope prov+kab, level di-uppercase, masa diteruskan.
-	if _, _, err := svc.ListPengurus(ctx, kabActor(), "kabupaten", "", "AkanBerakhir", "budi", nil, nil, true, 1, 10); err != nil {
+	if _, _, err := svc.ListPengurus(ctx, testutil.KabActor(), "kabupaten", "", "AkanBerakhir", "budi", nil, nil, true, 1, 10); err != nil {
 		t.Fatalf("ListPengurus gagal: %v", err)
 	}
 	if pgr.lastFilter.ProvinsiID == nil || *pgr.lastFilter.ProvinsiID != 32 ||
@@ -488,7 +477,7 @@ func TestListPengurusScopeAndFilter(t *testing.T) {
 	}
 
 	// Provinsi: hanya provinsi (kabupaten nil) untuk stats.
-	if _, err := svc.PengurusStats(ctx, provActor()); err != nil {
+	if _, err := svc.PengurusStats(ctx, testutil.ProvActor()); err != nil {
 		t.Fatalf("PengurusStats gagal: %v", err)
 	}
 	if pgr.lastFilter.ProvinsiID == nil || *pgr.lastFilter.ProvinsiID != 32 || pgr.lastFilter.KabupatenID != nil {
@@ -511,20 +500,20 @@ func TestAddPengurusEnqueuePengangkatan(t *testing.T) {
 		ProvinsiID: 32, KabupatenID: 3273,
 	}
 	jab := &domain.Jabatan{ID: 1, Nama: "Ketua", IsActive: true}
-	outbox := &fakeOutboxRepo{}
+	outbox := &testutil.FakeOutboxRepo{}
 	svc := NewKepengurusanService(nil, KepengurusanDeps{
 		SKRepo: sk2Repo(sk), JabatanRepo: &fakeJabatanRepo{jab: jab},
-		PengurusRepo: &fakePengurusRepo{}, AnggotaRepo: &fakeAnggotaRepo{byID: map[int]*domain.Anggota{9: member}},
+		PengurusRepo: &fakePengurusRepo{}, AnggotaRepo: &testutil.FakeAnggotaRepo{ByID: map[int]*domain.Anggota{9: member}},
 		OutboxRepo: outbox,
 	})
 
-	if _, err := svc.AddPengurus(ctx, 1, domain.AddPengurusRequest{AnggotaID: 9, JabatanID: 1, Konfirmasi: true}, kabActor(), domain.AuditContext{}); err != nil {
+	if _, err := svc.AddPengurus(ctx, 1, domain.AddPengurusRequest{AnggotaID: 9, JabatanID: 1, Konfirmasi: true}, testutil.KabActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("AddPengurus gagal: %v", err)
 	}
-	if len(outbox.enqueued) != 1 {
-		t.Fatalf("harus ada 1 email outbox, dapat %d", len(outbox.enqueued))
+	if len(outbox.Enqueued) != 1 {
+		t.Fatalf("harus ada 1 email outbox, dapat %d", len(outbox.Enqueued))
 	}
-	got := outbox.enqueued[0]
+	got := outbox.Enqueued[0]
 	if got.Jenis != domain.EmailOutboxPengangkatan {
 		t.Fatalf("jenis email salah: %s", got.Jenis)
 	}
@@ -546,11 +535,11 @@ func TestActorScope(t *testing.T) {
 	if err != nil || p == nil || k == nil || *p != prov || *k != kab {
 		t.Fatalf("scope kabupaten salah: %v %v %v", p, k, err)
 	}
-	p, k, err = provActor().Scope()
+	p, k, err = testutil.ProvActor().Scope()
 	if err != nil || p == nil || *p != prov || k != nil {
 		t.Fatalf("scope provinsi salah: %v %v %v", p, k, err)
 	}
-	p, k, err = nasActor().Scope()
+	p, k, err = testutil.NasActor().Scope()
 	if err != nil || p != nil || k != nil {
 		t.Fatalf("scope nasional harus nil: %v %v %v", p, k, err)
 	}
@@ -582,9 +571,9 @@ func TestPawsMeninggalUbahStatus(t *testing.T) {
 	member := &domain.Anggota{ID: 9, Status: domain.AnggotaStatusAktif}
 	svc := NewKepengurusanService(nil, KepengurusanDeps{
 		SKRepo: &fakeSKRepo{sk: activeKabSK()}, PengurusRepo: pgr,
-		AnggotaRepo: &fakeAnggotaRepo{byID: map[int]*domain.Anggota{9: member}},
+		AnggotaRepo: &testutil.FakeAnggotaRepo{ByID: map[int]*domain.Anggota{9: member}},
 	})
-	if err := svc.Paws(ctx, 5, domain.PawsRequest{Aksi: "MENINGGAL", Keterangan: "Wafat"}, kabActor(), domain.AuditContext{}); err != nil {
+	if err := svc.Paws(ctx, 5, domain.PawsRequest{Aksi: "MENINGGAL", Keterangan: "Wafat"}, testutil.KabActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("PAW meninggal gagal: %v", err)
 	}
 	if pgr.lastStatus != domain.PengurusStatusMeninggal {
@@ -601,25 +590,25 @@ func TestPawsValidasiDanOtorisasi(t *testing.T) {
 		SKRepo: &fakeSKRepo{sk: activeKabSK()}, PengurusRepo: &fakePengurusRepo{detail: activePengurus()},
 	})
 	// Aksi tak dikenal.
-	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "NGAWUR", Keterangan: "x"}, kabActor(), domain.AuditContext{}); err == nil {
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "NGAWUR", Keterangan: "x"}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("aksi PAW tak dikenal harus ditolak")
 	}
 	// Keterangan kosong.
-	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DEMISIONER"}, kabActor(), domain.AuditContext{}); err == nil {
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DEMISIONER"}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("keterangan kosong harus ditolak")
 	}
 	// DIBERHENTIKAN oleh Kabupaten ditolak (TDD: Provinsi/Nasional).
-	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DIBERHENTIKAN", Keterangan: "sanksi"}, kabActor(), domain.AuditContext{}); err == nil {
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DIBERHENTIKAN", Keterangan: "sanksi"}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("DIBERHENTIKAN oleh Kabupaten harus ditolak")
 	}
 	// DIBERHENTIKAN oleh Provinsi seprov: boleh.
-	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DIBERHENTIKAN", Keterangan: "sanksi"}, provActor(), domain.AuditContext{}); err != nil {
+	if err := svcKab.Paws(ctx, 5, domain.PawsRequest{Aksi: "DIBERHENTIKAN", Keterangan: "sanksi"}, testutil.ProvActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("DIBERHENTIKAN oleh Provinsi seprov harus boleh: %v", err)
 	}
 	// Non-aktif → konflik.
 	pgrNon := &fakePengurusRepo{detail: &domain.PengurusDetail{ID: 5, SuratKeputusanID: 1, AnggotaID: 9, Status: "Demisioner"}}
 	svcNon := NewKepengurusanService(nil, KepengurusanDeps{SKRepo: &fakeSKRepo{sk: activeKabSK()}, PengurusRepo: pgrNon})
-	if err := svcNon.Paws(ctx, 5, domain.PawsRequest{Aksi: "DEMISIONER", Keterangan: "x"}, kabActor(), domain.AuditContext{}); err == nil {
+	if err := svcNon.Paws(ctx, 5, domain.PawsRequest{Aksi: "DEMISIONER", Keterangan: "x"}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("pengurus non-aktif harus ditolak")
 	}
 }
@@ -638,11 +627,11 @@ func TestMutasi(t *testing.T) {
 
 	// Sumber == tujuan → tolak.
 	svc := NewKepengurusanService(nil, deps)
-	if _, err := svc.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 1, JabatanID: 2}, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svc.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 1, JabatanID: 2}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("mutasi ke SK yang sama harus ditolak")
 	}
 	// Sukses (SK tujuan beda, belum final).
-	if out, err := svc.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, kabActor(), domain.AuditContext{}); err != nil || out == nil {
+	if out, err := svc.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, testutil.KabActor(), domain.AuditContext{}); err != nil || out == nil {
 		t.Fatalf("mutasi sah harus sukses: out=%v err=%v", out, err)
 	}
 
@@ -652,7 +641,7 @@ func TestMutasi(t *testing.T) {
 	svcFinal := NewKepengurusanService(nil, KepengurusanDeps{
 		SKRepo: &fakeSKRepo{sk: &targetFinal}, PengurusRepo: &fakePengurusRepo{detail: src}, JabatanRepo: &fakeJabatanRepo{jab: jab},
 	})
-	if _, err := svcFinal.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, kabActor(), domain.AuditContext{}); err == nil {
+	if _, err := svcFinal.Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("mutasi ke SK final harus ditolak")
 	}
 }
@@ -670,14 +659,14 @@ func TestGetPengurusDetail(t *testing.T) {
 	member := &domain.Anggota{ID: 7, NIA: p.NIA, NamaLengkap: "Budi", Status: domain.AnggotaStatusAktif, ProvinsiID: prov, KabupatenID: kab}
 	riwayat := []domain.PengurusDetail{*p}
 	pgr := &fakePengurusRepo{detail: p, byAnggota: riwayat}
-	angg := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{7: member}}
-	wil := &fakeWilayahRepo{prov: "JAWA BARAT", kab: "KOTA BANDUNG"}
+	angg := &testutil.FakeAnggotaRepo{ByID: map[int]*domain.Anggota{7: member}}
+	wil := &testutil.FakeWilayahRepo{Prov: "JAWA BARAT", Kab: "KOTA BANDUNG"}
 	svc := NewKepengurusanService(nil, KepengurusanDeps{
 		PengurusRepo: pgr, AnggotaRepo: angg, WilayahRepo: wil,
 	})
 
 	// Kabupaten seyurisdiksi → sukses, komponen lengkap.
-	out, err := svc.GetPengurusDetail(ctx, 5, kabActor())
+	out, err := svc.GetPengurusDetail(ctx, 5, testutil.KabActor())
 	if err != nil {
 		t.Fatalf("detail pengurus seyurisdiksi harus sukses: %v", err)
 	}
@@ -703,10 +692,10 @@ func TestGetPengurusDetail(t *testing.T) {
 	svcNas := NewKepengurusanService(nil, KepengurusanDeps{
 		PengurusRepo: &fakePengurusRepo{detail: pNas}, AnggotaRepo: angg, WilayahRepo: wil,
 	})
-	if _, err := svcNas.GetPengurusDetail(ctx, 6, nasActor()); err != nil {
+	if _, err := svcNas.GetPengurusDetail(ctx, 6, testutil.NasActor()); err != nil {
 		t.Fatalf("Nasional harus boleh melihat pengurus Nasional: %v", err)
 	}
-	if _, err := svcNas.GetPengurusDetail(ctx, 6, kabActor()); err == nil {
+	if _, err := svcNas.GetPengurusDetail(ctx, 6, testutil.KabActor()); err == nil {
 		t.Fatal("Kabupaten tidak boleh melihat pengurus Nasional")
 	}
 }

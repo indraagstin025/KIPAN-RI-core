@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
 func TestNormalizeNomor(t *testing.T) {
@@ -35,7 +36,7 @@ func TestNormalizeNomor(t *testing.T) {
 }
 
 func TestAnggotaListForbiddenRole(t *testing.T) {
-	svc := NewAnggotaService(nil, AnggotaDeps{AnggotaRepo: &fakeAnggotaRepo{}})
+	svc := NewAnggotaService(nil, AnggotaDeps{AnggotaRepo: &testutil.FakeAnggotaRepo{}})
 	actor := domain.ActorContext{UserID: "u1", Role: "PENDAFTAR"}
 	if _, _, err := svc.ListAnggota(context.Background(), actor, "", "", 1, 25); err == nil {
 		t.Fatal("expected unknown role to be rejected")
@@ -43,7 +44,7 @@ func TestAnggotaListForbiddenRole(t *testing.T) {
 }
 
 func TestAnggotaListInvalidStatus(t *testing.T) {
-	svc := NewAnggotaService(nil, AnggotaDeps{AnggotaRepo: &fakeAnggotaRepo{}})
+	svc := NewAnggotaService(nil, AnggotaDeps{AnggotaRepo: &testutil.FakeAnggotaRepo{}})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleSuperAdmin}
 	if _, _, err := svc.ListAnggota(context.Background(), actor, "BOGUS", "", 1, 25); err == nil {
 		t.Fatal("expected invalid status filter to be rejected")
@@ -51,7 +52,7 @@ func TestAnggotaListInvalidStatus(t *testing.T) {
 }
 
 func TestGetPublicAnggota(t *testing.T) {
-	repo := &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{
+	repo := &testutil.FakeAnggotaRepo{ByNIA: map[string]*domain.Anggota{
 		"KIPAN-IND-3273-2026-000001": {
 			ID: 7, NIA: "KIPAN-IND-3273-2026-000001", NamaLengkap: "Rizki Pratama",
 			ProvinsiID: 2, KabupatenID: 3, Status: domain.AnggotaStatusAktif,

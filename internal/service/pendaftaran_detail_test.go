@@ -7,30 +7,8 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
-
-type fakeWilayahRepo struct {
-	prov, kab string
-	err       error
-}
-
-func (f *fakeWilayahRepo) ExistsProvinsi(context.Context, int) (bool, error) {
-	return true, nil
-}
-func (f *fakeWilayahRepo) KabupatenInProvinsi(context.Context, int, int) (bool, error) {
-	return true, nil
-}
-func (f *fakeWilayahRepo) ListProvinsi(context.Context) ([]domain.WilayahProvinsi, error) {
-	return nil, errFakeUnimpl
-}
-func (f *fakeWilayahRepo) ListKabupaten(context.Context, int) ([]domain.WilayahKabupaten, error) {
-	return nil, errFakeUnimpl
-}
-func (f *fakeWilayahRepo) GetNames(context.Context, int, int) (string, string, error) {
-	return f.prov, f.kab, f.err
-}
-
-var _ repository.WilayahRepository = (*fakeWilayahRepo)(nil)
 
 func detailSvc(item *domain.Pendaftaran, w repository.WilayahRepository) PendaftaranService {
 	return NewPendaftaranService(nil, PendaftaranDeps{
@@ -44,7 +22,7 @@ func TestGetDetailMemuatNamaWilayah(t *testing.T) {
 	svc := detailSvc(&domain.Pendaftaran{
 		ID: 7, ProvinsiID: prov, KabupatenID: kab,
 		Status: domain.PendaftaranStatusDraft,
-	}, &fakeWilayahRepo{prov: "Jawa Barat", kab: "Kota Bandung"})
+	}, &testutil.FakeWilayahRepo{Prov: "Jawa Barat", Kab: "Kota Bandung"})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleSuperAdmin}
 	got, err := svc.GetDetail(context.Background(), 7, actor)
 	if err != nil {
@@ -63,7 +41,7 @@ func TestGetDetailTetapSuksesBilaNamaGagal(t *testing.T) {
 	svc := detailSvc(&domain.Pendaftaran{
 		ID: 7, ProvinsiID: prov, KabupatenID: kab,
 		Status: domain.PendaftaranStatusDraft,
-	}, &fakeWilayahRepo{err: errors.New("db down")})
+	}, &testutil.FakeWilayahRepo{Err: errors.New("db down")})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleSuperAdmin}
 	got, err := svc.GetDetail(context.Background(), 7, actor)
 	if err != nil {
@@ -80,7 +58,7 @@ func TestGetDetailLintasWilayahTetapDitolak(t *testing.T) {
 	svc := detailSvc(&domain.Pendaftaran{
 		ID: 7, ProvinsiID: prov, KabupatenID: kab,
 		Status: domain.PendaftaranStatusDraft,
-	}, &fakeWilayahRepo{})
+	}, &testutil.FakeWilayahRepo{})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &otherKab}
 	if _, err := svc.GetDetail(context.Background(), 7, actor); err == nil {
 		t.Fatal("detail lintas wilayah DITERIMA")

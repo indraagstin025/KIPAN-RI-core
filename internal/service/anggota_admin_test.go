@@ -9,6 +9,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
 func adminCfg() *config.Config {
@@ -30,8 +31,8 @@ func validCreateReq() domain.AnggotaCreateRequest {
 }
 
 func TestCreateAnggotaSukses(t *testing.T) {
-	repo := &fakeAnggotaRepo{}
-	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &fakeWilayahRepo{}})
+	repo := &testutil.FakeAnggotaRepo{}
+	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &testutil.FakeWilayahRepo{}})
 	out, err := svc.CreateAnggota(context.Background(), validCreateReq(), superActor32(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateAnggota gagal: %v", err)
@@ -48,16 +49,16 @@ func TestCreateAnggotaSukses(t *testing.T) {
 }
 
 func TestCreateAnggotaDuplikat(t *testing.T) {
-	repo := &fakeAnggotaRepo{nikExists: true}
-	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &fakeWilayahRepo{}})
+	repo := &testutil.FakeAnggotaRepo{NikExists: true}
+	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &testutil.FakeWilayahRepo{}})
 	if _, err := svc.CreateAnggota(context.Background(), validCreateReq(), superActor32(), domain.AuditContext{}); err == nil {
 		t.Fatal("NIK duplikat seharusnya ditolak")
 	}
 }
 
 func TestCreateAnggotaScopeDitolak(t *testing.T) {
-	repo := &fakeAnggotaRepo{}
-	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &fakeWilayahRepo{}})
+	repo := &testutil.FakeAnggotaRepo{}
+	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &testutil.FakeWilayahRepo{}})
 	req := validCreateReq()
 	req.ProvinsiID = 99
 	req.KabupatenID = 9999
@@ -73,8 +74,8 @@ func TestUpdateAnggota(t *testing.T) {
 		JenisKelamin: "L", Status: domain.AnggotaStatusAktif,
 		Email: "lama@example.com", Whatsapp: "081234567890", Alamat: "Jl. Lama",
 	}
-	repo := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{7: member}}
-	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &fakeWilayahRepo{}})
+	repo := &testutil.FakeAnggotaRepo{ByID: map[int]*domain.Anggota{7: member}}
+	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &testutil.FakeWilayahRepo{}})
 	nama := "Nama Baru"
 	out, err := svc.UpdateAnggota(context.Background(), 7, domain.AnggotaUpdateRequest{NamaLengkap: &nama}, superActor32(), domain.AuditContext{})
 	if err != nil {
@@ -91,8 +92,8 @@ func TestUpdateAnggota(t *testing.T) {
 
 func TestSetAnggotaStatusSoftDelete(t *testing.T) {
 	member := &domain.Anggota{ID: 8, ProvinsiID: 32, KabupatenID: 3273, Status: domain.AnggotaStatusAktif}
-	repo := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{8: member}}
-	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &fakeWilayahRepo{}})
+	repo := &testutil.FakeAnggotaRepo{ByID: map[int]*domain.Anggota{8: member}}
+	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &testutil.FakeWilayahRepo{}})
 	out, err := svc.SetAnggotaStatus(context.Background(), 8, domain.AnggotaStatusRequest{Status: "NONAKTIF"}, superActor32(), domain.AuditContext{})
 	if err != nil {
 		t.Fatalf("SetAnggotaStatus gagal: %v", err)
@@ -103,8 +104,8 @@ func TestSetAnggotaStatusSoftDelete(t *testing.T) {
 }
 
 func TestExportCSVHeader(t *testing.T) {
-	repo := &fakeAnggotaRepo{}
-	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &fakeWilayahRepo{}})
+	repo := &testutil.FakeAnggotaRepo{}
+	svc := NewAnggotaService(adminCfg(), AnggotaDeps{AnggotaRepo: repo, WilayahRepo: &testutil.FakeWilayahRepo{}})
 	data, err := svc.ExportCSV(context.Background(), superActor32(), "", "")
 	if err != nil {
 		t.Fatalf("ExportCSV gagal: %v", err)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
 // fakeUserAdmin memenuhi UserRepository + UserAdminRepository sekaligus
@@ -78,7 +79,7 @@ func (f *fakeUserAdmin) CountActiveSuperAdmins(context.Context, string) (int, er
 }
 
 func userAdminSvcFor(f *fakeUserAdmin) UserAdminService {
-	return NewUserAdminService(UserAdminDeps{UserRepo: f, AdminRepo: f, WilayahRepo: &fakeWilayahRepo{}})
+	return NewUserAdminService(UserAdminDeps{UserRepo: f, AdminRepo: f, WilayahRepo: &testutil.FakeWilayahRepo{}})
 }
 
 func TestUserAdminCreate(t *testing.T) {
@@ -87,7 +88,7 @@ func TestUserAdminCreate(t *testing.T) {
 	svc := userAdminSvcFor(f)
 
 	// Super → tanpa wilayah, email dinormalisasi, tipe ADMIN, password sekali.
-	res, err := svc.Create(ctx, superActor(), domain.AuditContext{},
+	res, err := svc.Create(ctx, testutil.SuperActor(), domain.AuditContext{},
 		domain.UserCreateRequest{Name: "Budi", Email: "Budi@KIPAN.id", Role: "ADMIN_NASIONAL"})
 	if err != nil {
 		t.Fatalf("Create gagal: %v", err)
@@ -97,28 +98,28 @@ func TestUserAdminCreate(t *testing.T) {
 	}
 
 	// Provinsi tanpa provinsi → validasi.
-	if _, err := svc.Create(ctx, superActor(), domain.AuditContext{},
+	if _, err := svc.Create(ctx, testutil.SuperActor(), domain.AuditContext{},
 		domain.UserCreateRequest{Name: "Ani", Email: "ani@kipan.id", Role: "ADMIN_PROVINSI"}); err == nil {
 		t.Fatal("Admin Provinsi tanpa provinsi seharusnya ditolak")
 	}
 	// Email buruk → validasi.
-	if _, err := svc.Create(ctx, superActor(), domain.AuditContext{},
+	if _, err := svc.Create(ctx, testutil.SuperActor(), domain.AuditContext{},
 		domain.UserCreateRequest{Name: "Ani", Email: "bukan-email", Role: "ADMIN_NASIONAL"}); err == nil {
 		t.Fatal("email buruk seharusnya ditolak")
 	}
 	// Admin Nasional TIDAK boleh membuat akun Nasional/Super.
-	if _, err := svc.Create(ctx, nasActor(), domain.AuditContext{},
+	if _, err := svc.Create(ctx, testutil.NasActor(), domain.AuditContext{},
 		domain.UserCreateRequest{Name: "X", Email: "x@kipan.id", Role: "ADMIN_NASIONAL"}); err == nil {
 		t.Fatal("Nasional tidak boleh membuat akun Nasional")
 	}
 	// Admin Nasional BOLEH membuat akun Provinsi/Kabupaten.
 	prov := 32
-	if _, err := svc.Create(ctx, nasActor(), domain.AuditContext{},
+	if _, err := svc.Create(ctx, testutil.NasActor(), domain.AuditContext{},
 		domain.UserCreateRequest{Name: "Prov", Email: "prov@kipan.id", Role: "ADMIN_PROVINSI", ProvinsiID: &prov}); err != nil {
 		t.Fatalf("Nasional harus boleh membuat akun Provinsi: %v", err)
 	}
 	// Provinsi tidak boleh mengelola pengguna.
-	if _, err := svc.Create(ctx, provActor(), domain.AuditContext{},
+	if _, err := svc.Create(ctx, testutil.ProvActor(), domain.AuditContext{},
 		domain.UserCreateRequest{Name: "Y", Email: "y@kipan.id", Role: "ADMIN_KABUPATEN"}); err == nil {
 		t.Fatal("Admin Provinsi tidak boleh mengelola pengguna")
 	}
@@ -167,7 +168,7 @@ func TestUserAdminResetPasswordRevokes(t *testing.T) {
 	f.byID["u-9"] = &domain.User{ID: "u-9", Name: "Xyz", Email: "x@kipan.id", Role: domain.RoleAdminNasional, Status: domain.UserStatusAktif}
 	svc := userAdminSvcFor(f)
 
-	res, err := svc.Update(ctx, superActor(), domain.AuditContext{}, "u-9",
+	res, err := svc.Update(ctx, testutil.SuperActor(), domain.AuditContext{}, "u-9",
 		domain.UserUpdateRequest{Name: "Xyz", Email: "x@kipan.id", Role: "ADMIN_NASIONAL", Status: "Aktif", ResetPassword: true})
 	if err != nil {
 		t.Fatalf("Update reset gagal: %v", err)

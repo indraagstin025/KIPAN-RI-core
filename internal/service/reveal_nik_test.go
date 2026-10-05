@@ -2,17 +2,15 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
-
-var errFakeUnimpl = errors.New("fake: tidak diimplementasikan")
 
 const revealTestKey = "aa00112233445566778899aabbccddeeffaa00112233445566778899aabbccdd"
 
@@ -22,13 +20,13 @@ type fakePendaftaranRepo struct {
 }
 
 func (f *fakePendaftaranRepo) Create(context.Context, *domain.Pendaftaran) error {
-	return errFakeUnimpl
+	return testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) CreateWithHistory(context.Context, *domain.Pendaftaran, string, string) error {
-	return errFakeUnimpl
+	return testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) NextRegistrationSequence(context.Context, int, int) (int, error) {
-	return 0, errFakeUnimpl
+	return 0, testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) GetByID(context.Context, int) (*domain.Pendaftaran, error) {
 	if f.item == nil {
@@ -46,28 +44,28 @@ func (f *fakePendaftaranRepo) ListHistory(context.Context, int) ([]domain.Pendaf
 	return []domain.PendaftaranRiwayat{}, nil
 }
 func (f *fakePendaftaranRepo) ListQueue(context.Context, *int, *int, string, int, int) ([]domain.PendaftaranQueueItem, error) {
-	return nil, errFakeUnimpl
+	return nil, testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) CountQueue(context.Context, *int, *int, string) (int, error) {
-	return 0, errFakeUnimpl
+	return 0, testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) UpdateStatus(context.Context, int, domain.PendaftaranStatus, string) error {
-	return errFakeUnimpl
+	return testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) UpdateStatusWithHistory(context.Context, int, domain.PendaftaranStatus, string, *string, *string, *string, string) error {
-	return errFakeUnimpl
+	return testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) AppendHistory(context.Context, int, string, *string, *string, *string, string) error {
-	return errFakeUnimpl
+	return testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) IssueMember(context.Context, int, int, string) (*domain.Anggota, error) {
-	return nil, errFakeUnimpl
+	return nil, testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) SetRevisiToken(context.Context, int, string, time.Time) error {
-	return errFakeUnimpl
+	return testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) SubmitRevisionTx(context.Context, int, string, map[string]string, string) error {
-	return errFakeUnimpl
+	return testutil.ErrFakeUnimpl
 }
 func (f *fakePendaftaranRepo) ExpireStaleDrafts(context.Context, int) error { return nil }
 

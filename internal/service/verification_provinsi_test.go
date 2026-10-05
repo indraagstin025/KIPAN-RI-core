@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
 // Admin Provinsi boleh MELIHAT antrean provinsinya, tetapi TIDAK BOLEH aksi
@@ -20,7 +21,7 @@ func TestProvinsiDitolakSemuaAksiVerifikasi(t *testing.T) {
 	} {
 		item, member := approveFixture()
 		repo := &fakeApproveRepo{item: item, member: member}
-		svc := approveSvc(repo, &fakeMemberUserRepo{}, &fakeAnggotaRepo{}, &fakeOutboxRepo{})
+		svc := approveSvc(repo, &testutil.FakeMemberUserRepo{}, &testutil.FakeAnggotaRepo{}, &testutil.FakeOutboxRepo{})
 		prov := 32
 		actor := domain.ActorContext{
 			UserID: "admin-prov", Name: "Admin Prov",

@@ -2,113 +2,15 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
-
-// fakeAnggotaRepo adalah anggotaRepo in-memory untuk uji VerifyKTA.
-type fakeAnggotaRepo struct {
-	byNIA     map[string]*domain.Anggota
-	byID      map[int]*domain.Anggota
-	links     map[int]string
-	nikExists bool
-}
-
-func (f *fakeAnggotaRepo) ExistsByNikHash(_ context.Context, _ string) (bool, error) {
-	return f.nikExists, nil
-}
-
-func (f *fakeAnggotaRepo) GetByNIA(_ context.Context, nia string) (*domain.Anggota, error) {
-	if a, ok := f.byNIA[nia]; ok {
-		return a, nil
-	}
-	return nil, domain.ErrNotFound
-}
-
-func (f *fakeAnggotaRepo) GetByID(_ context.Context, id int) (*domain.Anggota, error) {
-	if a, ok := f.byID[id]; ok && a != nil {
-		return a, nil
-	}
-	return nil, domain.ErrNotFound
-}
-
-func (f *fakeAnggotaRepo) SetKTAPDFKey(_ context.Context, _ int, _ string) error {
-	return nil
-}
-
-func (f *fakeAnggotaRepo) SetStatus(_ context.Context, id int, status domain.AnggotaStatus) error {
-	if a, ok := f.byID[id]; ok && a != nil {
-		a.Status = status
-	}
-	return nil
-}
-
-func (f *fakeAnggotaRepo) RiwayatByAnggotaIDs(_ context.Context, ids []int) (map[int]string, error) {
-	out := make(map[int]string, len(ids))
-	for _, id := range ids {
-		out[id] = "-"
-	}
-	return out, nil
-}
-
-func (f *fakeAnggotaRepo) AllocateNIA(_ context.Context, _, _, year int) (string, error) {
-	return fmt.Sprintf("KIPAN-IND-9999-%d-000001", year), nil
-}
-
-func (f *fakeAnggotaRepo) Create(_ context.Context, a *domain.Anggota) (*domain.Anggota, error) {
-	if a.ID == 0 {
-		a.ID = 100
-	}
-	return a, nil
-}
-
-func (f *fakeAnggotaRepo) Update(_ context.Context, _ *domain.Anggota) error {
-	return nil
-}
-
-func (f *fakeAnggotaRepo) SetUserID(_ context.Context, id int, userID string) error {
-	if f.links == nil {
-		f.links = map[int]string{}
-	}
-	f.links[id] = userID
-	if a, ok := f.byID[id]; ok && a != nil {
-		a.UserID = &userID
-	}
-	return nil
-}
-
-func (f *fakeAnggotaRepo) GetByUserID(_ context.Context, userID string) (*domain.Anggota, error) {
-	for _, a := range f.byNIA {
-		if a != nil && a.UserID != nil && *a.UserID == userID {
-			return a, nil
-		}
-	}
-	for id, uid := range f.links {
-		if uid == userID {
-			if a, ok := f.byID[id]; ok {
-				return a, nil
-			}
-		}
-	}
-	return nil, domain.ErrNotFound
-}
-
-func (f *fakeAnggotaRepo) ListAnggota(_ context.Context, _, _ *int, _, _ string, _, _ int) ([]domain.AnggotaListItem, error) {
-	return []domain.AnggotaListItem{}, nil
-}
-
-func (f *fakeAnggotaRepo) CountAnggota(_ context.Context, _, _ *int, _, _ string) (int, error) {
-	return 0, nil
-}
-
-var _ repository.AnggotaRepository = (*fakeAnggotaRepo)(nil)
 
 // Uji Batch 2: pesan WA berisi nomor REG + tautan lacak.
 func TestRegistrantWAMessage(t *testing.T) {
@@ -374,7 +276,7 @@ func TestVerifyKTAAcceptsActiveKey(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyActive
-	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
+	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &testutil.FakeAnggotaRepo{ByNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {
@@ -404,7 +306,7 @@ func TestVerifyKTAAcceptsPreviousKeyAfterRotation(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyNew
 	cfg.Crypto.KTASigningKeyPrev = keyOld
-	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
+	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &testutil.FakeAnggotaRepo{ByNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {
@@ -430,7 +332,7 @@ func TestVerifyKTARejectsUnknownKey(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Crypto.KTASigningKey = keyActive
-	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &fakeAnggotaRepo{byNIA: map[string]*domain.Anggota{member.NIA: member}}})
+	svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &testutil.FakeAnggotaRepo{ByNIA: map[string]*domain.Anggota{member.NIA: member}}})
 
 	res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
 	if err != nil {

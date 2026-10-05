@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
-func resetFixture() (*domain.Anggota, *domain.User, *fakeAnggotaRepo, *fakeMemberUserRepo) {
+func resetFixture() (*domain.Anggota, *domain.User, *testutil.FakeAnggotaRepo, *testutil.FakeMemberUserRepo) {
 	uid := "user-kader-1"
 	prov, kab := 32, 3273
 	member := &domain.Anggota{
@@ -17,8 +18,8 @@ func resetFixture() (*domain.Anggota, *domain.User, *fakeAnggotaRepo, *fakeMembe
 		ProvinsiID: prov, KabupatenID: kab, UserID: &uid,
 	}
 	user := &domain.User{ID: uid, Email: "kader@example.com", Role: domain.RoleUser, Status: domain.UserStatusAktif}
-	anggotaRepo := &fakeAnggotaRepo{byID: map[int]*domain.Anggota{member.ID: member}}
-	userRepo := &fakeMemberUserRepo{byID: map[string]*domain.User{uid: user}}
+	anggotaRepo := &testutil.FakeAnggotaRepo{ByID: map[int]*domain.Anggota{member.ID: member}}
+	userRepo := &testutil.FakeMemberUserRepo{ByID: map[string]*domain.User{uid: user}}
 	return member, user, anggotaRepo, userRepo
 }
 
@@ -29,7 +30,7 @@ func superActor32() domain.ActorContext {
 
 func TestResetMemberPasswordSukses(t *testing.T) {
 	member, user, anggotaRepo, userRepo := resetFixture()
-	outbox := &fakeOutboxRepo{}
+	outbox := &testutil.FakeOutboxRepo{}
 	svc := NewAnggotaService(nil, AnggotaDeps{AnggotaRepo: anggotaRepo, UserRepo: userRepo, OutboxRepo: outbox})
 
 	pw, err := svc.ResetMemberPassword(context.Background(), member.ID, superActor32(), domain.AuditContext{})
@@ -42,12 +43,12 @@ func TestResetMemberPasswordSukses(t *testing.T) {
 	if user.PasswordHash == "" {
 		t.Fatal("hash password baru harus tersimpan")
 	}
-	if len(userRepo.revoked) != 1 || userRepo.revoked[0] != user.ID {
-		t.Fatalf("seluruh sesi anggota harus dicabut, dapat %v", userRepo.revoked)
+	if len(userRepo.Revoked) != 1 || userRepo.Revoked[0] != user.ID {
+		t.Fatalf("seluruh sesi anggota harus dicabut, dapat %v", userRepo.Revoked)
 	}
 	// Opsi A: kirim tautan set-password via antrian.
-	if len(outbox.enqueued) != 1 || outbox.enqueued[0].Jenis != domain.EmailOutboxSetPassword {
-		t.Fatalf("harap 1 outbox SET_PASSWORD, dapat %+v", outbox.enqueued)
+	if len(outbox.Enqueued) != 1 || outbox.Enqueued[0].Jenis != domain.EmailOutboxSetPassword {
+		t.Fatalf("harap 1 outbox SET_PASSWORD, dapat %+v", outbox.Enqueued)
 	}
 }
 
@@ -60,7 +61,7 @@ func TestResetMemberPasswordDiluarWilayah(t *testing.T) {
 	if _, err := svc.ResetMemberPassword(context.Background(), member.ID, actor, domain.AuditContext{}); err == nil {
 		t.Fatal("reset lintas wilayah harus ditolak")
 	}
-	if userRepo.lastHash != "" {
+	if userRepo.LastHash != "" {
 		t.Fatal("password tidak boleh berubah saat otorisasi gagal")
 	}
 }
@@ -87,7 +88,7 @@ func TestResetMemberPasswordTolakAkunNonUser(t *testing.T) {
 	if !ok || appErr.Code != 409 {
 		t.Fatalf("harap 409 saat akun terhubung bukan USER, dapat %v", err)
 	}
-	if userRepo.lastHash != "" {
+	if userRepo.LastHash != "" {
 		t.Fatal("password akun non-USER tidak boleh diubah lewat jalur anggota")
 	}
 }
