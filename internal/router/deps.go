@@ -18,6 +18,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/insight"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kepengurusan"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kta"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/pendaftaran"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/platform"
@@ -72,7 +73,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	authService := auth.NewAuthService(cfg, auth.AuthDeps{
 		UserRepo: userRepo, RDB: rdb, AuditRepo: auditRepo,
 	})
-	ktaSvc := dokumen.NewKTAService(cfg, dokumen.KTADeps{
+	ktaSvc := kta.NewKTAService(cfg, kta.KTADeps{
 		AnggotaRepo: anggotaRepo, DocStore: storageService, AuditRepo: auditRepo,
 	})
 	otpSvc := notify.NewOTPService(cfg, notify.OtpDeps{

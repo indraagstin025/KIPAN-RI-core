@@ -3,16 +3,16 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kta"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // KTAHandler melayani unduhan dokumen KTA (thin-handler, teraudit).
 type KTAHandler struct {
-	service dokumen.KTAService
+	service kta.KTAService
 }
 
-func NewKTAHandler(service dokumen.KTAService) *KTAHandler {
+func NewKTAHandler(service kta.KTAService) *KTAHandler {
 	return &KTAHandler{service: service}
 }
 

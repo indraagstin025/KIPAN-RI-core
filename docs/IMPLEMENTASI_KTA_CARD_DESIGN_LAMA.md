@@ -151,7 +151,7 @@ type CardRenderer interface {
 
 `QRBytes` dan `RenderPDF` (gofpdf) **dibiarkan ada** sebagai fallback/dokumentasi. `RenderPDF` bisa dipertahankan sebagai implementasi `CardRenderer` kedua (tanpa foto, untuk environment tanpa Chromium).
 
-### 6.4 `internal/service/dokumen/kta_service.go`
+### 6.4 `internal/service/kta/kta_service.go`
 
 #### 6.4.1 `KTADeps` — tambah dependensi
 
@@ -232,7 +232,7 @@ Frontend sudah format-agnostic — `adminKtaUrl` (`anggotaService.ts:22`) dan `g
    - `pkg/kta/card_test.go`: CardData validasi (field wajib, foto/QR opsional).
    - `pkg/kta/html_renderer_test.go`: render menghasilkan PDF valid (cek magic `%PDF-`), foto/QR ter-embed.
    - `pkg/storage/s3_test.go`: `Get` (berhasil / objek tidak ada).
-   - `internal/service/dokumen/kta_service_test.go`: `IssueKTADocument` idempoten + fail-closed (renderer error → error).
+   - `internal/service/kta/kta_service_test.go`: `IssueKTADocument` idempoten + fail-closed (renderer error → error).
 2. **Integrasi** (CDP/pentest):
    - `SETUJUI` → `kta/{nia}.pdf` tersimpan → `GET /admin/anggota/:id/kta` & `/user/kta` mengembalikan `download_url` PDF valid.
    - QR hasil PDF tetap tervalidasi (`VerifyKTA` dengan sig dari DB).
@@ -263,7 +263,7 @@ Bila render chromedp dirasa berat di request approve:
 2. `internal/service/dokumen/storage_service.go`: `GetUploadedObject` + test.
 3. `pkg/kta`: `card.go` (CardData), `renderer.go` (interface), `template.html`, `assets/` (embed), `html_renderer.go` (chromedp), `go.mod` tambah `chromedp`.
 4. `config`: `KTA_RENDER_*`.
-5. `internal/service/dokumen/kta_service.go`: `KTADeps` + `KTADocumentStore` + `IssueKTADocument` baru + test.
+5. `internal/service/kta/kta_service.go`: `KTADeps` + `KTADocumentStore` + `IssueKTADocument` baru + test.
 6. `routes.go`: wiring renderer + wilayahRepo.
 7. Frontend: buka `download_url` sebagai PDF (preview/download).
 8. `go test ./...` + `go vet ./...` + `gofmt`; `npm run build` + `npm run lint`.

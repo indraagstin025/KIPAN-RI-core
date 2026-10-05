@@ -10,7 +10,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kta"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
@@ -37,7 +37,7 @@ func (f *fakeApproveRepo) IssueMember(_ context.Context, _ int, _ int, _ string)
 
 // fakeApproveKTASvc melewati render PDF (bukan fokus uji ini).
 type fakeApproveKTASvc struct {
-	dokumen.KTAService
+	kta.KTAService
 }
 
 func (f *fakeApproveKTASvc) IssueKTADocument(_ context.Context, _ *domain.Anggota, _ string, _ domain.AuditContext) (string, error) {

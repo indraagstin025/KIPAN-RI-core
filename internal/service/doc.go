@@ -15,7 +15,8 @@
 //	wilayah  master + admin wilayah + kodepos.
 //	users    manajemen akun admin.
 //	notify   OTP, outbox email, worker pengirim, notifikasi in-app.
-//	dokumen  storage presign, dokumen KTA, backup database.
+//	dokumen  storage presign, backup database.
+//	kta      dokumen Kartu Tanda Anggota (render + tiket baca).
 //	insight  laporan, audit trail, dasbor.
 //	platform role, profil organisasi.
 //
@@ -23,7 +24,7 @@
 //   - Subpackage BOLEH mengimpor: config, domain, repository, gateway,
 //     pkg/*, svcutil, mail, testutil (test saja).
 //   - Impor antar-subpackage service HANYA yang searah & terdaftar:
-//     pendaftaran → notify, dokumen, mail; kepengurusan/auth/notify → mail.
+//     pendaftaran → notify, dokumen, kta, mail; kepengurusan/auth/notify → mail.
 //   - DILARANG: impor siklik, impor package service root (kosong),
 //     helper lintas-domain di luar svcutil, fake bersama di luar testutil.
 //   - Handler tetap thin: hanya HTTP transport + delegasi ke interface service.
