@@ -478,6 +478,11 @@ func (s *pengurusSvc) Mutasi(ctx context.Context, pengurusID int, in domain.Muta
 	if !canManageSK(actor, target) {
 		return nil, domain.NewForbiddenError("Anda tidak berwenang mengelola SK tujuan")
 	}
+	// Persetujuan berjenjang bila lintas tingkat (matriks §8.3): aktor harus
+	// berada pada/di atas level tertinggi kedua SK.
+	if !canMutasiLintasTingkat(actor, src.Level, string(target.Level)) {
+		return nil, domain.NewForbiddenError("Mutasi lintas tingkat wajib diproses admin setingkat lebih tinggi")
+	}
 	if target.Status != domain.SKStatusAktif {
 		return nil, domain.NewValidationError("SK tujuan tidak aktif")
 	}

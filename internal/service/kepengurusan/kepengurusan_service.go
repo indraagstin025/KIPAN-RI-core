@@ -177,6 +177,43 @@ func canManageSK(actor domain.ActorContext, sk *domain.SuratKeputusan) bool {
 	return false
 }
 
+// rankTingkat mengurutkan level untuk aturan lintas tingkat:
+// NASIONAL 3 > PROVINSI 2 > KABUPATEN 1 (tak dikenal = 0).
+func rankTingkat(level string) int {
+	switch domain.TingkatWilayah(level) {
+	case domain.LevelNasional:
+		return 3
+	case domain.LevelProvinsi:
+		return 2
+	case domain.LevelKabupaten:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// canMutasiLintasTingkat: bila sumber & tujuan beda tingkat, aktor harus
+// berada pada/di atas level tertinggi keduanya (Super selalu boleh).
+// Level sama → selalu true (wewenang wilayah ditangani canManageSK).
+func canMutasiLintasTingkat(actor domain.ActorContext, srcLevel, targetLevel string) bool {
+	if actor.Role == domain.RoleSuperAdmin {
+		return true
+	}
+	if srcLevel == targetLevel {
+		return true
+	}
+	hi := rankTingkat(srcLevel)
+	if r := rankTingkat(targetLevel); r > hi {
+		hi = r
+	}
+	switch hi {
+	case 3:
+		return actor.Role == domain.RoleAdminNasional
+	default:
+		return actor.Role == domain.RoleAdminProvinsi || actor.Role == domain.RoleAdminNasional
+	}
+}
+
 // anggotaInSKScope memastikan anggota berada dalam cakupan wilayah SK.
 func anggotaInSKScope(member *domain.Anggota, sk *domain.SuratKeputusan) bool {
 	switch sk.Level {

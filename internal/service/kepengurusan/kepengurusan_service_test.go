@@ -651,6 +651,60 @@ func TestMutasi(t *testing.T) {
 	}
 }
 
+// canMutasiLintasTingkat: lintas tingkat wajib diproses admin pada/di atas
+// level tertinggi (matriks §8.3); level sama selalu boleh (wewenang wilayah
+// ditangani canManageSK).
+func TestCanMutasiLintasTingkat(t *testing.T) {
+	cases := []struct {
+		name     string
+		role     domain.Role
+		src, dst string
+		want     bool
+	}{
+		{"kab-kab oleh kab", domain.RoleAdminKabupaten, "KABUPATEN", "KABUPATEN", true},
+		{"kab-prov oleh kab", domain.RoleAdminKabupaten, "KABUPATEN", "PROVINSI", false},
+		{"kab-prov oleh prov", domain.RoleAdminProvinsi, "KABUPATEN", "PROVINSI", true},
+		{"prov-kab oleh kab", domain.RoleAdminKabupaten, "PROVINSI", "KABUPATEN", false},
+		{"prov-kab oleh prov", domain.RoleAdminProvinsi, "PROVINSI", "KABUPATEN", true},
+		{"prov-nas oleh prov", domain.RoleAdminProvinsi, "PROVINSI", "NASIONAL", false},
+		{"kab-nas oleh nas", domain.RoleAdminNasional, "KABUPATEN", "NASIONAL", true},
+		{"kab-nas oleh super", domain.RoleSuperAdmin, "KABUPATEN", "NASIONAL", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			actor := domain.ActorContext{Role: tc.role}
+			if got := canMutasiLintasTingkat(actor, tc.src, tc.dst); got != tc.want {
+				t.Fatalf("canMutasiLintasTingkat(%s, %s, %s) = %v, harap %v",
+					tc.role, tc.src, tc.dst, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMutasiLintasTingkatDitolak: PROVINSI → KABUPATEN oleh admin kabupaten
+// (lolos canManageSK target) tetap ditolak aturan berjenjang; oleh provinsi lolos.
+func TestMutasiLintasTingkatDitolak(t *testing.T) {
+	ctx := context.Background()
+	src := &domain.PengurusDetail{ID: 5, SuratKeputusanID: 1, AnggotaID: 9,
+		JabatanID: 1, Level: "PROVINSI", Status: "Aktif"}
+	target := &domain.SuratKeputusan{
+		ID: 2, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273),
+		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi, FileSKKey: "uploads/sk/b.pdf",
+	}
+	jab := &domain.Jabatan{ID: 2, Nama: "Sekretaris", IsActive: true}
+	mkSvc := func() KepengurusanService {
+		return NewKepengurusanService(nil, KepengurusanDeps{
+			SKRepo: &fakeSKRepo{sk: target}, PengurusRepo: &fakePengurusRepo{detail: src}, JabatanRepo: &fakeJabatanRepo{jab: jab},
+		})
+	}
+	if _, err := mkSvc().Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, testutil.KabActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("mutasi lintas tingkat oleh kabupaten harus ditolak")
+	}
+	if _, err := mkSvc().Mutasi(ctx, 5, domain.MutasiRequest{SKID: 2, JabatanID: 2}, testutil.ProvActor(), domain.AuditContext{}); err != nil {
+		t.Fatalf("mutasi lintas tingkat oleh provinsi harus lolos: %v", err)
+	}
+}
+
 // TestGetPengurusDetail memverifikasi komposisi detail (pengurus + anggota +
 // riwayat) dan otorisasi yurisdiksi (kabupaten/provinsi/nasional).
 func TestGetPengurusDetail(t *testing.T) {
