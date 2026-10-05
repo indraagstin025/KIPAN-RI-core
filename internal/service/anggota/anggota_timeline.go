@@ -88,12 +88,15 @@ func (s *anggotaService) AnggotaRiwayat(ctx context.Context, id int, actor domai
 		}
 	}
 
-	// (2) Riwayat kepengurusan (semua status).
+	// (2) Riwayat kepengurusan (semua status). Waktu memakai CreatedAt
+	// (saat pengangkatan dilakukan), BUKAN TanggalMulai (awal masa bakti
+	// yang bisa lebih awal dari tanggal pengangkatan), agar urutan
+	// timeline mengikuti alur bisnis yang dijalani.
 	if s.pengurusRepo != nil {
 		if list, err := s.pengurusRepo.ListByAnggota(ctx, id); err == nil {
 			for _, p := range list {
 				items = append(items, domain.AnggotaRiwayatItem{
-					Waktu: p.TanggalMulai, Sumber: "KEPENGURUSAN", Aksi: "DIANGKAT",
+					Waktu: p.CreatedAt, Sumber: "KEPENGURUSAN", Aksi: "DIANGKAT",
 					Label: "Diangkat sebagai " + p.Jabatan, Oleh: "Sistem",
 					Keterangan: strings.TrimSpace("SK " + p.NomorSK + " · " + pengurusWilayahLabel(p)),
 				})
