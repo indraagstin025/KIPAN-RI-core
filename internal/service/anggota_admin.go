@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -22,7 +23,7 @@ import (
 // → cek duplikat (anggota & pendaftaran aktif) → alokasi NIA → simpan → audit.
 func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCreateRequest, actor domain.ActorContext, audit domain.AuditContext) (*domain.Anggota, error) {
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	name := strings.TrimSpace(in.NamaLengkap)
 	if len([]rune(name)) < 3 || len([]rune(name)) > maxNamaLen || containsAngleBracket(name) {
@@ -146,7 +147,7 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		return nil, err
 	}
 	meta := `{"event":"anggota_create","nia":"` + out.NIA + `"}`
-	writeAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
 		"anggota", strconv.Itoa(out.ID), "CREATE", &meta)
 	return out, nil
 }
@@ -157,7 +158,7 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 		return nil, domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	item, err := s.anggotaRepo.GetByID(ctx, id)
 	if err != nil {
@@ -279,7 +280,7 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 		return nil, err
 	}
 	meta := `{"event":"anggota_update"}`
-	writeAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
 		"anggota", strconv.Itoa(id), "UPDATE", &meta)
 	return item, nil
 }
@@ -290,7 +291,7 @@ func (s *anggotaService) SetAnggotaStatus(ctx context.Context, id int, in domain
 		return nil, domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	st := domain.AnggotaStatus(strings.ToUpper(strings.TrimSpace(in.Status)))
 	if !st.IsValid() {
@@ -308,7 +309,7 @@ func (s *anggotaService) SetAnggotaStatus(ctx context.Context, id int, in domain
 	}
 	item.Status = st
 	meta := `{"event":"anggota_status","to":"` + string(st) + `"}`
-	writeAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
 		"anggota", strconv.Itoa(id), "UPDATE", &meta)
 	return item, nil
 }
@@ -316,7 +317,7 @@ func (s *anggotaService) SetAnggotaStatus(ctx context.Context, id int, in domain
 // ExportCSV mengekspor daftar anggota ter-scope (dibatasi agar respons wajar).
 func (s *anggotaService) ExportCSV(ctx context.Context, actor domain.ActorContext, status, search string) ([]byte, error) {
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {

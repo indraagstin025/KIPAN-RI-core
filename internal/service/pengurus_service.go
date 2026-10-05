@@ -11,6 +11,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // PengurusService mengelola pengangkatan & status pengurus pada SK.
@@ -43,7 +44,7 @@ func (s *pengurusSvc) AddPengurus(ctx context.Context, skID int, in domain.AddPe
 		return nil, domain.NewValidationError("Konfirmasi kelayakan wajib dicentang")
 	}
 	if s.skRepo == nil || s.pengurus == nil || s.anggotaRepo == nil || s.jabatanRepo == nil {
-		return nil, unavailable("kepengurusan")
+		return nil, svcutil.Unavailable("kepengurusan")
 	}
 
 	sk, err := s.skRepo.GetByID(ctx, skID)
@@ -131,7 +132,7 @@ func (s *pengurusSvc) AddPengurus(ctx context.Context, skID int, in domain.AddPe
 		uidPtr = &userID
 	}
 	s.enqueueEmail(ctx, domain.EmailOutboxPengangkatan, sk, uidPtr, member.Email,
-		PengangkatanEmail(member.NamaLengkap, member.NIA, jabatan.Nama, sk.NomorSK, publicURLFrom(s.cfg)))
+		PengangkatanEmail(member.NamaLengkap, member.NIA, jabatan.Nama, sk.NomorSK, svcutil.PublicURLFrom(s.cfg)))
 
 	list, err := s.pengurus.ListBySK(ctx, skID)
 	if err != nil {
@@ -151,7 +152,7 @@ func (s *pengurusSvc) RemovePengurus(ctx context.Context, skID, pengurusID int, 
 		return domain.NewValidationError("Data tidak valid")
 	}
 	if s.skRepo == nil || s.pengurus == nil {
-		return unavailable("kepengurusan")
+		return svcutil.Unavailable("kepengurusan")
 	}
 	sk, err := s.skRepo.GetByID(ctx, skID)
 	if err != nil {
@@ -188,7 +189,7 @@ func (s *pengurusSvc) RemovePengurus(ctx context.Context, skID, pengurusID int, 
 // ListPengurus mengembalikan daftar pengurus ter-scope dengan filter lengkap.
 func (s *pengurusSvc) ListPengurus(ctx context.Context, actor domain.ActorContext, level, status, masaJabatan, search string, provFilter, kabFilter *int, withTotal bool, page, limit int) ([]domain.PengurusDetail, int, error) {
 	if s.pengurus == nil {
-		return nil, 0, unavailable("pengurus")
+		return nil, 0, svcutil.Unavailable("pengurus")
 	}
 	// Scope dari peran TIDAK bisa dilonggarkan klien; filter klien hanya
 	// berlaku bila server belum menetapkan batas (Nasional/Super).
@@ -228,7 +229,7 @@ func (s *pengurusSvc) GetPengurusDetail(ctx context.Context, id int, actor domai
 		return nil, domain.NewValidationError("ID pengurus tidak valid")
 	}
 	if s.pengurus == nil {
-		return nil, unavailable("pengurus")
+		return nil, svcutil.Unavailable("pengurus")
 	}
 	p, err := s.pengurus.GetByID(ctx, id)
 	if err != nil {
@@ -268,7 +269,7 @@ func (s *pengurusSvc) GetPengurusDetail(ctx context.Context, id int, actor domai
 // PengurusStats ringkasan jumlah pengurus aktif (ter-scope) untuk kartu dasbor.
 func (s *pengurusSvc) PengurusStats(ctx context.Context, actor domain.ActorContext) (*domain.PengurusStats, error) {
 	if s.pengurus == nil {
-		return nil, unavailable("pengurus")
+		return nil, svcutil.Unavailable("pengurus")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {
@@ -285,7 +286,7 @@ func (s *pengurusSvc) PengurusStats(ctx context.Context, actor domain.ActorConte
 // ber-riwayat kepengurusan yang tidak sedang aktif menjabat).
 func (s *pengurusSvc) ListPromosi(ctx context.Context, actor domain.ActorContext, search string, limit int) ([]domain.PromosiCandidate, error) {
 	if s.pengurus == nil {
-		return nil, unavailable("pengurus")
+		return nil, svcutil.Unavailable("pengurus")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {
@@ -311,7 +312,7 @@ func (s *pengurusSvc) UpdatePengurusStatus(ctx context.Context, id int, status d
 		return domain.NewValidationError("Keterangan wajib diisi saat menonaktifkan pengurus")
 	}
 	if s.pengurus == nil {
-		return unavailable("pengurus")
+		return svcutil.Unavailable("pengurus")
 	}
 	p, err := s.pengurus.GetByID(ctx, id)
 	if err != nil {
@@ -338,7 +339,7 @@ func (s *pengurusSvc) UpdatePengurusJabatan(ctx context.Context, id int, in doma
 		return nil, domain.NewValidationError("Data ganti jabatan tidak lengkap")
 	}
 	if s.pengurus == nil || s.skRepo == nil || s.jabatanRepo == nil {
-		return nil, unavailable("kepengurusan")
+		return nil, svcutil.Unavailable("kepengurusan")
 	}
 	p, err := s.pengurus.GetByID(ctx, id)
 	if err != nil {
@@ -411,7 +412,7 @@ func (s *pengurusSvc) Paws(ctx context.Context, pengurusID int, in domain.PawsRe
 		return domain.NewValidationError("ID pengurus tidak valid")
 	}
 	if s.pengurus == nil || s.skRepo == nil {
-		return unavailable("kepengurusan")
+		return svcutil.Unavailable("kepengurusan")
 	}
 	action := domain.PengurusPAWAction(strings.ToUpper(strings.TrimSpace(in.Aksi)))
 	status, ok := domain.MapPAWAction(action)
@@ -457,7 +458,7 @@ func (s *pengurusSvc) Mutasi(ctx context.Context, pengurusID int, in domain.Muta
 		return nil, domain.NewValidationError("Data mutasi tidak lengkap")
 	}
 	if s.pengurus == nil || s.skRepo == nil || s.jabatanRepo == nil {
-		return nil, unavailable("kepengurusan")
+		return nil, svcutil.Unavailable("kepengurusan")
 	}
 	src, err := s.pengurus.GetByID(ctx, pengurusID)
 	if err != nil {

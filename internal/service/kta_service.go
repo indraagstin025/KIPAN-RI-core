@@ -9,6 +9,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/kta"
 )
 
@@ -69,14 +70,14 @@ func (s *ktaService) IssueKTADocument(ctx context.Context, member *domain.Anggot
 		return *member.KTAPDFKey, nil
 	}
 	if s.anggotaRepo == nil {
-		return "", unavailable("anggota")
+		return "", svcutil.Unavailable("anggota")
 	}
 	if s.docStore == nil || !s.docStore.Configured() {
 		// Dev tanpa storage: lewati PDF (approve tetap sah). R2.
-		if degradedSkip(s.cfg, "storage(pdf-kta:"+member.NIA+")") {
+		if svcutil.DegradedSkip(s.cfg, "storage(pdf-kta:"+member.NIA+")") {
 			return "", nil
 		}
-		return "", unavailable("storage")
+		return "", svcutil.Unavailable("storage")
 	}
 
 	verifyURL := fmt.Sprintf("%s/v/%s?sig=%s", s.verifyBaseURL(), member.NIA, ktaSig)
@@ -110,7 +111,7 @@ func (s *ktaService) GetKTADocumentURL(ctx context.Context, anggotaID int, actor
 		return "", domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return "", unavailable("anggota")
+		return "", svcutil.Unavailable("anggota")
 	}
 	member, err := s.anggotaRepo.GetByID(ctx, anggotaID)
 	if err != nil {
@@ -123,7 +124,7 @@ func (s *ktaService) GetKTADocumentURL(ctx context.Context, anggotaID int, actor
 		return "", domain.NewNotFoundError("Dokumen KTA")
 	}
 	if s.docStore == nil || !s.docStore.Configured() {
-		return "", unavailable("storage")
+		return "", svcutil.Unavailable("storage")
 	}
 	url, err := s.docStore.PresignKTADocument(ctx, *member.KTAPDFKey)
 	if err != nil {
@@ -157,7 +158,7 @@ func (s *ktaService) GetMyKTADocumentURL(ctx context.Context, userID string, aud
 		return "", domain.NewValidationError("ID user tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return "", unavailable("anggota")
+		return "", svcutil.Unavailable("anggota")
 	}
 	member, err := s.anggotaRepo.GetByUserID(ctx, uid)
 	if err != nil {
@@ -167,7 +168,7 @@ func (s *ktaService) GetMyKTADocumentURL(ctx context.Context, userID string, aud
 		return "", domain.NewNotFoundError("Dokumen KTA")
 	}
 	if s.docStore == nil || !s.docStore.Configured() {
-		return "", unavailable("storage")
+		return "", svcutil.Unavailable("storage")
 	}
 	url, err := s.docStore.PresignKTADocument(ctx, *member.KTAPDFKey)
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // BackupStore adalah kapabilitas storage privat yang dibutuhkan backup.
@@ -51,17 +52,17 @@ func NewBackupService(cfg *config.Config, repo repository.BackupRepository, stor
 // riwayat. Tidak ada backup bersamaan (dijalankan serial oleh request admin).
 func (s *backupService) Create(ctx context.Context, actor domain.ActorContext, audit domain.AuditContext) (*domain.Backup, error) {
 	if s.cfg == nil || !s.cfg.Backup.Enabled {
-		return nil, unavailable("backup (nonaktif)")
+		return nil, svcutil.Unavailable("backup (nonaktif)")
 	}
 	if s.repo == nil {
-		return nil, unavailable("backup")
+		return nil, svcutil.Unavailable("backup")
 	}
 	if s.store == nil || !s.store.Configured() {
-		return nil, unavailable("storage")
+		return nil, svcutil.Unavailable("storage")
 	}
 	dsn := strings.TrimSpace(s.cfg.Database.DSN)
 	if dsn == "" {
-		return nil, unavailable("database DSN")
+		return nil, svcutil.Unavailable("database DSN")
 	}
 	bin := strings.TrimSpace(s.cfg.Backup.PgDumpPath)
 	if bin == "" {
@@ -69,7 +70,7 @@ func (s *backupService) Create(ctx context.Context, actor domain.ActorContext, a
 	}
 	path, err := exec.LookPath(bin)
 	if err != nil {
-		return nil, unavailable("pg_dump tidak tersedia di server (set BACKUP_PG_DUMP_PATH)")
+		return nil, svcutil.Unavailable("pg_dump tidak tersedia di server (set BACKUP_PG_DUMP_PATH)")
 	}
 
 	tmp, err := os.CreateTemp("", "kipan-backup-*.dump")
@@ -118,7 +119,7 @@ func (s *backupService) Create(ctx context.Context, actor domain.ActorContext, a
 		return nil, err
 	}
 	meta := `{"event":"backup_create","filename":"` + filename + `"}`
-	writeAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
 		"backups", fmt.Sprintf("%d", out.ID), "CREATE", &meta)
 	log.Info().Str("filename", filename).Int64("size", int64(len(data))).Msg("Backup database dibuat")
 	return out, nil
@@ -127,7 +128,7 @@ func (s *backupService) Create(ctx context.Context, actor domain.ActorContext, a
 // List mengembalikan riwayat backup.
 func (s *backupService) List(ctx context.Context, page, limit int) ([]domain.Backup, int, error) {
 	if s.repo == nil {
-		return nil, 0, unavailable("backup")
+		return nil, 0, svcutil.Unavailable("backup")
 	}
 	if page < 1 {
 		page = 1
@@ -141,7 +142,7 @@ func (s *backupService) List(ctx context.Context, page, limit int) ([]domain.Bac
 // DownloadURL menerbitkan tiket baca arsip backup.
 func (s *backupService) DownloadURL(ctx context.Context, id int) (string, error) {
 	if s.repo == nil || s.store == nil {
-		return "", unavailable("backup")
+		return "", svcutil.Unavailable("backup")
 	}
 	b, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -153,7 +154,7 @@ func (s *backupService) DownloadURL(ctx context.Context, id int) (string, error)
 // Delete menghapus arsip + riwayatnya.
 func (s *backupService) Delete(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) error {
 	if s.repo == nil {
-		return unavailable("backup")
+		return svcutil.Unavailable("backup")
 	}
 	b, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -168,7 +169,7 @@ func (s *backupService) Delete(ctx context.Context, id int, actor domain.ActorCo
 		return err
 	}
 	meta := `{"event":"backup_delete","filename":"` + b.Filename + `"}`
-	writeAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
 		"backups", fmt.Sprintf("%d", id), "DELETE", &meta)
 	return nil
 }

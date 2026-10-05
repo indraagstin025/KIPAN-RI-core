@@ -16,6 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -336,7 +337,7 @@ func (s *authService) auditEvent(
 	userID, actorName, actorRole, entity, entityID, action string,
 	metadata *string,
 ) {
-	writeAudit(ctx, s.auditRepo, audit, &userID, actorName, actorRole, entity, entityID, action, metadata)
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &userID, actorName, actorRole, entity, entityID, action, metadata)
 }
 
 // resolveActor mengambil nama/role aktor secara best-effort untuk audit.

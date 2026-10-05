@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // PendaftaranService (agregat) menggabungkan Submit & Query (Fase A4, SRP).
@@ -257,10 +258,10 @@ func checkObjectKey(label, key string, required bool) error {
 // agar dipakai inti + revisi). Storage mati: 503 di production, lewati di non-prod.
 func verifyOneDocument(ctx context.Context, cfg *config.Config, storageSvc ObjectVerifier, key, category string) error {
 	if storageSvc == nil || !storageSvc.Configured() {
-		if degradedSkip(cfg, "storage(verifikasi-dokumen:"+category+")") {
+		if svcutil.DegradedSkip(cfg, "storage(verifikasi-dokumen:"+category+")") {
 			return nil
 		}
-		return unavailable("verifikasi dokumen")
+		return svcutil.Unavailable("verifikasi dokumen")
 	}
 	return storageSvc.VerifySubmittedObject(ctx, key, category)
 }
@@ -294,10 +295,10 @@ func (b *pendaftaranBase) verifySubmittedDocuments(ctx context.Context, req doma
 // validateWilayah memastikan provinsi/kabupaten ada, aktif, dan berelasi benar.
 func (b *pendaftaranBase) validateWilayah(ctx context.Context, provinsiID, kabupatenID int) error {
 	if b.wilayahRepo == nil {
-		if degradedSkip(b.cfg, "wilayahRepo") {
+		if svcutil.DegradedSkip(b.cfg, "wilayahRepo") {
 			return nil
 		}
-		return unavailable("validasi wilayah")
+		return svcutil.Unavailable("validasi wilayah")
 	}
 	ok, err := b.wilayahRepo.ExistsProvinsi(ctx, provinsiID)
 	if err != nil {
@@ -328,7 +329,7 @@ func (b *pendaftaranBase) notifyAdmins(ctx context.Context, title, message strin
 
 // publicURL mengembalikan base URL frontend untuk tautan pesan.
 func (b *pendaftaranBase) publicURL() string {
-	return publicURLFrom(b.cfg)
+	return svcutil.PublicURLFrom(b.cfg)
 }
 
 // registrantWAMessage menyusun teks WhatsApp berisi nomor pendaftaran + tautan lacak.
@@ -365,7 +366,7 @@ func (b *pendaftaranBase) auditEvent(
 	actorName, actorRole, entity, entityID, action string,
 	metadata *string,
 ) {
-	writeAudit(ctx, b.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
+	svcutil.WriteAudit(ctx, b.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
 }
 
 // aesKey/blindIndexKey membaca kunci kripto dari config (R3: fungsi paket).

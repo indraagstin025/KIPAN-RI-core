@@ -7,6 +7,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // WilayahCards ringkasan kartu halaman Master Wilayah.
@@ -55,7 +56,7 @@ func (s *wilayahAdminSvc) guard(actor domain.ActorContext) error {
 		return domain.NewForbiddenError("Master Wilayah hanya untuk Super/Nasional Admin")
 	}
 	if s.repo == nil {
-		return unavailable("wilayah")
+		return svcutil.Unavailable("wilayah")
 	}
 	return nil
 }
@@ -268,5 +269,5 @@ func (s *wilayahAdminSvc) Add(ctx context.Context, actor domain.ActorContext, au
 
 func (s *wilayahAdminSvc) audit(ctx context.Context, tr domain.AuditContext, actor domain.ActorContext, entity, entityID, action string, metadata *string) {
 	id := actor.UserID
-	writeAudit(ctx, s.auditRepo, tr, &id, actor.Name, string(actor.Role), entity, entityID, action, metadata)
+	svcutil.WriteAudit(ctx, s.auditRepo, tr, &id, actor.Name, string(actor.Role), entity, entityID, action, metadata)
 }

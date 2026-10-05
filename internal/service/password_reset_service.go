@@ -22,6 +22,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -64,17 +65,9 @@ func resetKey(rawToken string) string {
 	return "pwreset:" + crypto.HashToken(rawToken)
 }
 
-// publicURLFrom mengembalikan base URL frontend untuk tautan email.
-func publicURLFrom(cfg *config.Config) string {
-	if cfg != nil && strings.TrimSpace(cfg.App.PublicURL) != "" {
-		return strings.TrimRight(strings.TrimSpace(cfg.App.PublicURL), "/")
-	}
-	return "http://localhost:5173"
-}
-
 func (s *passwordResetService) ready() error {
 	if s.rdb == nil || s.mail == nil || s.userRepo == nil {
-		return unavailable("reset kata sandi")
+		return svcutil.Unavailable("reset kata sandi")
 	}
 	return nil
 }
@@ -105,7 +98,7 @@ func (s *passwordResetService) ForgotPassword(ctx context.Context, email string,
 		return fmt.Errorf("gagal menyimpan token reset: %w", err)
 	}
 
-	link := publicURLFrom(s.cfg) + "/reset-password?token=" + raw
+	link := svcutil.PublicURLFrom(s.cfg) + "/reset-password?token=" + raw
 	content := PasswordResetEmail(user.Name, link)
 	// Best-effort: kegagalan kirim tidak membocorkan keberadaan akun.
 	if err := s.mail.Send(ctx, user.Email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
@@ -115,7 +108,7 @@ func (s *passwordResetService) ForgotPassword(ctx context.Context, email string,
 	}
 
 	meta := `{"event":"password_reset_request"}`
-	writeAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
 		"users", user.ID, "PASSWORD_RESET_REQUEST", &meta)
 	return nil
 }
@@ -133,7 +126,7 @@ return 0
 
 func (s *passwordResetService) ResetPassword(ctx context.Context, token, newPassword string, audit domain.AuditContext) error {
 	if s.rdb == nil || s.userRepo == nil {
-		return unavailable("reset kata sandi")
+		return svcutil.Unavailable("reset kata sandi")
 	}
 	t := strings.TrimSpace(token)
 	if t == "" || len(t) > 256 {
@@ -173,7 +166,7 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, token, newPass
 	}
 
 	meta := `{"event":"password_reset","sessions_revoked":true}`
-	writeAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
 		"users", user.ID, "PASSWORD_RESET", &meta)
 	return nil
 }
@@ -182,7 +175,7 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, token, newPass
 // worker outbox) dengan kata sandi baru untuk anggota.
 func (s *passwordResetService) SetPassword(ctx context.Context, token, newPassword string, audit domain.AuditContext) error {
 	if s.rdb == nil || s.userRepo == nil {
-		return unavailable("set kata sandi")
+		return svcutil.Unavailable("set kata sandi")
 	}
 	t := strings.TrimSpace(token)
 	if t == "" || len(t) > 256 {
@@ -214,7 +207,7 @@ func (s *passwordResetService) SetPassword(ctx context.Context, token, newPasswo
 		log.Warn().Err(err).Str("user_id", user.ID).Msg("Gagal mencabut sesi setelah set password")
 	}
 	meta := `{"event":"set_password","sessions_revoked":true}`
-	writeAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &user.ID, user.Name, string(user.Role),
 		"users", user.ID, "PASSWORD_SET", &meta)
 	return nil
 }

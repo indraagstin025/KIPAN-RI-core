@@ -12,6 +12,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // AuditService menelusuri & mengekspor jejak audit.
@@ -32,7 +33,7 @@ func NewAuditService(repo repository.AuditLogRepository) AuditService {
 // List mengembalikan jejak audit terfilter + total.
 func (s *auditService) List(ctx context.Context, f domain.AuditFilter) ([]domain.ActivityLog, int, error) {
 	if s.repo == nil {
-		return nil, 0, unavailable("audit")
+		return nil, 0, svcutil.Unavailable("audit")
 	}
 	if f.Limit <= 0 {
 		f.Limit = 25
@@ -46,7 +47,7 @@ func (s *auditService) List(ctx context.Context, f domain.AuditFilter) ([]domain
 // ExportCSV mengekspor audit terfilter (dibatasi 5000 baris).
 func (s *auditService) ExportCSV(ctx context.Context, f domain.AuditFilter) ([]byte, error) {
 	if s.repo == nil {
-		return nil, unavailable("audit")
+		return nil, svcutil.Unavailable("audit")
 	}
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)

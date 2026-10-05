@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // labelPendaftaranAksi memetakan aksi pendaftaran_riwayat ke label manusiawi.
@@ -55,7 +56,7 @@ func (s *anggotaService) AnggotaRiwayat(ctx context.Context, id int, actor domai
 		return nil, domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	member, err := s.anggotaRepo.GetByID(ctx, id)
 	if err != nil {
@@ -125,7 +126,7 @@ func (s *anggotaService) AnggotaActivity(ctx context.Context, id int, actor doma
 		return nil, domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	member, err := s.anggotaRepo.GetByID(ctx, id)
 	if err != nil {

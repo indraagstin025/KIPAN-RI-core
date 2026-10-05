@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // JabatanService mengelola master jabatan struktural.
@@ -36,7 +37,7 @@ func validateJabatan(in domain.JabatanRequest) error {
 // ListJabatan mengembalikan master jabatan (opsional termasuk nonaktif).
 func (s *jabatanSvc) ListJabatan(ctx context.Context, includeInactive bool) ([]domain.Jabatan, error) {
 	if s.jabatanRepo == nil {
-		return nil, unavailable("jabatan")
+		return nil, svcutil.Unavailable("jabatan")
 	}
 	return s.jabatanRepo.List(ctx, includeInactive)
 }
@@ -53,7 +54,7 @@ func (s *jabatanSvc) CreateJabatan(ctx context.Context, in domain.JabatanRequest
 		return nil, err
 	}
 	if s.jabatanRepo == nil {
-		return nil, unavailable("jabatan")
+		return nil, svcutil.Unavailable("jabatan")
 	}
 	out, err := s.jabatanRepo.Create(ctx, in)
 	if err != nil {
@@ -76,7 +77,7 @@ func (s *jabatanSvc) UpdateJabatan(ctx context.Context, id int, in domain.Jabata
 		return nil, err
 	}
 	if s.jabatanRepo == nil {
-		return nil, unavailable("jabatan")
+		return nil, svcutil.Unavailable("jabatan")
 	}
 	out, err := s.jabatanRepo.Update(ctx, id, in)
 	if err != nil {

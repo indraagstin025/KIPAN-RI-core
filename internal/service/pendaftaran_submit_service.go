@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/generator"
 )
@@ -247,7 +248,7 @@ func (s *pendaftaranSubmitSvc) CreateRegistration(ctx context.Context, req domai
 	// Token OTP dikonsumsi SETELAH seluruh validasi lolos (tepat sebelum
 	// nomor dialokasikan). Sekali pakai via script Lua atomik.
 	if s.otpSvc == nil {
-		return nil, unavailable("verifikasi OTP")
+		return nil, svcutil.Unavailable("verifikasi OTP")
 	}
 	if err := s.otpSvc.VerifyAndConsume(ctx, req.Whatsapp, req.WaOTPToken); err != nil {
 		return nil, err

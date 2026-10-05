@@ -5,6 +5,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // DashboardService menyajikan agregat dashboard ter-scope wilayah.
@@ -22,7 +23,7 @@ func NewDashboardService(repo repository.DashboardRepository) DashboardService {
 
 func (s *dashboardSvc) Load(ctx context.Context, actor domain.ActorContext) (*domain.DashboardData, error) {
 	if s.repo == nil {
-		return nil, unavailable("dashboard")
+		return nil, svcutil.Unavailable("dashboard")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // KepengurusanService (agregat) menggabungkan tiga service fokus:
@@ -59,7 +60,7 @@ type kepengurusanBase struct {
 // audit mencatat jejak audit aksi kepengurusan (best-effort).
 func (b *kepengurusanBase) audit(ctx context.Context, audit domain.AuditContext, actor domain.ActorContext, entity, entityID, action string, metadata *string) {
 	id := actor.UserID
-	writeAudit(ctx, b.auditRepo, audit, &id, actor.Name, string(actor.Role), entity, entityID, action, metadata)
+	svcutil.WriteAudit(ctx, b.auditRepo, audit, &id, actor.Name, string(actor.Role), entity, entityID, action, metadata)
 }
 
 // enqueueEmail menulis satu baris antrian email kepengurusan (best-effort,

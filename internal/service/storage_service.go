@@ -13,6 +13,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/storage"
 )
 
@@ -147,7 +148,7 @@ func (s *StorageService) RequestUploadPresign(ctx context.Context, category, fil
 			fmt.Sprintf("Ukuran file harus 1-%d byte untuk kategori %s", policy.MaxSize, category))
 	}
 	if s.client == nil {
-		return nil, unavailable("storage")
+		return nil, svcutil.Unavailable("storage")
 	}
 
 	ext := mimeToExt[mime]
@@ -190,7 +191,7 @@ func (s *StorageService) VerifySubmittedObject(ctx context.Context, key, categor
 		return domain.NewValidationError("Object key dokumen tidak valid")
 	}
 	if s.client == nil {
-		return unavailable("storage")
+		return svcutil.Unavailable("storage")
 	}
 
 	info, err := s.client.Stat(ctx, s.uploadsBucket(), k)
@@ -249,14 +250,14 @@ func (s *StorageService) RequestViewPresign(ctx context.Context, key string, act
 		return nil, domain.NewValidationError("Object key dokumen tidak valid")
 	}
 	if s.client == nil {
-		return nil, unavailable("storage")
+		return nil, svcutil.Unavailable("storage")
 	}
 
 	// OTORISASI (SEC-STORE-BOLA): tiket baca HANYA untuk dokumen milik entitas
 	// dalam yurisdiksi aktor. Autentikasi saja tidak cukup (BOLA/IDOR).
 	// Resolver nil = fail-closed: jangan pernah menerbitkan tiket tanpa otorisasi.
 	if s.ownerResolver == nil {
-		return nil, unavailable("otorisasi dokumen")
+		return nil, svcutil.Unavailable("otorisasi dokumen")
 	}
 	owner, err := s.ownerResolver.ResolveOwner(ctx, k)
 	if err != nil {
@@ -300,7 +301,7 @@ func (s *StorageService) RequestViewPresign(ctx context.Context, key string, act
 // Key server-generated: kta/{NIA}.pdf. Bukan jalur upload user.
 func (s *StorageService) PutKTADocument(ctx context.Context, nia string, pdf []byte) (string, error) {
 	if s.client == nil {
-		return "", unavailable("storage")
+		return "", svcutil.Unavailable("storage")
 	}
 	key := "kta/" + strings.TrimSpace(nia) + ".pdf"
 	if err := storage.ValidateObjectKey(key); err != nil {
@@ -320,7 +321,7 @@ func (s *StorageService) PresignKTADocument(ctx context.Context, key string) (st
 		return "", domain.NewValidationError("Object key KTA tidak valid")
 	}
 	if s.client == nil {
-		return "", unavailable("storage")
+		return "", svcutil.Unavailable("storage")
 	}
 	const ttl = 5 * time.Minute
 	url, err := s.client.PresignGet(ctx, s.privateBucket(), k, ttl)
@@ -334,7 +335,7 @@ func (s *StorageService) PresignKTADocument(ctx context.Context, key string) (st
 // dengan key eksplisit (mis. backup database).
 func (s *StorageService) PutPrivateObject(ctx context.Context, key string, data []byte, contentType string) error {
 	if s.client == nil {
-		return unavailable("storage")
+		return svcutil.Unavailable("storage")
 	}
 	if err := storage.ValidateObjectKey(key); err != nil {
 		return domain.NewValidationError("Object key tidak valid")
@@ -352,7 +353,7 @@ func (s *StorageService) PresignPrivateObject(ctx context.Context, key string) (
 		return "", domain.NewValidationError("Object key tidak valid")
 	}
 	if s.client == nil {
-		return "", unavailable("storage")
+		return "", svcutil.Unavailable("storage")
 	}
 	url, err := s.client.PresignGet(ctx, s.privateBucket(), k, s.putTTL())
 	if err != nil {
@@ -364,7 +365,7 @@ func (s *StorageService) PresignPrivateObject(ctx context.Context, key string) (
 // DeletePrivateObject menghapus objek privat (idempoten).
 func (s *StorageService) DeletePrivateObject(ctx context.Context, key string) error {
 	if s.client == nil {
-		return unavailable("storage")
+		return svcutil.Unavailable("storage")
 	}
 	if err := storage.ValidateObjectKey(key); err != nil {
 		return domain.NewValidationError("Object key tidak valid")

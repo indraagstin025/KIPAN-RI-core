@@ -16,6 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -37,7 +38,7 @@ func NewLaporanService(cfg *config.Config, repo repository.LaporanRepository) La
 
 func (s *laporanService) Load(ctx context.Context, actor domain.ActorContext) (*domain.LaporanData, error) {
 	if s.repo == nil {
-		return nil, unavailable("laporan")
+		return nil, svcutil.Unavailable("laporan")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {

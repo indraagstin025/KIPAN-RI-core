@@ -15,6 +15,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // WilayahService melayani daftar master wilayah untuk dropdown publik
@@ -99,7 +100,7 @@ func NewWilayahService(repo repository.WilayahRepository) WilayahService {
 
 func (s *wilayahSvc) ListProvinsi(ctx context.Context) ([]domain.WilayahProvinsi, error) {
 	if s.repo == nil {
-		return nil, unavailable("wilayah")
+		return nil, svcutil.Unavailable("wilayah")
 	}
 	return s.repo.ListProvinsi(ctx)
 }
@@ -109,7 +110,7 @@ func (s *wilayahSvc) ListKabupaten(ctx context.Context, provinsiID int) ([]domai
 		return nil, domain.NewValidationError("ID provinsi tidak valid")
 	}
 	if s.repo == nil {
-		return nil, unavailable("wilayah")
+		return nil, svcutil.Unavailable("wilayah")
 	}
 	ok, err := s.repo.ExistsProvinsi(ctx, provinsiID)
 	if err != nil {

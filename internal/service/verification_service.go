@@ -22,6 +22,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -82,7 +83,7 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 		return nil, domain.NewValidationError("ID pendaftaran tidak valid")
 	}
 	if s.repo == nil {
-		return nil, unavailable("pendaftaran")
+		return nil, svcutil.Unavailable("pendaftaran")
 	}
 	if action == "" {
 		return nil, domain.NewValidationError("Aksi verifikasi wajib dipilih")
@@ -155,7 +156,7 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 				EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
 		} else {
 			s.enqueueContent(ctx, domain.EmailOutboxAkunTerhubung, item, nil, item.Email,
-				AccountLinkedEmail(item.NamaLengkap, member.NIA, publicURLFrom(s.cfg)))
+				AccountLinkedEmail(item.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
 		}
 		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 			"pendaftaran", strconv.Itoa(id), string(action), &meta)
@@ -182,7 +183,7 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 			jenis = domain.EmailOutboxStatusDitolak
 		}
 		s.enqueueContent(ctx, jenis, item, nil, item.Email,
-			StatusEmail(string(targetStatus), item.NamaLengkap, item.NomorPendaftaran, note, "", publicURLFrom(s.cfg)))
+			StatusEmail(string(targetStatus), item.NamaLengkap, item.NomorPendaftaran, note, "", svcutil.PublicURLFrom(s.cfg)))
 	}
 	return &ApprovalResult{}, nil
 }
@@ -243,7 +244,7 @@ func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor dom
 			EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
 	} else {
 		s.enqueueContent(ctx, domain.EmailOutboxAkunTerhubung, item, nil, member.Email,
-			AccountLinkedEmail(member.NamaLengkap, member.NIA, publicURLFrom(s.cfg)))
+			AccountLinkedEmail(member.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
 	}
 	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
@@ -257,7 +258,7 @@ func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor dom
 // (Opsi A): plaintext TIDAK dikembalikan — login via tautan set-password.
 func (s *verificationSvc) ensureMemberAccount(ctx context.Context, member *domain.Anggota, actor domain.ActorContext, audit domain.AuditContext) (string, bool, error) {
 	if s.userRepo == nil || s.anggotaRepo == nil {
-		return "", false, unavailable("akun user")
+		return "", false, svcutil.Unavailable("akun user")
 	}
 	if member == nil || strings.TrimSpace(member.Email) == "" {
 		return "", false, domain.NewValidationError("Email anggota tidak valid untuk penerbitan akun")
@@ -386,7 +387,7 @@ func (s *verificationSvc) VerifyKTA(ctx context.Context, nia, sig string) (*doma
 		return nil, domain.NewValidationError("Parameter verifikasi KTA tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	member, err := s.anggotaRepo.GetByNIA(ctx, code)
 	if err != nil {
@@ -432,7 +433,7 @@ func (s *verificationSvc) RevealNIK(ctx context.Context, id int, actor domain.Ac
 		return "", domain.NewValidationError("ID pendaftaran tidak valid")
 	}
 	if s.repo == nil {
-		return "", unavailable("pendaftaran")
+		return "", svcutil.Unavailable("pendaftaran")
 	}
 	item, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -505,5 +506,5 @@ func (s *verificationSvc) auditEvent(
 	actorName, actorRole, entity, entityID, action string,
 	metadata *string,
 ) {
-	writeAudit(ctx, s.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
 }

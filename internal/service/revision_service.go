@@ -16,6 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -99,7 +100,7 @@ func (s *revisionSvc) RequestRevisionToken(ctx context.Context, req domain.Revis
 		return nil, err
 	}
 	if s.repo == nil {
-		return nil, unavailable("pendaftaran")
+		return nil, svcutil.Unavailable("pendaftaran")
 	}
 	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
 	if err != nil {
@@ -139,7 +140,7 @@ func (s *revisionSvc) sendRevisionTokenEmail(nama, email, nomor, token string) {
 	if s.mail == nil || strings.TrimSpace(email) == "" {
 		return
 	}
-	content := RevisionTokenEmail(nama, nomor, token, publicURLFrom(s.cfg))
+	content := RevisionTokenEmail(nama, nomor, token, svcutil.PublicURLFrom(s.cfg))
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := s.mail.Send(ctx, email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
@@ -161,7 +162,7 @@ func (s *revisionSvc) SubmitRevision(ctx context.Context, nomor string, req doma
 		return domain.NewValidationError("Token revisi wajib diisi")
 	}
 	if s.repo == nil {
-		return unavailable("pendaftaran")
+		return svcutil.Unavailable("pendaftaran")
 	}
 	item, err := s.repo.GetByNomorPendaftaran(ctx, nr)
 	if err != nil {
@@ -243,5 +244,5 @@ func (s *revisionSvc) auditEvent(
 	actorName, actorRole, entity, entityID, action string,
 	metadata *string,
 ) {
-	writeAudit(ctx, s.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
 }

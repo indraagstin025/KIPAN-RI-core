@@ -6,6 +6,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // EmailDispatcher mengirim satu item antrian segera (render + kirim + tandai
@@ -36,10 +37,10 @@ func NewOutboxService(repo repository.EmailOutboxRepository, dispatcher EmailDis
 // Item yang gagal akan ditandai failed + last_error oleh dispatcher.
 func (s *outboxSvc) SendNow(ctx context.Context, actor domain.ActorContext, id int64) error {
 	if s.repo == nil {
-		return unavailable("antrian email")
+		return svcutil.Unavailable("antrian email")
 	}
 	if s.dispatcher == nil {
-		return unavailable("pengiriman email")
+		return svcutil.Unavailable("pengiriman email")
 	}
 	it, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -59,7 +60,7 @@ func (s *outboxSvc) SendNow(ctx context.Context, actor domain.ActorContext, id i
 
 func (s *outboxSvc) List(ctx context.Context, actor domain.ActorContext, jenis, status string, page, limit int) ([]domain.EmailOutbox, int, error) {
 	if s.repo == nil {
-		return nil, 0, unavailable("antrian email")
+		return nil, 0, svcutil.Unavailable("antrian email")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {
@@ -93,7 +94,7 @@ func (s *outboxSvc) inScope(ctx context.Context, actor domain.ActorContext, id i
 
 func (s *outboxSvc) RetryPending(ctx context.Context, actor domain.ActorContext) (int64, error) {
 	if s.repo == nil {
-		return 0, unavailable("antrian email")
+		return 0, svcutil.Unavailable("antrian email")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {
@@ -104,7 +105,7 @@ func (s *outboxSvc) RetryPending(ctx context.Context, actor domain.ActorContext)
 
 func (s *outboxSvc) RetryMany(ctx context.Context, actor domain.ActorContext, ids []int64) (int64, error) {
 	if s.repo == nil {
-		return 0, unavailable("antrian email")
+		return 0, svcutil.Unavailable("antrian email")
 	}
 	if len(ids) == 0 {
 		return 0, nil

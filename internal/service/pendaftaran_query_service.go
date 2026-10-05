@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/keyset"
 )
 
@@ -128,7 +129,7 @@ func (s *pendaftaranQuerySvc) GetDetail(ctx context.Context, id int, actor domai
 // ListQueue mengembalikan antrean sesuai jurisdiction aktor + filter status.
 func (s *pendaftaranQuerySvc) ListQueue(ctx context.Context, actor domain.ActorContext, status string, page, limit int) ([]domain.PendaftaranQueueItem, int, error) {
 	if s.repo == nil {
-		return nil, 0, unavailable("pendaftaran")
+		return nil, 0, svcutil.Unavailable("pendaftaran")
 	}
 	// Lazy expiry: tandai DRAFT yang sudah lewat 30 hari menjadi KEDALUWARSA.
 	_ = s.repo.ExpireStaleDrafts(ctx, 30)
@@ -166,7 +167,7 @@ func (s *pendaftaranQuerySvc) ListQueue(ctx context.Context, actor domain.ActorC
 // ListQueueCursor varian keyset (tanpa COUNT + tanpa OFFSET besar).
 func (s *pendaftaranQuerySvc) ListQueueCursor(ctx context.Context, actor domain.ActorContext, status, cursor string, limit int) ([]domain.PendaftaranQueueItem, string, error) {
 	if s.listRepo == nil {
-		return nil, "", unavailable("pendaftaran")
+		return nil, "", svcutil.Unavailable("pendaftaran")
 	}
 	_ = s.repo.ExpireStaleDrafts(ctx, 30)
 	st := strings.TrimSpace(status)

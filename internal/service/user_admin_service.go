@@ -9,6 +9,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // UserMutationResult hasil mutasi akun admin. Password hanya terisi saat
@@ -54,7 +55,7 @@ func (s *userAdminSvc) guard(actor domain.ActorContext) error {
 		return domain.NewForbiddenError("Manajemen Pengguna hanya untuk Super Admin / Admin Nasional")
 	}
 	if s.adminRepo == nil || s.userRepo == nil {
-		return unavailable("pengguna")
+		return svcutil.Unavailable("pengguna")
 	}
 	return nil
 }
@@ -129,7 +130,7 @@ func (s *userAdminSvc) resolveScope(ctx context.Context, role domain.Role, prov,
 			return nil, nil, domain.NewValidationError("Provinsi wajib dipilih untuk Admin Provinsi")
 		}
 		if s.wilayahRepo == nil {
-			return nil, nil, unavailable("wilayah")
+			return nil, nil, svcutil.Unavailable("wilayah")
 		}
 		ok, err := s.wilayahRepo.ExistsProvinsi(ctx, *prov)
 		if err != nil {
@@ -144,7 +145,7 @@ func (s *userAdminSvc) resolveScope(ctx context.Context, role domain.Role, prov,
 			return nil, nil, domain.NewValidationError("Provinsi & Kabupaten/Kota wajib dipilih untuk Admin Kabupaten")
 		}
 		if s.wilayahRepo == nil {
-			return nil, nil, unavailable("wilayah")
+			return nil, nil, svcutil.Unavailable("wilayah")
 		}
 		ok, err := s.wilayahRepo.KabupatenInProvinsi(ctx, *kab, *prov)
 		if err != nil {
@@ -374,5 +375,5 @@ func (s *userAdminSvc) Delete(ctx context.Context, actor domain.ActorContext, au
 
 func (s *userAdminSvc) audit(ctx context.Context, tr domain.AuditContext, actor domain.ActorContext, entity, entityID, action string, metadata *string) {
 	id := actor.UserID
-	writeAudit(ctx, s.auditRepo, tr, &id, actor.Name, string(actor.Role), entity, entityID, action, metadata)
+	svcutil.WriteAudit(ctx, s.auditRepo, tr, &id, actor.Name, string(actor.Role), entity, entityID, action, metadata)
 }

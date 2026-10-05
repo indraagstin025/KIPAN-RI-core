@@ -9,6 +9,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 type NotificationService interface {
@@ -29,7 +30,7 @@ func NewNotificationService(cfg *config.Config, repo repository.NotificationRepo
 
 func (s *notificationService) ListMine(ctx context.Context, actor domain.ActorContext, limit int) ([]domain.Notification, error) {
 	if s.repo == nil {
-		return nil, unavailable("notifikasi")
+		return nil, svcutil.Unavailable("notifikasi")
 	}
 	if actor.UserID == "" {
 		return nil, domain.NewForbiddenError("Identitas pengguna tidak valid")
@@ -42,7 +43,7 @@ func (s *notificationService) MarkRead(ctx context.Context, id int64, actor doma
 		return domain.NewValidationError("ID notifikasi tidak valid")
 	}
 	if s.repo == nil {
-		return unavailable("notifikasi")
+		return svcutil.Unavailable("notifikasi")
 	}
 	if actor.UserID == "" {
 		return domain.NewForbiddenError("Identitas pengguna tidak valid")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // SKService mengelola dokumen Surat Keputusan (buat, daftar, detail, rantai
@@ -54,7 +55,7 @@ func (s *skSvc) CreateSK(ctx context.Context, in domain.SKCreateRequest, actor d
 	}
 
 	if s.skRepo == nil {
-		return nil, unavailable("surat keputusan")
+		return nil, svcutil.Unavailable("surat keputusan")
 	}
 	berakhir := in.TanggalBerakhir
 	// Semua SK disimpan sebagai DRAFT; publikasi final lewat aksi AJUKAN.
@@ -98,7 +99,7 @@ func (s *skSvc) resolveSKScope(ctx context.Context, in domain.SKCreateRequest, a
 		return domain.LevelProvinsi, actor.ProvinsiID, nil, nil
 	case domain.RoleAdminNasional, domain.RoleSuperAdmin:
 		if s.wilayahRepo == nil {
-			return "", nil, nil, unavailable("wilayah")
+			return "", nil, nil, svcutil.Unavailable("wilayah")
 		}
 		switch domain.TingkatWilayah(strings.ToUpper(strings.TrimSpace(in.Level))) {
 		case domain.LevelNasional:
@@ -138,7 +139,7 @@ func (s *skSvc) resolveSKScope(ctx context.Context, in domain.SKCreateRequest, a
 // ListSK mengembalikan daftar SK ter-scope (bounded, opsional with_total).
 func (s *skSvc) ListSK(ctx context.Context, actor domain.ActorContext, level, status, approval, search string, withTotal bool, page, limit int) ([]domain.SKListItem, int, error) {
 	if s.skRepo == nil {
-		return nil, 0, unavailable("surat keputusan")
+		return nil, 0, svcutil.Unavailable("surat keputusan")
 	}
 	prov, kab, err := actor.Scope()
 	if err != nil {
@@ -166,7 +167,7 @@ func (s *skSvc) GetSK(ctx context.Context, id int, actor domain.ActorContext) (*
 		return nil, domain.NewValidationError("ID SK tidak valid")
 	}
 	if s.skRepo == nil {
-		return nil, unavailable("surat keputusan")
+		return nil, svcutil.Unavailable("surat keputusan")
 	}
 	sk, err := s.skRepo.GetByID(ctx, id)
 	if err != nil {
@@ -188,7 +189,7 @@ func (s *skSvc) ApproveSK(ctx context.Context, id int, action domain.SKApprovalA
 		return domain.NewValidationError("ID SK tidak valid")
 	}
 	if s.skRepo == nil {
-		return unavailable("surat keputusan")
+		return svcutil.Unavailable("surat keputusan")
 	}
 	sk, err := s.skRepo.GetByID(ctx, id)
 	if err != nil {
@@ -282,7 +283,7 @@ func (s *skSvc) SetSKStatus(ctx context.Context, id int, status domain.SKStatus,
 		}
 	}
 	if s.skRepo == nil {
-		return unavailable("surat keputusan")
+		return svcutil.Unavailable("surat keputusan")
 	}
 	sk, err := s.skRepo.GetByID(ctx, id)
 	if err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -83,7 +84,7 @@ func otpKey(prefix, numberHash string) string {
 
 func (s *otpService) ready() error {
 	if s.rdb == nil || s.gateway == nil {
-		return unavailable("verifikasi OTP")
+		return svcutil.Unavailable("verifikasi OTP")
 	}
 	return nil
 }

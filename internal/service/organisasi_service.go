@@ -10,6 +10,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // OrganisasiService melayani profil organisasi.
@@ -31,7 +32,7 @@ func NewOrganisasiService(repo repository.OrganisasiRepository, auditRepo reposi
 // Get mengembalikan profil organisasi (publik).
 func (s *organisasiService) Get(ctx context.Context) (*domain.OrganisasiProfile, error) {
 	if s.repo == nil {
-		return nil, unavailable("profil organisasi")
+		return nil, svcutil.Unavailable("profil organisasi")
 	}
 	return s.repo.Get(ctx)
 }
@@ -42,7 +43,7 @@ func (s *organisasiService) Update(ctx context.Context, actor domain.ActorContex
 		return nil, domain.NewForbiddenError("Profil Organisasi hanya untuk Super Admin")
 	}
 	if s.repo == nil {
-		return nil, unavailable("profil organisasi")
+		return nil, svcutil.Unavailable("profil organisasi")
 	}
 	clean := func(v string, max int) (string, bool) {
 		v = strings.TrimSpace(v)
@@ -79,7 +80,7 @@ func (s *organisasiService) Update(ctx context.Context, actor domain.ActorContex
 		return nil, err
 	}
 	meta := `{"event":"organisasi_update"}`
-	writeAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &actor.UserID, actor.Name, string(actor.Role),
 		"organisasi_profile", "1", "UPDATE", &meta)
 	return out, nil
 }

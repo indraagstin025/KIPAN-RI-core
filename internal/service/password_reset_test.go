@@ -20,12 +20,6 @@ func TestPasswordResetFailClosedTanpaDependensi(t *testing.T) {
 	}
 }
 
-func TestPublicURLFrom(t *testing.T) {
-	if got := publicURLFrom(nil); got != "http://localhost:5173" {
-		t.Fatalf("fallback salah: %s", got)
-	}
-}
-
 func TestResetTokenKosongDitolak(t *testing.T) {
 	svc := NewPasswordResetService(nil, PasswordResetDeps{})
 	err := svc.ResetPassword(context.Background(), "   ", "PasswordBaru123!", domain.AuditContext{})

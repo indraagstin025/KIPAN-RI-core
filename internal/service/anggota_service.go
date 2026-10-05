@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/keyset"
 )
 
@@ -104,7 +105,7 @@ func normalizeNIA(nia string) (string, error) {
 
 func (s *anggotaService) ListAnggota(ctx context.Context, actor domain.ActorContext, status, search string, page, limit int) ([]domain.AnggotaListItem, int, error) {
 	if s.anggotaRepo == nil {
-		return nil, 0, unavailable("anggota")
+		return nil, 0, svcutil.Unavailable("anggota")
 	}
 	st := strings.TrimSpace(status)
 	if st != "" && !domain.AnggotaStatus(st).IsValid() {
@@ -166,7 +167,7 @@ func (s *anggotaService) attachRiwayat(ctx context.Context, items []domain.Anggo
 // ListAnggotaCursor varian keyset (tanpa COUNT + tanpa OFFSET besar).
 func (s *anggotaService) ListAnggotaCursor(ctx context.Context, actor domain.ActorContext, status, search, cursor string, limit int) ([]domain.AnggotaListItem, string, error) {
 	if s.listRepo == nil {
-		return nil, "", unavailable("anggota")
+		return nil, "", svcutil.Unavailable("anggota")
 	}
 	st := strings.TrimSpace(status)
 	if st != "" && !domain.AnggotaStatus(st).IsValid() {
@@ -215,7 +216,7 @@ func (s *anggotaService) GetAnggotaDetail(ctx context.Context, id int, actor dom
 		return nil, domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	item, err := s.anggotaRepo.GetByID(ctx, id)
 	if err != nil {
@@ -241,7 +242,7 @@ func (s *anggotaService) GetPublicAnggota(ctx context.Context, nia string) (*dom
 		return nil, err
 	}
 	if s.anggotaRepo == nil {
-		return nil, unavailable("anggota")
+		return nil, svcutil.Unavailable("anggota")
 	}
 	item, err := s.anggotaRepo.GetByNIA(ctx, code)
 	if err != nil {
@@ -272,10 +273,10 @@ func (s *anggotaService) ResetMemberPassword(ctx context.Context, anggotaID int,
 		return "", domain.NewValidationError("ID anggota tidak valid")
 	}
 	if s.anggotaRepo == nil {
-		return "", unavailable("anggota")
+		return "", svcutil.Unavailable("anggota")
 	}
 	if s.userRepo == nil {
-		return "", unavailable("akun user")
+		return "", svcutil.Unavailable("akun user")
 	}
 
 	member, err := s.anggotaRepo.GetByID(ctx, anggotaID)
@@ -335,7 +336,7 @@ func (s *anggotaService) ResetMemberPassword(ctx context.Context, anggotaID int,
 
 	actorID := actor.UserID
 	meta := `{"event":"member_password_reset","sessions_revoked":true,"email_queued":true}`
-	writeAudit(ctx, s.auditRepo, audit, &actorID, actor.Name, string(actor.Role),
+	svcutil.WriteAudit(ctx, s.auditRepo, audit, &actorID, actor.Name, string(actor.Role),
 		"anggota", strconv.Itoa(member.ID), "PASSWORD_RESET", &meta)
 	return "", nil
 }

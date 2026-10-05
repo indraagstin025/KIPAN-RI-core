@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
@@ -129,7 +130,7 @@ func (w *EmailWorker) ProcessOne(ctx context.Context, it domain.EmailOutbox) err
 			w.fail(ctx, it, "gagal menyimpan token set-password", false)
 			return err
 		}
-		link := publicURLFrom(w.cfg) + "/set-password?token=" + token
+		link := svcutil.PublicURLFrom(w.cfg) + "/set-password?token=" + token
 		nia := ""
 		if w.anggotaRepo != nil {
 			if member, err := w.anggotaRepo.GetByUserID(ctx, user.ID); err == nil && member != nil {
