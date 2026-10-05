@@ -3,16 +3,16 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/insight"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // DashboardHandler melayani ringkasan analitik admin.
 type DashboardHandler struct {
-	service service.DashboardService
+	service insight.DashboardService
 }
 
-func NewDashboardHandler(service service.DashboardService) *DashboardHandler {
+func NewDashboardHandler(service insight.DashboardService) *DashboardHandler {
 	return &DashboardHandler{service: service}
 }
 

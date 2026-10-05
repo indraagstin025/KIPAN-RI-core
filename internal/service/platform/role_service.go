@@ -1,4 +1,4 @@
-package service
+package platform
 
 // role_service.go — katalog read-only role & wewenang (TDD §3.3), sumber data
 // dari registry domain (capabilities.go). Tidak ada mutasi.

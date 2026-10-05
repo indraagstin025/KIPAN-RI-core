@@ -13,13 +13,14 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/infra"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/anggota"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/auth"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/insight"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kepengurusan"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/pendaftaran"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/platform"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/users"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/wilayah"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
@@ -114,11 +115,11 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	emailWorker := notify.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
 	outboxService := notify.NewOutboxService(emailOutboxRepo, emailWorker)
 	notifService := notify.NewNotificationService(cfg, notifRepo)
-	dashboardService := service.NewDashboardService(repository.NewDashboardRepository(db))
-	laporanService := service.NewLaporanService(cfg, repository.NewLaporanRepository(db))
-	auditService := service.NewAuditService(auditRepo)
-	roleService := service.NewRoleService()
-	organisasiService := service.NewOrganisasiService(repository.NewOrganisasiRepository(db), auditRepo)
+	dashboardService := insight.NewDashboardService(repository.NewDashboardRepository(db))
+	laporanService := insight.NewLaporanService(cfg, repository.NewLaporanRepository(db))
+	auditService := insight.NewAuditService(auditRepo)
+	roleService := platform.NewRoleService()
+	organisasiService := platform.NewOrganisasiService(repository.NewOrganisasiRepository(db), auditRepo)
 	backupService := dokumen.NewBackupService(cfg, repository.NewBackupRepository(db), storageService, auditRepo)
 	kepengurusanService := kepengurusan.NewKepengurusanService(cfg, kepengurusan.KepengurusanDeps{
 		JabatanRepo:  repository.NewJabatanRepository(db),

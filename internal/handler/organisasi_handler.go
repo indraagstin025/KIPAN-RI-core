@@ -4,17 +4,17 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/platform"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // OrganisasiHandler melayani profil organisasi (publik + admin).
 type OrganisasiHandler struct {
-	service service.OrganisasiService
+	service platform.OrganisasiService
 }
 
 // NewOrganisasiHandler membangun handler profil organisasi.
-func NewOrganisasiHandler(service service.OrganisasiService) *OrganisasiHandler {
+func NewOrganisasiHandler(service platform.OrganisasiService) *OrganisasiHandler {
 	return &OrganisasiHandler{service: service}
 }
 

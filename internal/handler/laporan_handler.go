@@ -3,17 +3,17 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/insight"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // LaporanHandler melayani laporan & statistik ter-scope (thin-handler).
 type LaporanHandler struct {
-	service service.LaporanService
+	service insight.LaporanService
 }
 
 // NewLaporanHandler membangun handler laporan.
-func NewLaporanHandler(service service.LaporanService) *LaporanHandler {
+func NewLaporanHandler(service insight.LaporanService) *LaporanHandler {
 	return &LaporanHandler{service: service}
 }
 

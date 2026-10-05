@@ -1,4 +1,4 @@
-package service
+package platform
 
 // organisasi_service.go — profil organisasi (TDD §2.1 halaman publik):
 // baca publik + sunting Super Admin. Konten dibersihkan dari karakter `<`/`>`

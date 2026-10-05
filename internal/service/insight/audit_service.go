@@ -1,4 +1,4 @@
-package service
+package insight
 
 // audit_service.go — penelusur jejak audit (TDD §7.2): daftar terfilter +
 // ekspor CSV. Hanya untuk Admin Nasional/Super (ditegakkan di route).

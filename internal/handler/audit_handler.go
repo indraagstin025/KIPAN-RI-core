@@ -3,17 +3,17 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/insight"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // AuditHandler melayani penelusur jejak audit (thin-handler).
 type AuditHandler struct {
-	service service.AuditService
+	service insight.AuditService
 }
 
 // NewAuditHandler membangun handler audit.
-func NewAuditHandler(service service.AuditService) *AuditHandler {
+func NewAuditHandler(service insight.AuditService) *AuditHandler {
 	return &AuditHandler{service: service}
 }
 
@@ -21,7 +21,7 @@ func NewAuditHandler(service service.AuditService) *AuditHandler {
 func (h *AuditHandler) List(c *fiber.Ctx) error {
 	page := c.QueryInt("page", 1)
 	limit := c.QueryInt("limit", 25)
-	f := service.ParseAuditFilter(
+	f := insight.ParseAuditFilter(
 		c.Query("aksi"), c.Query("entitas"), c.Query("aktor"), c.Query("dari"), c.Query("ke"),
 		page, limit, true)
 	items, total, err := h.service.List(c.Context(), f)
@@ -48,7 +48,7 @@ func (h *AuditHandler) List(c *fiber.Ctx) error {
 
 // Export mengunduh jejak audit terfilter sebagai CSV.
 func (h *AuditHandler) Export(c *fiber.Ctx) error {
-	f := service.ParseAuditFilter(
+	f := insight.ParseAuditFilter(
 		c.Query("aksi"), c.Query("entitas"), c.Query("aktor"), c.Query("dari"), c.Query("ke"),
 		1, 200, false)
 	data, err := h.service.ExportCSV(c.Context(), f)

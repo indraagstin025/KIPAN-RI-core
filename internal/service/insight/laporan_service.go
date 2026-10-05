@@ -1,4 +1,4 @@
-package service
+package insight
 
 // laporan_service.go — laporan & statistik ter-scope (TDD §6.8): ringkasan,
 // demografi, tren, distribusi wilayah, dan anomali NIA (NIK di-dekripsi hanya
