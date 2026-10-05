@@ -54,6 +54,20 @@ func NewKTAService(cfg *config.Config, deps KTADeps) KTAService {
 	return &ktaService{cfg: cfg, anggotaRepo: deps.AnggotaRepo, docStore: deps.DocStore, auditRepo: deps.AuditRepo}
 }
 
+// ktaBerlaku: e-KTA hanya berlaku selama anggota AKTIF/DEMISIONER.
+// MENINGGAL/NONAKTIF/DIBERHENTIKAN membuat KTA tidak berlaku
+// (matriks Tabel 23 untuk MENINGGAL; NONAKTIF/DIBERHENTIKAN keputusan produk).
+func ktaBerlaku(status domain.AnggotaStatus) bool {
+	switch status {
+	case domain.AnggotaStatusMeninggal,
+		domain.AnggotaStatusNonaktif,
+		domain.AnggotaStatusDiberhentikan:
+		return false
+	default:
+		return true
+	}
+}
+
 func (s *ktaService) verifyBaseURL() string {
 	if s.cfg != nil && strings.TrimSpace(s.cfg.App.KTAVerifyBaseURL) != "" {
 		return s.cfg.App.KTAVerifyBaseURL
@@ -117,6 +131,9 @@ func (s *ktaService) GetKTADocumentURL(ctx context.Context, anggotaID int, actor
 	if err != nil {
 		return "", err
 	}
+	if !ktaBerlaku(member.Status) {
+		return "", domain.NewNotFoundError("Dokumen KTA tidak berlaku")
+	}
 	if !actor.CanAccessWilayah(member.ProvinsiID, member.KabupatenID) {
 		return "", domain.NewForbiddenError("Anggota di luar wilayah kerja Anda")
 	}
@@ -163,6 +180,9 @@ func (s *ktaService) GetMyKTADocumentURL(ctx context.Context, userID string, aud
 	member, err := s.anggotaRepo.GetByUserID(ctx, uid)
 	if err != nil {
 		return "", err
+	}
+	if !ktaBerlaku(member.Status) {
+		return "", domain.NewNotFoundError("Dokumen KTA tidak berlaku")
 	}
 	if member.KTAPDFKey == nil || strings.TrimSpace(*member.KTAPDFKey) == "" {
 		return "", domain.NewNotFoundError("Dokumen KTA")

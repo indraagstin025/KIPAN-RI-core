@@ -435,6 +435,20 @@ func (s *verificationSvc) VerifyKTA(ctx context.Context, nia, sig string) (*doma
 		return &domain.KTAVerificationResponse{NIA: member.NIA, Valid: false}, nil
 	}
 	tgl := member.TanggalAngkat
+	// Matriks Tabel 23 (+keputusan produk): KTA anggota MENINGGAL/NONAKTIF/
+	// DIBERHENTIKAN dinyatakan tidak berlaku, tetap berdetail sebagai penanda.
+	switch member.Status {
+	case domain.AnggotaStatusMeninggal,
+		domain.AnggotaStatusNonaktif,
+		domain.AnggotaStatusDiberhentikan:
+		return &domain.KTAVerificationResponse{
+			NIA:           member.NIA,
+			Valid:         false,
+			NamaLengkap:   member.NamaLengkap,
+			Status:        string(member.Status),
+			TanggalAngkat: &tgl,
+		}, nil
+	}
 	return &domain.KTAVerificationResponse{
 		NIA:           member.NIA,
 		Valid:         true,

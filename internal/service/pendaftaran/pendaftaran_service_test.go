@@ -287,6 +287,43 @@ func TestVerifyKTAAcceptsActiveKey(t *testing.T) {
 	}
 }
 
+// KTA anggota MENINGGAL/NONAKTIF/DIBERHENTIKAN dinyatakan tidak berlaku
+// walau tanda tangan valid (tetap berdetail sebagai penanda).
+func TestVerifyKTATolakStatusTakBerlaku(t *testing.T) {
+	const keyActive = "aa00112233445566778899aabbccddeeffaa00112233445566778899aabbccdd"
+	for _, st := range []domain.AnggotaStatus{
+		domain.AnggotaStatusMeninggal,
+		domain.AnggotaStatusNonaktif,
+		domain.AnggotaStatusDiberhentikan,
+	} {
+		member := &domain.Anggota{
+			ID:            7,
+			NIA:           "KIPAN-IND-3273-2026-000007",
+			NamaLengkap:   "Uji Status",
+			Status:        st,
+			TanggalAngkat: time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC),
+		}
+		sig, err := crypto.KTASignature(member.NIA, "2026-09-27", member.ID, keyActive)
+		if err != nil {
+			t.Fatalf("KTASignature gagal: %v", err)
+		}
+		cfg := &config.Config{}
+		cfg.Crypto.KTASigningKey = keyActive
+		svc := NewVerificationService(cfg, VerificationDeps{AnggotaRepo: &testutil.FakeAnggotaRepo{ByNIA: map[string]*domain.Anggota{member.NIA: member}}})
+
+		res, err := svc.VerifyKTA(context.Background(), member.NIA, sig)
+		if err != nil {
+			t.Fatalf("VerifyKTA gagal: %v", err)
+		}
+		if res.Valid {
+			t.Fatalf("status %s: KTA harus tidak valid", st)
+		}
+		if res.NamaLengkap == "" {
+			t.Fatalf("status %s: penanda detail harus tetap ada", st)
+		}
+	}
+}
+
 func TestVerifyKTAAcceptsPreviousKeyAfterRotation(t *testing.T) {
 	const keyOld = "bb00112233445566778899aabbccddeeffbb00112233445566778899aabbccdd"
 	const keyNew = "cc00112233445566778899aabbccddeeffcc00112233445566778899aabbccdd"
