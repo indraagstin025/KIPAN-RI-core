@@ -3,16 +3,16 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/wilayah"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // WilayahAdminHandler melayani master wilayah (Super/Nasional).
 type WilayahAdminHandler struct {
-	service service.WilayahAdminService
+	service wilayah.WilayahAdminService
 }
 
-func NewWilayahAdminHandler(service service.WilayahAdminService) *WilayahAdminHandler {
+func NewWilayahAdminHandler(service wilayah.WilayahAdminService) *WilayahAdminHandler {
 	return &WilayahAdminHandler{service: service}
 }
 

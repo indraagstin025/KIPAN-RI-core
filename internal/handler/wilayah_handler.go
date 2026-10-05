@@ -5,16 +5,16 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/wilayah"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // WilayahHandler melayani daftar master wilayah (publik, read-only).
 type WilayahHandler struct {
-	service service.WilayahService
+	service wilayah.WilayahService
 }
 
-func NewWilayahHandler(service service.WilayahService) *WilayahHandler {
+func NewWilayahHandler(service wilayah.WilayahService) *WilayahHandler {
 	return &WilayahHandler{service: service}
 }
 
