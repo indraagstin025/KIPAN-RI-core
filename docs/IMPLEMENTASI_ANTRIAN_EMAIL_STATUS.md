@@ -11,7 +11,7 @@
 
 Saat ini pengiriman email status pendaftaran dilakukan **segera dan fire-and-forget** di dalam aksi approval:
 
-- `verification_service.go` → `sendStatusEmail` memakai `go func()` (`internal/service/verification_service.go:173`).
+- `verification_service.go` → `sendStatusEmail` memakai `go func()` (`internal/service/pendaftaran/verification_service.go:173`).
 - Gagal SMTP hanya di-`log.Warn`, email **hilang** (tanpa retry).
 - Proses restart tepat setelah `SETUJUI` → email **hilang**.
 - Tidak ada jejak terpusat mana yang terkirim / gagal / tertunda.
@@ -240,7 +240,7 @@ Wajib role admin (guard role ≥ `ADMIN_KABUPATEN`; list difilter wilayah bila r
 - `anggota_handler.go:87-103` (`ResetPassword`) → ubah jadi enqueue `SET_PASSWORD` ke outbox alih-alih mengembalikan password; respons cukup `{"success": true}`.
 - `verification_service.go` → `ApprovalResult.OneTimePassword` dihapus; `ensureMemberAccount` tidak lagi mengembalikan plaintext (membuang password yang digenerate).
 
-### 5.7 Template email — `internal/service/mail_templates.go`
+### 5.7 Template email — `internal/service/mail/mail_templates.go`
 
 Tambahkan:
 - `AccountSetupEmail(nama, link, publicURL string) EmailContent` — untuk `SET_PASSWORD`.
@@ -371,7 +371,7 @@ Dibangun sesuai keputusan: **Opsi A** (tautan set-password), worker otomatis + t
 |---|---|
 | **P1** | Antrean `/admin/pendaftaran` **mengecualikan DISETUJUI** (backend `queueWhere` + tab FE dihapus) |
 | **P2** | Migrasi **`000023_email_outbox`** + `domain.EmailOutbox` + `repository.EmailOutboxRepository` + test |
-| **P3** | **Worker** `internal/service/email_worker.go` + config (`EMAIL_WORKER_*`, `SETUP_TOKEN_TTL`) + template `AccountSetupEmail`/`AccountLinkedEmail` + wiring di `routes.go` |
+| **P3** | **Worker** `internal/service/notify/email_worker.go` + config (`EMAIL_WORKER_*`, `SETUP_TOKEN_TTL`) + template `AccountSetupEmail`/`AccountLinkedEmail` + wiring di `routes.go` |
 | **P4** | Enqueue di `verification_service` (SETUJUI → `SET_PASSWORD`/`AKUN_TERHUBUNG`; PERBAIKAN/DITOLAK → `STATUS_*`); **hapus** `one_time_password` dari respons/UI; reset password anggota → enqueue |
 | **P5** | `POST /auth/set-password` (prefix `pwsetup:`) + admin `GET /admin/email-outbox`, `POST /admin/email-outbox/:id/retry`, `/retry-pending`, `/retry` (batch) |
 | **P6** | FE: hapus tampilan password; halaman `/set-password`; menu **Antrian Email** (tabel + filter + pilih-banyak kirim ulang + Kirim Semua Pending) |

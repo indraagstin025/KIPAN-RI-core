@@ -134,10 +134,10 @@ Alur service (semua validasi server-side):
 |---|---|
 | `internal/domain/kepengurusan.go` | `UpdateJabatanRequest { JabatanID int }` |
 | `internal/repository/kepengurusan_repository.go` | `DeactivatePriorActiveSKs(ctx, sk)` (transaksional); `UpdateJabatan(ctx, pengurusID, jabatanID)` |
-| `internal/service/kepengurusan_service.go` | `CreateSK` multi-level (G2) + trigger Single Active (G1) saat final langsung; `ApproveSK` `SAHKAN` → finalisasi + Single Active (transaksional); `UpdatePengurusJabatan` (G6); sesuaikan otorisasi add/remove ke level SK (B1) + lock final (B3) |
+| `internal/service/kepengurusan/kepengurusan_service.go` | `CreateSK` multi-level (G2) + trigger Single Active (G1) saat final langsung; `ApproveSK` `SAHKAN` → finalisasi + Single Active (transaksional); `UpdatePengurusJabatan` (G6); sesuaikan otorisasi add/remove ke level SK (B1) + lock final (B3) |
 | `internal/handler/kepengurusan_handler.go` | Handler `UpdatePengurusJabatan` |
 | `internal/handler/routes.go` | `PATCH /admin/pengurus/:id/jabatan` |
-| `internal/service/kepengurusan_service_test.go` | Tes baru (lihat §7) |
+| `internal/service/kepengurusan/kepengurusan_service_test.go` | Tes baru (lihat §7) |
 
 Route yang ada tidak berubah selain penambahan di atas (`POST /admin/sk` tetap; gate role sudah 4 admin).
 

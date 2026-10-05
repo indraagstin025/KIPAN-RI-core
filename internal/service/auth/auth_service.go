@@ -14,7 +14,6 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
@@ -237,7 +236,7 @@ func (s *authService) blacklistAccessToken(ctx context.Context, rawAccessToken s
 		return
 	}
 
-	claims := &middleware.JWTClaims{}
+	claims := &domain.JWTClaims{}
 	_, err := jwt.ParseWithClaims(rawAccessToken, claims,
 		func(t *jwt.Token) (interface{}, error) {
 			return []byte(s.cfg.Auth.AccessTokenSecret), nil
@@ -435,7 +434,7 @@ func (s *authService) generateAccessToken(user *domain.User) (string, time.Durat
 
 	jti := uuid.NewString()
 
-	claims := middleware.JWTClaims{
+	claims := domain.JWTClaims{
 		UserID:      user.ID,
 		Email:       user.Email,
 		Name:        user.Name,

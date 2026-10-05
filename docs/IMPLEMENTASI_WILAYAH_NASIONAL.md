@@ -90,7 +90,7 @@ Tabel `wilayah_provinsi`/`wilayah_kabupaten` terisi penuh dan kanonis, tanpa mer
 Form pendaftaran mendapat bantuan dropdown kecamatan (fail-open), tanpa tabel baru dan tanpa mengubah kontrak submit (tetap string nama).
 
 ### 5.2 Lingkup file
-- Backend: `internal/service/wilayah_service.go` (+`ListKecamatan`), `internal/handler/wilayah_handler.go` (+`ListKecamatan`), registrasi route di `routes.go` (grup `wil_pub`), config timeout bila perlu.
+- Backend: `internal/service/wilayah/wilayah_service.go` (+`ListKecamatan`), `internal/handler/wilayah_handler.go` (+`ListKecamatan`), registrasi route di `routes.go` (grup `wil_pub`), config timeout bila perlu.
 - Frontend: `pendaftaran/types.ts` (+`WilayahKecamatan`), `pendaftaran/api/wilayahService.ts` (+`listKecamatan()`), `pendaftaran/hooks/useWilayah.ts` (+state kecamatan), `pendaftaran/pages/DaftarPage.tsx` (`f-kec` teks → dropdown + fallback teks).
 
 ### 5.3 Spesifikasi endpoint (backend)
@@ -153,7 +153,7 @@ Prosedur tambah entri: tambahkan baris + unit test (`TestKoreksiNamaUpstream`) +
 Detail superadmin menampilkan **Provinsi + Kabupaten/Kota** sesuai yang dipilih pendaftar (saat ini tidak tampil sama sekali); blok Alamat tidak diubah.
 
 ### 6.2 Lingkup file
-- Backend: `internal/service/pendaftaran_service.go` (`GetDetail` + DTO `PendaftaranAdminDetail{ Pendaftaran, ProvinsiNama, KabupatenNama }` via `WilayahRepo.GetNames` — sudah di-inject).
+- Backend: `internal/service/pendaftaran/pendaftaran_service.go` (`GetDetail` + DTO `PendaftaranAdminDetail{ Pendaftaran, ProvinsiNama, KabupatenNama }` via `WilayahRepo.GetNames` — sudah di-inject).
 - Frontend: `verification/types.ts` (+`provinsi_nama?`, `kabupaten_nama?`), `verification/pages/DetailPage.tsx` (+2 `Row` di bawah Alamat).
 
 ### 6.3 Testing

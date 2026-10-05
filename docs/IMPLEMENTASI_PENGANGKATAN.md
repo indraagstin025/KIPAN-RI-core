@@ -10,7 +10,7 @@
 > - Backend: `domain/kepengurusan.go`, `repository/kepengurusan_repository.go`,
 >   `service/kepengurusan_service.go`, `handler/kepengurusan_handler.go`, rute `/admin/sk|pengurus|jabatan`.
 > - Frontend: fitur `kepengurusan` (SK list/detail, Pengurus, Jabatan) + navigasi admin.
-> - Test: `internal/service/kepengurusan_service_test.go` (rangkaian peran & validasi);
+> - Test: `internal/service/kepengurusan/kepengurusan_service_test.go` (rangkaian peran & validasi);
 >   verifikasi E2E KAB→PROV→NAS + pengangkatan (flip `tipe` + cabut sesi) di dev.
 > - Endpoint ringkas terdokumentasi di `AUTH_GUIDE.md` §8.
 
@@ -59,7 +59,7 @@ Tugas Admin Provinsi selengkapnya (acuan proyek lama):
 | Berita | ✅ | ✅ ajukan konten prov (detail di requirement CMS) |
 | User/Role/Database/Wilayah/Jabatan/Program/Statistik | ❌ | ❌ (Super eksklusif) |
 
-**Implikasi teknis** (dikerjakan sebelum/seiring modul SK agar matriks peran koheren): `ProcessApproval` (`internal/service/verification_service.go`) saat ini hanya cek wilayah, sehingga Admin Provinsi lolos ikut menyetujui. Tambahkan **satu penolakan peran**: bila `actor.Role == ADMIN_PROVINSI` dan aksi ∈ {verifikasi, perbaikan, tolak, setujui} → 422 ("khusus Kab/Kota"). Melihat (list/detail) tidak diubah. Sertakan unit test (tolak aksi provinsi, tetap lolos lihat + Kab/Kota/Nas/Super tidak terpengaruh).
+**Implikasi teknis** (dikerjakan sebelum/seiring modul SK agar matriks peran koheren): `ProcessApproval` (`internal/service/pendaftaran/verification_service.go`) saat ini hanya cek wilayah, sehingga Admin Provinsi lolos ikut menyetujui. Tambahkan **satu penolakan peran**: bila `actor.Role == ADMIN_PROVINSI` dan aksi ∈ {verifikasi, perbaikan, tolak, setujui} → 422 ("khusus Kab/Kota"). Melihat (list/detail) tidak diubah. Sertakan unit test (tolak aksi provinsi, tetap lolos lihat + Kab/Kota/Nas/Super tidak terpengaruh).
 
 ---
 
