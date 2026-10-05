@@ -1,4 +1,4 @@
-package service
+package anggota
 
 // anggota_timeline.go — timeline riwayat & jejak audit per anggota (detail
 // dialog bergaya tab): gabungan perjalanan pendaftaran + kepengurusan.

@@ -12,8 +12,6 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
 
-const revealTestKey = "aa00112233445566778899aabbccddeeffaa00112233445566778899aabbccdd"
-
 // fakePendaftaranRepo melayani GetByID canned untuk uji RevealNIK.
 type fakePendaftaranRepo struct {
 	item *domain.Pendaftaran
@@ -72,7 +70,7 @@ func (f *fakePendaftaranRepo) ExpireStaleDrafts(context.Context, int) error { re
 var _ repository.PendaftaranRepository = (*fakePendaftaranRepo)(nil)
 
 func TestRevealNIKSuccess(t *testing.T) {
-	enc, err := crypto.EncryptAESGCM("3201010101010001", revealTestKey)
+	enc, err := crypto.EncryptAESGCM("3201010101010001", testutil.RevealTestKey)
 	if err != nil {
 		t.Fatalf("enkripsi uji gagal: %v", err)
 	}
@@ -82,7 +80,7 @@ func TestRevealNIKSuccess(t *testing.T) {
 		Status: domain.PendaftaranStatusDraft,
 	}}
 	cfg := &config.Config{}
-	cfg.Crypto.AESMasterKey = revealTestKey
+	cfg.Crypto.AESMasterKey = testutil.RevealTestKey
 	svc := NewVerificationService(cfg, VerificationDeps{Repo: repo})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &kab}
 
@@ -103,7 +101,7 @@ func TestRevealNIKLintasWilayahDitolak(t *testing.T) {
 		Status: domain.PendaftaranStatusDraft,
 	}}
 	cfg := &config.Config{}
-	cfg.Crypto.AESMasterKey = revealTestKey
+	cfg.Crypto.AESMasterKey = testutil.RevealTestKey
 	svc := NewVerificationService(cfg, VerificationDeps{Repo: repo})
 	actor := domain.ActorContext{UserID: "u1", Role: domain.RoleAdminKabupaten, ProvinsiID: &prov, KabupatenID: &otherKab}
 

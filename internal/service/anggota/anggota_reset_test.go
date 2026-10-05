@@ -1,4 +1,4 @@
-package service
+package anggota
 
 // Uji Batch 1 — T1: reset password akun USER anggota.
 

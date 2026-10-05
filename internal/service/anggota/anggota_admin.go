@@ -1,4 +1,4 @@
-package service
+package anggota
 
 // anggota_admin.go — CRUD anggota langsung oleh admin (TDD §6.5): tambah,
 // sunting, ubah status (soft), dan ekspor CSV. NIK tetap terenkripsi; NIA
@@ -26,11 +26,11 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		return nil, svcutil.Unavailable("anggota")
 	}
 	name := strings.TrimSpace(in.NamaLengkap)
-	if len([]rune(name)) < 3 || len([]rune(name)) > svcutil.MaxNamaLen || containsAngleBracket(name) {
+	if len([]rune(name)) < 3 || len([]rune(name)) > svcutil.MaxNamaLen || svcutil.ContainsAngleBracket(name) {
 		return nil, domain.NewValidationError("Nama lengkap wajib 3-150 karakter & tanpa karakter < atau >")
 	}
 	nik := strings.TrimSpace(in.NIK)
-	if !svcutil.NipPattern.MatchString(nik) || !isPlausibleNIKDate(nik) {
+	if !svcutil.NipPattern.MatchString(nik) || !svcutil.IsPlausibleNIKDate(nik) {
 		return nil, domain.NewValidationError("NIK harus 16 digit dengan segmen tanggal lahir valid")
 	}
 	dob, err := time.Parse(time.RFC3339, strings.TrimSpace(in.TanggalLahir))
@@ -38,7 +38,7 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		return nil, domain.NewValidationError("Format tanggal lahir tidak valid")
 	}
 	tempat := strings.TrimSpace(in.TempatLahir)
-	if tempat == "" || len([]rune(tempat)) > svcutil.MaxTempatLahirLen || containsAngleBracket(tempat) {
+	if tempat == "" || len([]rune(tempat)) > svcutil.MaxTempatLahirLen || svcutil.ContainsAngleBracket(tempat) {
 		return nil, domain.NewValidationError("Tempat lahir wajib diisi (maks 100 karakter)")
 	}
 	jk := strings.ToUpper(strings.TrimSpace(in.JenisKelamin))
@@ -61,7 +61,7 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		}
 	}
 	alamat := strings.TrimSpace(in.Alamat)
-	if len([]rune(alamat)) < 5 || len([]rune(alamat)) > svcutil.MaxAlamatLen || containsAngleBracket(alamat) {
+	if len([]rune(alamat)) < 5 || len([]rune(alamat)) > svcutil.MaxAlamatLen || svcutil.ContainsAngleBracket(alamat) {
 		return nil, domain.NewValidationError("Alamat wajib 5-2000 karakter & tanpa karakter < atau >")
 	}
 	email := strings.TrimSpace(in.Email)
@@ -81,11 +81,11 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 	}
 
 	// NIK: blind index (cek duplikat) + enkripsi (simpan).
-	bKey, err := blindIndexKey(s.cfg)
+	bKey, err := svcutil.BlindIndexKey(s.cfg)
 	if err != nil {
 		return nil, err
 	}
-	aKey, err := aesKey(s.cfg)
+	aKey, err := svcutil.AesKey(s.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -170,14 +170,14 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 
 	if in.NamaLengkap != nil {
 		v := strings.TrimSpace(*in.NamaLengkap)
-		if len([]rune(v)) < 3 || len([]rune(v)) > svcutil.MaxNamaLen || containsAngleBracket(v) {
+		if len([]rune(v)) < 3 || len([]rune(v)) > svcutil.MaxNamaLen || svcutil.ContainsAngleBracket(v) {
 			return nil, domain.NewValidationError("Nama lengkap wajib 3-150 karakter & tanpa karakter < atau >")
 		}
 		item.NamaLengkap = v
 	}
 	if in.TempatLahir != nil {
 		v := strings.TrimSpace(*in.TempatLahir)
-		if v == "" || len([]rune(v)) > svcutil.MaxTempatLahirLen || containsAngleBracket(v) {
+		if v == "" || len([]rune(v)) > svcutil.MaxTempatLahirLen || svcutil.ContainsAngleBracket(v) {
 			return nil, domain.NewValidationError("Tempat lahir wajib diisi (maks 100 karakter)")
 		}
 		item.TempatLahir = v
@@ -207,7 +207,7 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 	}
 	if in.Alamat != nil {
 		v := strings.TrimSpace(*in.Alamat)
-		if len([]rune(v)) < 5 || len([]rune(v)) > svcutil.MaxAlamatLen || containsAngleBracket(v) {
+		if len([]rune(v)) < 5 || len([]rune(v)) > svcutil.MaxAlamatLen || svcutil.ContainsAngleBracket(v) {
 			return nil, domain.NewValidationError("Alamat wajib 5-2000 karakter & tanpa karakter < atau >")
 		}
 		item.Alamat = v

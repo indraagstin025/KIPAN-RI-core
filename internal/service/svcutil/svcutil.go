@@ -225,9 +225,49 @@ func DerefInt(p *int) int {
 	return *p
 }
 
+// MaxInt4 = nilai maksimum tipe integer Postgres; dipakai sebagai sentinel id
+// saat keyset pagination tanpa cursor agar cocok dengan tipe kolom id.
+const MaxInt4 = 2147483647
+
 // SetupKey menyimpan token set-password di Redis berdasarkan hash (tanpa
 // token mentah). Dipakai bersama worker email (penerbit) dan reset service
 // (verifikator) agar kunci konsisten.
 func SetupKey(rawToken string) string {
 	return "pwsetup:" + crypto.HashToken(rawToken)
+}
+
+// ContainsAngleBracket menolak < > pada field plain-text (anti stored-XSS).
+func ContainsAngleBracket(s string) bool {
+	return strings.ContainsAny(s, "<>")
+}
+
+// IsPlausibleNIKDate memeriksa kewarasan segmen tanggal NIK (digit 7-12).
+func IsPlausibleNIKDate(nik string) bool {
+	if len(nik) != 16 {
+		return false
+	}
+	dd := int(nik[6]-'0')*10 + int(nik[7]-'0')
+	mm := int(nik[8]-'0')*10 + int(nik[9]-'0')
+	if mm < 1 || mm > 12 {
+		return false
+	}
+	if (dd >= 1 && dd <= 31) || (dd >= 41 && dd <= 71) {
+		return true
+	}
+	return false
+}
+
+// AesKey/BlindIndexKey membaca kunci kripto dari config (R3: fungsi paket).
+func AesKey(cfg *config.Config) (string, error) {
+	if cfg == nil || strings.TrimSpace(cfg.Crypto.AESMasterKey) == "" {
+		return "", domain.NewValidationError("AES_MASTER_KEY belum dikonfigurasi")
+	}
+	return cfg.Crypto.AESMasterKey, nil
+}
+
+func BlindIndexKey(cfg *config.Config) (string, error) {
+	if cfg == nil || strings.TrimSpace(cfg.Crypto.BlindIndexKey) == "" {
+		return "", domain.NewValidationError("BLIND_INDEX_KEY belum dikonfigurasi")
+	}
+	return cfg.Crypto.BlindIndexKey, nil
 }

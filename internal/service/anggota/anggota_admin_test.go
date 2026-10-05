@@ -1,4 +1,4 @@
-package service
+package anggota
 
 // Uji B3: tambah/sunting/status anggota langsung oleh admin.
 
@@ -14,8 +14,8 @@ import (
 
 func adminCfg() *config.Config {
 	cfg := &config.Config{}
-	cfg.Crypto.AESMasterKey = revealTestKey
-	cfg.Crypto.BlindIndexKey = revealTestKey
+	cfg.Crypto.AESMasterKey = testutil.RevealTestKey
+	cfg.Crypto.BlindIndexKey = testutil.RevealTestKey
 	return cfg
 }
 
@@ -62,7 +62,7 @@ func TestCreateAnggotaScopeDitolak(t *testing.T) {
 	req := validCreateReq()
 	req.ProvinsiID = 99
 	req.KabupatenID = 9999
-	kab := domain.ActorContext{UserID: "u-kab", Name: "Kab", Role: domain.RoleAdminKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273)}
+	kab := domain.ActorContext{UserID: "u-kab", Name: "Kab", Role: domain.RoleAdminKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273)}
 	if _, err := svc.CreateAnggota(context.Background(), req, kab, domain.AuditContext{}); err == nil {
 		t.Fatal("wilayah di luar kewenangan harus ditolak")
 	}

@@ -6,17 +6,17 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/anggota"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // AnggotaHandler melayani daftar kader untuk admin dan cek publik minimal
 // (thin-handler: parse request, panggil service, format response).
 type AnggotaHandler struct {
-	service service.AnggotaService
+	service anggota.AnggotaService
 }
 
-func NewAnggotaHandler(service service.AnggotaService) *AnggotaHandler {
+func NewAnggotaHandler(service anggota.AnggotaService) *AnggotaHandler {
 	return &AnggotaHandler{service: service}
 }
 

@@ -145,7 +145,7 @@ func checkPersyaratan(items []string) error {
 		if t == "" || len([]rune(t)) > maxBebasLen {
 			return domain.NewValidationError("Item persyaratan wajib 1-100 karakter")
 		}
-		if containsAngleBracket(t) {
+		if svcutil.ContainsAngleBracket(t) {
 			return domain.NewValidationError("Item persyaratan tidak boleh mengandung karakter < atau >")
 		}
 	}
@@ -177,27 +177,6 @@ func normalizeTipePendaftaran(raw string) (domain.TipePendaftaran, error) {
 		return "", domain.NewValidationError("Tipe pendaftaran harus KADER atau PENGURUS")
 	}
 	return t, nil
-}
-
-// containsAngleBracket menolak < > pada field plain-text (anti stored-XSS).
-func containsAngleBracket(s string) bool {
-	return strings.ContainsAny(s, "<>")
-}
-
-// isPlausibleNIKDate memeriksa kewarasan segmen tanggal NIK (digit 7-12).
-func isPlausibleNIKDate(nik string) bool {
-	if len(nik) != 16 {
-		return false
-	}
-	dd := int(nik[6]-'0')*10 + int(nik[7]-'0')
-	mm := int(nik[8]-'0')*10 + int(nik[9]-'0')
-	if mm < 1 || mm > 12 {
-		return false
-	}
-	if (dd >= 1 && dd <= 31) || (dd >= 41 && dd <= 71) {
-		return true
-	}
-	return false
 }
 
 // checkPendaftarAge menolak tanggal masa depan dan umur di luar 16-30 tahun.
@@ -345,17 +324,4 @@ func (b *pendaftaranBase) auditEvent(
 	svcutil.WriteAudit(ctx, b.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
 }
 
-// aesKey/blindIndexKey membaca kunci kripto dari config (R3: fungsi paket).
-func aesKey(cfg *config.Config) (string, error) {
-	if cfg == nil || strings.TrimSpace(cfg.Crypto.AESMasterKey) == "" {
-		return "", domain.NewValidationError("AES_MASTER_KEY belum dikonfigurasi")
-	}
-	return cfg.Crypto.AESMasterKey, nil
-}
 
-func blindIndexKey(cfg *config.Config) (string, error) {
-	if cfg == nil || strings.TrimSpace(cfg.Crypto.BlindIndexKey) == "" {
-		return "", domain.NewValidationError("BLIND_INDEX_KEY belum dikonfigurasi")
-	}
-	return cfg.Crypto.BlindIndexKey, nil
-}

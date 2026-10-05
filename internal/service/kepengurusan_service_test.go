@@ -143,7 +143,6 @@ func kepSvcW(sk repository.SKRepository, jab repository.JabatanRepository, w rep
 	return NewKepengurusanService(nil, KepengurusanDeps{SKRepo: sk, JabatanRepo: jab, WilayahRepo: w})
 }
 
-func intPtr(i int) *int   { return &i }
 func mustDate() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
 func mustEnd() time.Time  { return time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC) }
 func newSKReq(level string, prov, kab *int) domain.SKCreateRequest {
@@ -256,7 +255,7 @@ func TestApproveSKAjukan(t *testing.T) {
 	ctx := context.Background()
 
 	// Kabupaten ajukan SK Kabupaten -> MENUNGGU_PROVINSI.
-	kabSK := &domain.SuratKeputusan{ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDraft}
+	kabSK := &domain.SuratKeputusan{ID: 1, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273), Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDraft}
 	repo := &fakeSKRepo{sk: kabSK}
 	if err := kepSvc(repo, &fakeJabatanRepo{}).ApproveSK(ctx, 1, domain.SKActionAjukan, "", testutil.KabActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("ajukan kabupaten gagal: %v", err)
@@ -266,7 +265,7 @@ func TestApproveSKAjukan(t *testing.T) {
 	}
 
 	// Provinsi ajukan SK Provinsi -> MENUNGGU_NASIONAL.
-	provSK := &domain.SuratKeputusan{ID: 2, Level: domain.LevelProvinsi, ProvinsiID: intPtr(32), Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDraft}
+	provSK := &domain.SuratKeputusan{ID: 2, Level: domain.LevelProvinsi, ProvinsiID: testutil.IntPtr(32), Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDraft}
 	repoP := &fakeSKRepo{sk: provSK}
 	if err := kepSvc(repoP, &fakeJabatanRepo{}).ApproveSK(ctx, 2, domain.SKActionAjukan, "", testutil.ProvActor(), domain.AuditContext{}); err != nil {
 		t.Fatalf("ajukan provinsi gagal: %v", err)
@@ -286,21 +285,21 @@ func TestApproveSKAjukan(t *testing.T) {
 	}
 
 	// Provinsi TIDAK boleh ajukan SK Kabupaten.
-	repoX := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 4, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), ApprovalStatus: domain.SKApprovalStatusDraft}}
+	repoX := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 4, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273), ApprovalStatus: domain.SKApprovalStatusDraft}}
 	if err := kepSvc(repoX, &fakeJabatanRepo{}).ApproveSK(ctx, 4, domain.SKActionAjukan, "", testutil.ProvActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("Provinsi tidak boleh ajukan SK Kabupaten")
 	}
 
 	// Ajukan saat status bukan DRAFT -> konflik.
-	repoY := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 5, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi}}
+	repoY := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 5, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273), ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi}}
 	if err := kepSvc(repoY, &fakeJabatanRepo{}).ApproveSK(ctx, 5, domain.SKActionAjukan, "", testutil.KabActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("ajukan saat status bukan DRAFT seharusnya ditolak")
 	}
 }
 
 func TestCanManageSKPerLevel(t *testing.T) {
-	kabSK := &domain.SuratKeputusan{Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273)}
-	provSK := &domain.SuratKeputusan{Level: domain.LevelProvinsi, ProvinsiID: intPtr(32)}
+	kabSK := &domain.SuratKeputusan{Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273)}
+	provSK := &domain.SuratKeputusan{Level: domain.LevelProvinsi, ProvinsiID: testutil.IntPtr(32)}
 	nasSK := &domain.SuratKeputusan{Level: domain.LevelNasional}
 
 	if !canManageSK(testutil.KabActor(), kabSK) {
@@ -330,7 +329,7 @@ func TestCanManageSKPerLevel(t *testing.T) {
 func TestAddPengurusOtorisasi(t *testing.T) {
 	ctx := context.Background()
 	sk := &domain.SuratKeputusan{
-		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273),
 		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi, FileSKKey: "uploads/sk/a.pdf",
 	}
 	in := domain.AddPengurusRequest{AnggotaID: 1, JabatanID: 1, Konfirmasi: true}
@@ -348,14 +347,14 @@ func TestApproveSKRantaiPeran(t *testing.T) {
 	ctx := context.Background()
 
 	// TERUSKAN oleh Nasional ditolak (harus Provinsi wilayah SK).
-	repo := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 1, ProvinsiID: intPtr(32), ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi}}
+	repo := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 1, ProvinsiID: testutil.IntPtr(32), ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi}}
 	svc := kepSvc(repo, &fakeJabatanRepo{})
 	if err := svc.ApproveSK(ctx, 1, domain.SKActionTeruskan, "", testutil.NasActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("TERUSKAN oleh Nasional seharusnya ditolak")
 	}
 
 	// SAHKAN oleh Provinsi ditolak (harus Nasional/Super).
-	repo2 := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 1, ProvinsiID: intPtr(32), ApprovalStatus: domain.SKApprovalStatusMenungguNasional}}
+	repo2 := &fakeSKRepo{sk: &domain.SuratKeputusan{ID: 1, ProvinsiID: testutil.IntPtr(32), ApprovalStatus: domain.SKApprovalStatusMenungguNasional}}
 	svc2 := kepSvc(repo2, &fakeJabatanRepo{})
 	if err := svc2.ApproveSK(ctx, 1, domain.SKActionSahkan, "", testutil.ProvActor(), domain.AuditContext{}); err == nil {
 		t.Fatal("SAHKAN oleh Provinsi seharusnya ditolak")
@@ -383,12 +382,12 @@ func TestUpdatePengurusJabatan(t *testing.T) {
 			ap = domain.SKApprovalStatusDisetujui
 		}
 		return &domain.SuratKeputusan{
-			ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+			ID: 1, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273),
 			Status: domain.SKStatusAktif, ApprovalStatus: ap, FileSKKey: "uploads/sk/a.pdf",
 		}
 	}
 	detail := &domain.PengurusDetail{ID: 5, SuratKeputusanID: 1, JabatanID: 1, AnggotaID: 9,
-		Level: string(domain.LevelKabupaten), ProvinsiID: intPtr(32), KabupatenID: intPtr(3273)}
+		Level: string(domain.LevelKabupaten), ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273)}
 
 	// Sukses ganti jabatan non-inti.
 	pgr := &fakePengurusRepo{detail: detail}
@@ -490,7 +489,7 @@ func TestListPengurusScopeAndFilter(t *testing.T) {
 func TestAddPengurusEnqueuePengangkatan(t *testing.T) {
 	ctx := context.Background()
 	sk := &domain.SuratKeputusan{
-		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273),
 		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi,
 		FileSKKey: "uploads/sk/a.pdf", NomorSK: "001/SK/2026",
 	}
@@ -554,13 +553,13 @@ func TestActorScope(t *testing.T) {
 func activePengurus() *domain.PengurusDetail {
 	return &domain.PengurusDetail{
 		ID: 5, SuratKeputusanID: 1, AnggotaID: 9, JabatanID: 1,
-		Level: "KABUPATEN", ProvinsiID: intPtr(32), KabupatenID: intPtr(3273), Status: "Aktif",
+		Level: "KABUPATEN", ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273), Status: "Aktif",
 	}
 }
 
 func activeKabSK() *domain.SuratKeputusan {
 	return &domain.SuratKeputusan{
-		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+		ID: 1, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273),
 		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusDisetujui, FileSKKey: "uploads/sk/a.pdf",
 	}
 }
@@ -617,7 +616,7 @@ func TestMutasi(t *testing.T) {
 	ctx := context.Background()
 	src := activePengurus() // SK 1
 	target := &domain.SuratKeputusan{
-		ID: 2, Level: domain.LevelKabupaten, ProvinsiID: intPtr(32), KabupatenID: intPtr(3273),
+		ID: 2, Level: domain.LevelKabupaten, ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273),
 		Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusMenungguProvinsi, FileSKKey: "uploads/sk/b.pdf",
 	}
 	jab := &domain.Jabatan{ID: 2, Nama: "Sekretaris", IsActive: true}

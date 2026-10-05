@@ -1,4 +1,4 @@
-package service
+package anggota
 
 // AnggotaService melayani daftar kader resmi untuk admin (terfilter
 // jurisdiction, proyeksi non-PII) dan cek publik minimal pengganti
@@ -20,10 +20,6 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/keyset"
 )
-
-// maxInt4 = nilai maksimum tipe integer Postgres; dipakai sebagai sentinel id
-// saat keyset pagination tanpa cursor agar cocok dengan tipe kolom id.
-const maxInt4 = 2147483647
 
 type AnggotaService interface {
 	// ListAnggota mengembalikan daftar sesuai jurisdiction aktor.
@@ -190,7 +186,7 @@ func (s *anggotaService) ListAnggotaCursor(ctx context.Context, actor domain.Act
 	// Tanpa cursor: mulai dari "sekarang" (semua baris eligible) agar memakai
 	// indeks komposit (created_at, id) alih-alih OFFSET.
 	at := time.Now().UTC().Add(time.Hour)
-	id := maxInt4
+	id := svcutil.MaxInt4
 	if strings.TrimSpace(cursor) != "" {
 		at, id, err = keyset.Decode(cursor)
 		if err != nil {

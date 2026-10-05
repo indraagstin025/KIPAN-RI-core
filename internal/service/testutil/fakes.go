@@ -203,6 +203,12 @@ func (f *FakeOutboxRepo) Enqueue(_ context.Context, it *domain.EmailOutbox) erro
 	return nil
 }
 
+// RevealTestKey adalah kunci AES/BlindIndex fixture untuk uji enkripsi NIK.
+const RevealTestKey = "aa00112233445566778899aabbccddeeffaa00112233445566778899aabbccdd"
+
+// IntPtr membuat pointer int inline untuk fixture test.
+func IntPtr(i int) *int { return &i }
+
 // KabActor adalah aktor Admin Kabupaten fixture (prov 32, kab 3273).
 func KabActor() domain.ActorContext {
 	prov, kab := 32, 3273

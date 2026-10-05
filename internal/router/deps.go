@@ -14,6 +14,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/anggota"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/auth"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
@@ -92,7 +93,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	pwResetSvc := auth.NewPasswordResetService(cfg, auth.PasswordResetDeps{
 		UserRepo: userRepo, RDB: rdb, Mail: mailSender, AuditRepo: auditRepo,
 	})
-	anggotaService := service.NewAnggotaService(cfg, service.AnggotaDeps{
+	anggotaService := anggota.NewAnggotaService(cfg, anggota.AnggotaDeps{
 		AnggotaRepo: anggotaRepo, WilayahRepo: wilayahRepo,
 		UserRepo: userRepo, AuditRepo: auditRepo,
 		ListRepo:        repository.NewListKeysetRepository(db),

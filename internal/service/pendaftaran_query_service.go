@@ -170,7 +170,7 @@ func (s *pendaftaranQuerySvc) ListQueueCursor(ctx context.Context, actor domain.
 		return nil, "", err
 	}
 	at := time.Now().UTC().Add(time.Hour)
-	id := maxInt4
+	id := svcutil.MaxInt4
 	if strings.TrimSpace(cursor) != "" {
 		var err error
 		at, id, err = keyset.Decode(cursor)
