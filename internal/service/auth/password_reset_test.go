@@ -1,4 +1,4 @@
-package service
+package auth
 
 // Uji Batch 3: password reset — fail-closed saat dependensi tidak lengkap.
 

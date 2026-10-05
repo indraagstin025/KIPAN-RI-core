@@ -3,7 +3,7 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/auth"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
@@ -11,11 +11,11 @@ import (
 // PasswordResetHandler melayani reset kata sandi mandiri via email (Batch 3).
 // Thin-handler: parse + validasi DTO, delegasi ke service.
 type PasswordResetHandler struct {
-	service   service.PasswordResetService
+	service   auth.PasswordResetService
 	validator *validator.CustomValidator
 }
 
-func NewPasswordResetHandler(service service.PasswordResetService, validator *validator.CustomValidator) *PasswordResetHandler {
+func NewPasswordResetHandler(service auth.PasswordResetService, validator *validator.CustomValidator) *PasswordResetHandler {
 	return &PasswordResetHandler{service: service, validator: validator}
 }
 

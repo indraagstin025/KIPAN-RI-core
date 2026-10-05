@@ -1,4 +1,4 @@
-package service
+package auth
 
 // PasswordResetService (Batch 3) — reset kata sandi mandiri via email.
 //

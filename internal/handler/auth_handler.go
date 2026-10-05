@@ -7,7 +7,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/auth"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
@@ -31,7 +31,7 @@ func requestIDOf(c *fiber.Ctx) string {
 }
 
 type AuthHandler struct {
-	authService  service.AuthService
+	authService  auth.AuthService
 	validator    *validator.CustomValidator
 	refreshTTL   time.Duration
 	secureCookie bool
@@ -42,7 +42,7 @@ type AuthHandler struct {
 }
 
 func NewAuthHandler(
-	authService service.AuthService,
+	authService auth.AuthService,
 	validator *validator.CustomValidator,
 	refreshTTL time.Duration,
 	secureCookie bool,
@@ -71,7 +71,7 @@ func NewAuthHandler(
 // Login mengotentikasi kredensial dan menerbitkan access token.
 // Refresh token HANYA dikirim via HttpOnly cookie — TIDAK di JSON body.
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
-	var req service.LoginRequest
+	var req auth.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
 		return response.BadRequest(c, "Format data JSON tidak valid")
 	}
@@ -149,7 +149,7 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 		return response.Unauthorized(c, "Tidak terotentikasi")
 	}
 
-	var req service.ChangePasswordRequest
+	var req auth.ChangePasswordRequest
 	if err := c.BodyParser(&req); err != nil {
 		return response.BadRequest(c, "Format data tidak valid")
 	}
