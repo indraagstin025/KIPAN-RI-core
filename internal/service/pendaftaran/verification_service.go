@@ -224,11 +224,12 @@ func (s *verificationSvc) BypassApproval(ctx context.Context, id int, catatan st
 	if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.KTASigningKey) == "" {
 		return nil, domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
 	}
+	meta := fmt.Sprintf(`{"from":%q,"to":"DISETUJUI","bypass_alasan":%q}`, string(item.Status), note)
 	member, err := s.repo.IssueMember(ctx, id, time.Now().Year(), s.cfg.Crypto.KTASigningKey)
 	if err != nil {
 		var appErr *domain.AppError
 		if errors.As(err, &appErr) && appErr.Code == 409 && s.anggotaRepo != nil {
-			return s.healKTADocument(ctx, id, actor, audit, string(domain.PendaftaranActionBypass), note)
+			return s.healKTADocument(ctx, id, actor, audit, string(domain.PendaftaranActionBypass), meta)
 		}
 		return nil, err
 	}
@@ -249,7 +250,6 @@ func (s *verificationSvc) BypassApproval(ctx context.Context, id int, catatan st
 			mail.AccountLinkedEmail(item.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
 	}
 	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
-	meta := fmt.Sprintf(`{"from":%q,"to":"DISETUJUI","bypass_alasan":%q}`, string(item.Status), note)
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 		"pendaftaran", strconv.Itoa(id), "BYPASS_VERIFIKASI", &meta)
 	s.notifyAdmins(ctx, "Bypass Verifikasi",
