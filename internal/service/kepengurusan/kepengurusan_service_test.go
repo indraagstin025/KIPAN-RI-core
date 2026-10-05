@@ -704,3 +704,46 @@ func TestGetPengurusDetail(t *testing.T) {
 		t.Fatal("Kabupaten tidak boleh melihat pengurus Nasional")
 	}
 }
+
+// Anti self-approval (matriks §4.4/§8.2): penyusun tidak boleh mengesahkan
+// SK-nya sendiri, kecuali SK NASIONAL dan Super Admin (pemulihan teknis).
+func TestSahkanTolakPenyusunSendiri(t *testing.T) {
+	ctx := context.Background()
+	mkSK := func(level domain.TingkatWilayah, createdBy *string) *domain.SuratKeputusan {
+		return &domain.SuratKeputusan{ID: 1, Level: level,
+			ProvinsiID: testutil.IntPtr(32), KabupatenID: testutil.IntPtr(3273),
+			Status: domain.SKStatusAktif, ApprovalStatus: domain.SKApprovalStatusMenungguNasional,
+			CreatedBy: createdBy}
+	}
+	nasID := "u-nas"
+
+	// Penyusun (Nasional) mengesahkan SK KABUPATEN buatannya → tolak.
+	repo := &fakeSKRepo{sk: mkSK(domain.LevelKabupaten, &nasID)}
+	svc := kepSvc(repo, &fakeJabatanRepo{})
+	if err := svc.ApproveSK(ctx, 1, domain.SKActionSahkan, "", testutil.NasActor(), domain.AuditContext{}); err == nil {
+		t.Fatal("pengesah = penyusun harus ditolak")
+	}
+
+	// Orang lain mengesahkan → lolos.
+	other := "u-lain"
+	repo2 := &fakeSKRepo{sk: mkSK(domain.LevelKabupaten, &other)}
+	svc2 := kepSvc(repo2, &fakeJabatanRepo{})
+	if err := svc2.ApproveSK(ctx, 1, domain.SKActionSahkan, "", testutil.NasActor(), domain.AuditContext{}); err != nil {
+		t.Fatalf("pengesah berbeda harus lolos: %v", err)
+	}
+
+	// SK NASIONAL dikecualikan (langsung efektif).
+	repo3 := &fakeSKRepo{sk: mkSK(domain.LevelNasional, &nasID)}
+	svc3 := kepSvc(repo3, &fakeJabatanRepo{})
+	if err := svc3.ApproveSK(ctx, 1, domain.SKActionSahkan, "", testutil.NasActor(), domain.AuditContext{}); err != nil {
+		t.Fatalf("SK NASIONAL dikecualikan: %v", err)
+	}
+
+	// Super Admin dikecualikan (pemulihan teknis, teraudit).
+	saID := "admin-1"
+	repo4 := &fakeSKRepo{sk: mkSK(domain.LevelKabupaten, &saID)}
+	svc4 := kepSvc(repo4, &fakeJabatanRepo{})
+	if err := svc4.ApproveSK(ctx, 1, domain.SKActionSahkan, "", testutil.SuperActor(), domain.AuditContext{}); err != nil {
+		t.Fatalf("Super Admin dikecualikan: %v", err)
+	}
+}

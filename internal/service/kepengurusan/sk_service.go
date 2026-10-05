@@ -213,6 +213,13 @@ func (s *skSvc) ApproveSK(ctx context.Context, id int, action domain.SKApprovalA
 		if !isNasionalOrSuper(actor.Role) {
 			return domain.NewForbiddenError("Pengesahan SK hanya oleh Nasional/Super Admin")
 		}
+		// Anti self-approval (matriks §4.4/§8.2): penyusun tidak boleh
+		// mengesahkan SK-nya sendiri. Dikecualikan untuk SK NASIONAL
+		// (langsung efektif, tanpa rantai) dan Super Admin (pemulihan teknis).
+		if sk.Level != domain.LevelNasional && actor.Role != domain.RoleSuperAdmin &&
+			sk.CreatedBy != nil && *sk.CreatedBy == actor.UserID {
+			return domain.NewForbiddenError("Penyusun tidak dapat mengesahkan SK sendiri")
+		}
 	case domain.SKActionTolak:
 		if !isNasionalOrSuper(actor.Role) {
 			return domain.NewForbiddenError("Penolakan SK hanya oleh Nasional/Super Admin")
