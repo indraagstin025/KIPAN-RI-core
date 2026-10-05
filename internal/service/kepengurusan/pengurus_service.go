@@ -1,4 +1,4 @@
-package service
+package kepengurusan
 
 // pengurus_service.go — service fokus: kepengurusan (pengangkatan/penetapan
 // pengurus pada SK) (Fase A4, SRP).

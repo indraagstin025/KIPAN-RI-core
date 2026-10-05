@@ -1,4 +1,4 @@
-package service
+package kepengurusan
 
 // sk_service.go — service fokus: Surat Keputusan (Fase A4, SRP).
 

@@ -1,4 +1,4 @@
-package service
+package kepengurusan
 
 // pengurus_expiry.go — materialisasi kedaluwarsa masa bakti pengurus (TDD §5.4):
 // menutup record pengurus Aktif yang SK-nya sudah lewat lalu menulis audit

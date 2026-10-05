@@ -1,4 +1,4 @@
-package service
+package kepengurusan
 
 // jabatan_service.go — service fokus: master jabatan (Fase A4, SRP; TDD D14:
 // tanpa level, is_ketua_umum, semua admin boleh menambah).

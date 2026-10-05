@@ -1,4 +1,4 @@
-package service
+package kepengurusan
 
 // kepengurusan_service.go menyusun layanan kepengurusan dari tiga service
 // fokus (Jabatan, SK, Pengurus) yang berbagi dependensi via `kepengurusanBase`.

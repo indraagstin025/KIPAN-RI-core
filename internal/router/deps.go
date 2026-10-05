@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/anggota"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/auth"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kepengurusan"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/pendaftaran"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/users"
@@ -119,7 +120,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	roleService := service.NewRoleService()
 	organisasiService := service.NewOrganisasiService(repository.NewOrganisasiRepository(db), auditRepo)
 	backupService := dokumen.NewBackupService(cfg, repository.NewBackupRepository(db), storageService, auditRepo)
-	kepengurusanService := service.NewKepengurusanService(cfg, service.KepengurusanDeps{
+	kepengurusanService := kepengurusan.NewKepengurusanService(cfg, kepengurusan.KepengurusanDeps{
 		JabatanRepo:  repository.NewJabatanRepository(db),
 		SKRepo:       repository.NewSKRepository(db),
 		PengurusRepo: repository.NewPengurusRepository(db),

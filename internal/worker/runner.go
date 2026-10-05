@@ -16,7 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/infra"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kepengurusan"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 )
 
@@ -38,7 +38,7 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, rdb *redis.Client) *Runner {
 	mailSender := infra.MailSender(cfg)
 
 	emailWorker := notify.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
-	expirySvc := service.NewPengurusExpiryService(pengurusRepo, auditRepo)
+	expirySvc := kepengurusan.NewPengurusExpiryService(pengurusRepo, auditRepo)
 
 	sched := NewScheduler(NewAdvisoryLocker(db), resolveLocation(cfg.Worker.Timezone))
 	sched.Register(Job{

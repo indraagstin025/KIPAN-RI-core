@@ -6,16 +6,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/kepengurusan"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // KepengurusanHandler melayani SK, jabatan, dan pengurus (thin-handler).
 type KepengurusanHandler struct {
-	service service.KepengurusanService
+	service kepengurusan.KepengurusanService
 }
 
-func NewKepengurusanHandler(service service.KepengurusanService) *KepengurusanHandler {
+func NewKepengurusanHandler(service kepengurusan.KepengurusanService) *KepengurusanHandler {
 	return &KepengurusanHandler{service: service}
 }
 
