@@ -5,7 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
@@ -13,10 +13,10 @@ import (
 // Thin-handler: parse DTO lalu delegasi ke OTPService. Publik (pendaftar
 // belum punya akun) dengan rate-limit ketat di route.
 type OTPHandler struct {
-	service service.OTPService
+	service notify.OTPService
 }
 
-func NewOTPHandler(service service.OTPService) *OTPHandler {
+func NewOTPHandler(service notify.OTPService) *OTPHandler {
 	return &OTPHandler{service: service}
 }
 

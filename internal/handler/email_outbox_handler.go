@@ -3,16 +3,16 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // OutboxHandler melayani pemantauan antrian email (outbox) admin.
 type OutboxHandler struct {
-	service service.OutboxService
+	service notify.OutboxService
 }
 
-func NewOutboxHandler(service service.OutboxService) *OutboxHandler {
+func NewOutboxHandler(service notify.OutboxService) *OutboxHandler {
 	return &OutboxHandler{service: service}
 }
 

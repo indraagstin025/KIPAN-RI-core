@@ -10,21 +10,21 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 )
 
 type stubOTPService struct {
-	reqRes   *service.OTPRequestResult
-	reqErr   error
-	verRes   *service.OTPVerifyResult
-	verErr   error
+	reqRes *notify.OTPRequestResult
+	reqErr error
+	verRes *notify.OTPVerifyResult
+	verErr error
 }
 
-func (s *stubOTPService) RequestOTP(context.Context, string) (*service.OTPRequestResult, error) {
+func (s *stubOTPService) RequestOTP(context.Context, string) (*notify.OTPRequestResult, error) {
 	return s.reqRes, s.reqErr
 }
 
-func (s *stubOTPService) VerifyOTP(context.Context, string, string) (*service.OTPVerifyResult, error) {
+func (s *stubOTPService) VerifyOTP(context.Context, string, string) (*notify.OTPVerifyResult, error) {
 	return s.verRes, s.verErr
 }
 
@@ -32,7 +32,7 @@ func (s *stubOTPService) VerifyAndConsume(context.Context, string, string) error
 	return nil
 }
 
-var _ service.OTPService = (*stubOTPService)(nil)
+var _ notify.OTPService = (*stubOTPService)(nil)
 
 func testOTPApp(stub *stubOTPService) *fiber.App {
 	app := fiber.New()
@@ -43,7 +43,7 @@ func testOTPApp(stub *stubOTPService) *fiber.App {
 }
 
 func TestOTPRequestButuhNomor(t *testing.T) {
-	app := testOTPApp(&stubOTPService{reqRes: &service.OTPRequestResult{}})
+	app := testOTPApp(&stubOTPService{reqRes: &notify.OTPRequestResult{}})
 	req := httptest.NewRequest("POST", "/pendaftaran/otp/whatsapp/request", stringReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
@@ -57,7 +57,7 @@ func TestOTPRequestButuhNomor(t *testing.T) {
 
 func TestOTPVerifyTeruskanService(t *testing.T) {
 	stub := &stubOTPService{
-		verRes: &service.OTPVerifyResult{VerifiedToken: "tok", ExpiresIn: 900},
+		verRes: &notify.OTPVerifyResult{VerifiedToken: "tok", ExpiresIn: 900},
 	}
 	app := testOTPApp(stub)
 	req := httptest.NewRequest("POST", "/pendaftaran/otp/whatsapp/verify",

@@ -31,21 +31,21 @@ type pendaftaranSubmitSvc struct{ *pendaftaranBase }
 // ValidateSubmitRequest memastikan payload pendaftaran aman dan valid sebelum masuk DB.
 func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmitRequest) error {
 	nama := strings.TrimSpace(req.NamaLengkap)
-	if len([]rune(nama)) < 3 || len([]rune(nama)) > maxNamaLen {
+	if len([]rune(nama)) < 3 || len([]rune(nama)) > svcutil.MaxNamaLen {
 		return domain.NewValidationError("Nama lengkap wajib 3-150 karakter")
 	}
 	if containsAngleBracket(nama) {
 		return domain.NewValidationError("Nama lengkap tidak boleh mengandung karakter < atau >")
 	}
 	nik := strings.TrimSpace(req.NIK)
-	if !nipPattern.MatchString(nik) {
+	if !svcutil.NipPattern.MatchString(nik) {
 		return domain.NewValidationError("NIK harus berisi 16 digit angka")
 	}
 	if !isPlausibleNIKDate(nik) {
 		return domain.NewValidationError("Segmen tanggal lahir pada NIK tidak valid")
 	}
 	tempat := strings.TrimSpace(req.TempatLahir)
-	if tempat == "" || len([]rune(tempat)) > maxTempatLahirLen {
+	if tempat == "" || len([]rune(tempat)) > svcutil.MaxTempatLahirLen {
 		return domain.NewValidationError("Tempat lahir wajib diisi (maks 100 karakter)")
 	}
 	if containsAngleBracket(tempat) {
@@ -68,7 +68,7 @@ func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmi
 		return domain.NewValidationError("Pendaftaran hanya untuk Kader. Pengurus diangkat via Surat Keputusan oleh Admin Kabupaten/Kota.")
 	}
 	alamat := strings.TrimSpace(req.Alamat)
-	if len([]rune(alamat)) < 10 || len([]rune(alamat)) > maxAlamatLen {
+	if len([]rune(alamat)) < 10 || len([]rune(alamat)) > svcutil.MaxAlamatLen {
 		return domain.NewValidationError("Alamat wajib 10-2000 karakter")
 	}
 	if containsAngleBracket(alamat) {
@@ -85,7 +85,7 @@ func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmi
 		return domain.NewValidationError("Format email tidak valid")
 	}
 	wa := strings.TrimSpace(req.Whatsapp)
-	if len(wa) > maxWhatsappLen || !phonePattern.MatchString(wa) {
+	if len(wa) > maxWhatsappLen || !svcutil.PhonePattern.MatchString(wa) {
 		return domain.NewValidationError("Nomor WhatsApp tidak valid (contoh: 081234567890)")
 	}
 	if t := strings.TrimSpace(req.WaOTPToken); t == "" || len(t) > 256 {
@@ -148,7 +148,7 @@ func (s *pendaftaranSubmitSvc) ValidateSubmitRequest(req domain.PendaftaranSubmi
 			return domain.NewValidationError(f.label + " tidak boleh mengandung karakter < atau >")
 		}
 	}
-	if !kodePosPattern.MatchString(strings.TrimSpace(req.KodePos)) {
+	if !svcutil.KodePosPattern.MatchString(strings.TrimSpace(req.KodePos)) {
 		return domain.NewValidationError("Kode pos wajib 5 digit angka")
 	}
 	// L7: satu object key tidak boleh dipakai di >1 slot dokumen.

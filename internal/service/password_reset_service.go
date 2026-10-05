@@ -77,7 +77,7 @@ func (s *passwordResetService) ForgotPassword(ctx context.Context, email string,
 	if err := s.ready(); err != nil {
 		return err
 	}
-	e := normalizeEmail(email)
+	e := svcutil.NormalizeEmail(email)
 	if e == "" {
 		return nil // handler sudah menolak format; jaga-jaga tetap senyap
 	}
@@ -182,7 +182,7 @@ func (s *passwordResetService) SetPassword(ctx context.Context, token, newPasswo
 	if t == "" || len(t) > 256 {
 		return domain.NewValidationError("Tautan tidak valid atau kedaluwarsa")
 	}
-	val, err := consumeResetScript.Run(ctx, s.rdb, []string{setupKey(t)}).Result()
+	val, err := consumeResetScript.Run(ctx, s.rdb, []string{svcutil.SetupKey(t)}).Result()
 	if err != nil {
 		return fmt.Errorf("gagal memverifikasi tautan: %w", err)
 	}

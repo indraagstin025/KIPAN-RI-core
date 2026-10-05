@@ -1,4 +1,4 @@
-package service
+package notify
 
 // EmailWorker adalah worker pengirim antrian email (outbox) — poll berkala,
 // kirim via SMTP (Mailtrap sandbox/dev), tandai sent/failed dengan backoff.
@@ -21,11 +21,6 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
-
-// setupKey menyimpan token di Redis berdasarkan hash (tanpa token mentah).
-func setupKey(rawToken string) string {
-	return "pwsetup:" + crypto.HashToken(rawToken)
-}
 
 // EmailWorker poller antrian email.
 type EmailWorker struct {
@@ -127,7 +122,7 @@ func (w *EmailWorker) ProcessOne(ctx context.Context, it domain.EmailOutbox) err
 			w.fail(ctx, it, "gagal menerbitkan token", false)
 			return err
 		}
-		if err := w.rdb.Set(ctx, setupKey(token), user.ID, w.setupTTL).Err(); err != nil {
+		if err := w.rdb.Set(ctx, svcutil.SetupKey(token), user.ID, w.setupTTL).Err(); err != nil {
 			w.fail(ctx, it, "gagal menyimpan token set-password", false)
 			return err
 		}
@@ -179,7 +174,7 @@ func (w *EmailWorker) notifyFailed(ctx context.Context, it domain.EmailOutbox, m
 	if it.KabupatenID != nil {
 		kab = *it.KabupatenID
 	}
-	message := "Email kredensial gagal dikirim ke " + maskEmail(it.ToEmail) + " (jenis " + string(it.Jenis) + "). Silakan kirim ulang dari menu Antrian Email."
+	message := "Email kredensial gagal dikirim ke " + svcutil.MaskEmail(it.ToEmail) + " (jenis " + string(it.Jenis) + "). Silakan kirim ulang dari menu Antrian Email."
 	if err := w.notifRepo.NotifyAdmins(ctx, "Email kredensial gagal terkirim", message, domain.NotifTypeSistem, "#admin?page=email-outbox", prov, kab); err != nil {
 		log.Warn().Err(err).Int64("outbox_id", it.ID).Msg("Gagal membuat notifikasi admin untuk email DLQ")
 	}

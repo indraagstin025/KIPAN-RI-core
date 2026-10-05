@@ -26,11 +26,11 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		return nil, svcutil.Unavailable("anggota")
 	}
 	name := strings.TrimSpace(in.NamaLengkap)
-	if len([]rune(name)) < 3 || len([]rune(name)) > maxNamaLen || containsAngleBracket(name) {
+	if len([]rune(name)) < 3 || len([]rune(name)) > svcutil.MaxNamaLen || containsAngleBracket(name) {
 		return nil, domain.NewValidationError("Nama lengkap wajib 3-150 karakter & tanpa karakter < atau >")
 	}
 	nik := strings.TrimSpace(in.NIK)
-	if !nipPattern.MatchString(nik) || !isPlausibleNIKDate(nik) {
+	if !svcutil.NipPattern.MatchString(nik) || !isPlausibleNIKDate(nik) {
 		return nil, domain.NewValidationError("NIK harus 16 digit dengan segmen tanggal lahir valid")
 	}
 	dob, err := time.Parse(time.RFC3339, strings.TrimSpace(in.TanggalLahir))
@@ -38,7 +38,7 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		return nil, domain.NewValidationError("Format tanggal lahir tidak valid")
 	}
 	tempat := strings.TrimSpace(in.TempatLahir)
-	if tempat == "" || len([]rune(tempat)) > maxTempatLahirLen || containsAngleBracket(tempat) {
+	if tempat == "" || len([]rune(tempat)) > svcutil.MaxTempatLahirLen || containsAngleBracket(tempat) {
 		return nil, domain.NewValidationError("Tempat lahir wajib diisi (maks 100 karakter)")
 	}
 	jk := strings.ToUpper(strings.TrimSpace(in.JenisKelamin))
@@ -61,7 +61,7 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		}
 	}
 	alamat := strings.TrimSpace(in.Alamat)
-	if len([]rune(alamat)) < 5 || len([]rune(alamat)) > maxAlamatLen || containsAngleBracket(alamat) {
+	if len([]rune(alamat)) < 5 || len([]rune(alamat)) > svcutil.MaxAlamatLen || containsAngleBracket(alamat) {
 		return nil, domain.NewValidationError("Alamat wajib 5-2000 karakter & tanpa karakter < atau >")
 	}
 	email := strings.TrimSpace(in.Email)
@@ -69,7 +69,7 @@ func (s *anggotaService) CreateAnggota(ctx context.Context, in domain.AnggotaCre
 		return nil, domain.NewValidationError("Format email tidak valid")
 	}
 	wa := strings.TrimSpace(in.Whatsapp)
-	if !phonePattern.MatchString(wa) {
+	if !svcutil.PhonePattern.MatchString(wa) {
 		return nil, domain.NewValidationError("Nomor WhatsApp tidak valid (contoh: 081234567890)")
 	}
 	status := domain.AnggotaStatus(strings.ToUpper(strings.TrimSpace(in.Status)))
@@ -170,14 +170,14 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 
 	if in.NamaLengkap != nil {
 		v := strings.TrimSpace(*in.NamaLengkap)
-		if len([]rune(v)) < 3 || len([]rune(v)) > maxNamaLen || containsAngleBracket(v) {
+		if len([]rune(v)) < 3 || len([]rune(v)) > svcutil.MaxNamaLen || containsAngleBracket(v) {
 			return nil, domain.NewValidationError("Nama lengkap wajib 3-150 karakter & tanpa karakter < atau >")
 		}
 		item.NamaLengkap = v
 	}
 	if in.TempatLahir != nil {
 		v := strings.TrimSpace(*in.TempatLahir)
-		if v == "" || len([]rune(v)) > maxTempatLahirLen || containsAngleBracket(v) {
+		if v == "" || len([]rune(v)) > svcutil.MaxTempatLahirLen || containsAngleBracket(v) {
 			return nil, domain.NewValidationError("Tempat lahir wajib diisi (maks 100 karakter)")
 		}
 		item.TempatLahir = v
@@ -207,7 +207,7 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 	}
 	if in.Alamat != nil {
 		v := strings.TrimSpace(*in.Alamat)
-		if len([]rune(v)) < 5 || len([]rune(v)) > maxAlamatLen || containsAngleBracket(v) {
+		if len([]rune(v)) < 5 || len([]rune(v)) > svcutil.MaxAlamatLen || containsAngleBracket(v) {
 			return nil, domain.NewValidationError("Alamat wajib 5-2000 karakter & tanpa karakter < atau >")
 		}
 		item.Alamat = v
@@ -246,7 +246,7 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 	}
 	if in.KodePos != nil {
 		kp := strings.TrimSpace(*in.KodePos)
-		if kp != "" && !kodePosPattern.MatchString(kp) {
+		if kp != "" && !svcutil.KodePosPattern.MatchString(kp) {
 			return nil, domain.NewValidationError("Kode pos wajib 5 digit angka")
 		}
 		item.KodePos = kp
@@ -260,7 +260,7 @@ func (s *anggotaService) UpdateAnggota(ctx context.Context, id int, in domain.An
 	}
 	if in.Whatsapp != nil {
 		w := strings.TrimSpace(*in.Whatsapp)
-		if !phonePattern.MatchString(w) {
+		if !svcutil.PhonePattern.MatchString(w) {
 			return nil, domain.NewValidationError("Nomor WhatsApp tidak valid")
 		}
 		item.Whatsapp = w

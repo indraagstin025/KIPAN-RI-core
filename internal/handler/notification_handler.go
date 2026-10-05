@@ -3,17 +3,17 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // NotificationHandler melayani notifikasi milik sendiri (thin-handler).
 // Tidak ada parameter userId: identitas selalu dari JWT terverifikasi.
 type NotificationHandler struct {
-	service service.NotificationService
+	service notify.NotificationService
 }
 
-func NewNotificationHandler(service service.NotificationService) *NotificationHandler {
+func NewNotificationHandler(service notify.NotificationService) *NotificationHandler {
 	return &NotificationHandler{service: service}
 }
 

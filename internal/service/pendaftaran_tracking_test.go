@@ -6,6 +6,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
 // fakeTrackingOutbox meniru EmailOutboxRepository untuk sub-status kredensial.
@@ -82,8 +83,8 @@ func TestMaskEmail(t *testing.T) {
 		"":                   "",
 	}
 	for in, want := range cases {
-		if got := maskEmail(in); got != want {
-			t.Fatalf("maskEmail(%q) = %q, want %q", in, got, want)
+		if got := svcutil.MaskEmail(in); got != want {
+			t.Fatalf("svcutil.MaskEmail(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

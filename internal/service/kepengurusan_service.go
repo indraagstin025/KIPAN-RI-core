@@ -115,14 +115,6 @@ func isNasionalOrSuper(role domain.Role) bool {
 	return role == domain.RoleSuperAdmin || role == domain.RoleAdminNasional
 }
 
-// derefInt mengembalikan nilai dari pointer int (0 bila nil).
-func derefInt(p *int) int {
-	if p == nil {
-		return 0
-	}
-	return *p
-}
-
 // levelAuthorityMatch menentukan kecocokan peran aktor dengan LEVEL SK
 // (tanpa Super): KABUPATEN -> Kabupaten sekab; PROVINSI -> Provinsi seprov;
 // NASIONAL -> Nasional.

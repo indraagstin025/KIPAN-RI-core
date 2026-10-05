@@ -31,7 +31,7 @@ type pendaftaranQuerySvc struct{ *pendaftaranBase }
 
 // GetTracking melayani pelacakan publik MINIMAL: nomor + status + timestamp.
 func (s *pendaftaranQuerySvc) GetTracking(ctx context.Context, nomor string) (*domain.PendaftaranTrackingResponse, error) {
-	nr, err := normalizeNomor(nomor)
+	nr, err := svcutil.NormalizeNomor(nomor)
 	if err != nil {
 		return nil, err
 	}
@@ -82,22 +82,7 @@ func (s *pendaftaranQuerySvc) fillKredensialStatus(ctx context.Context, item *do
 			}
 		}
 	}
-	resp.KredensialEmail = maskEmail(email)
-}
-
-// maskEmail menyamarkan email untuk tampilan publik: 3 karakter pertama
-// local-part dipertahankan. mis. ind***@gmail.com.
-func maskEmail(email string) string {
-	e := strings.TrimSpace(email)
-	at := strings.LastIndexByte(e, '@')
-	if at <= 0 {
-		return e
-	}
-	local, domain := e[:at], e[at:]
-	if len(local) <= 3 {
-		return "***" + domain
-	}
-	return local[:3] + "***" + domain
+	resp.KredensialEmail = svcutil.MaskEmail(email)
 }
 
 // GetDetail melayani admin: tolak objek di luar wilayah kerja aktor (RULES 7).

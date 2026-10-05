@@ -52,35 +52,15 @@ func NewRevisionService(cfg *config.Config, deps RevisionDeps) RevisionService {
 // RevisionTokenTTL adalah masa berlaku token revisi applicant.
 const RevisionTokenTTL = 24 * time.Hour
 
-// normalizeEmail menyeragamkan email untuk perbandingan bukti pemilik.
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
-// normalizeWA menyeragamkan nomor WA ke digit inti: buang non-digit lalu
-// buang prefix negara/ trunk (62/0) sehingga 08xx, 62xxx, +62xxx setara.
-func normalizeWA(wa string) string {
-	var digits strings.Builder
-	for _, r := range wa {
-		if r >= '0' && r <= '9' {
-			digits.WriteRune(r)
-		}
-	}
-	d := digits.String()
-	d = strings.TrimPrefix(d, "62")
-	d = strings.TrimPrefix(d, "0")
-	return d
-}
-
 // MatchOwnerProof mencocokkan bukti pemilik (email DAN whatsapp) terhadap
 // data terdaftar. Pure function agar unit-testable. Kedua sisi
 // dinormalisasi; bukti kosong selalu gagal.
 func MatchOwnerProof(storedEmail, storedWA, proofEmail, proofWA string) bool {
-	pe, pw := normalizeEmail(proofEmail), normalizeWA(proofWA)
+	pe, pw := svcutil.NormalizeEmail(proofEmail), svcutil.NormalizeWA(proofWA)
 	if pe == "" || pw == "" {
 		return false
 	}
-	return normalizeEmail(storedEmail) == pe && normalizeWA(storedWA) == pw
+	return svcutil.NormalizeEmail(storedEmail) == pe && svcutil.NormalizeWA(storedWA) == pw
 }
 
 // RequestRevisionToken menerbitkan token revisi satu-permintaan untuk
@@ -96,7 +76,7 @@ func MatchOwnerProof(storedEmail, storedWA, proofEmail, proofWA string) bool {
 // (Batch 3, Opsi B): dikirim ke EMAIL terdaftar; yang disimpan hanya hash
 // SHA-256 + expiry.
 func (s *revisionSvc) RequestRevisionToken(ctx context.Context, req domain.RevisionTokenRequest, audit domain.AuditContext) (*domain.RevisionTokenResponse, error) {
-	nr, err := normalizeNomor(req.Nomor)
+	nr, err := svcutil.NormalizeNomor(req.Nomor)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +134,7 @@ func (s *revisionSvc) sendRevisionTokenEmail(nama, email, nomor, token string) {
 // tanpa oracle), dokumen baru tervalidasi + terverifikasi storage,
 // status kembali DRAFT, token hangus sekali pakai.
 func (s *revisionSvc) SubmitRevision(ctx context.Context, nomor string, req domain.RevisionSubmitRequest, audit domain.AuditContext) error {
-	nr, err := normalizeNomor(nomor)
+	nr, err := svcutil.NormalizeNomor(nomor)
 	if err != nil {
 		return err
 	}

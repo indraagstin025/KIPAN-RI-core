@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/testutil"
 )
 
@@ -17,7 +18,7 @@ func TestNormalizeNomor(t *testing.T) {
 		"REG-202609-000001",  // >5 digit (periode padat, T10)
 	}
 	for _, nomor := range valid {
-		if _, err := normalizeNomor(nomor); err != nil {
+		if _, err := svcutil.NormalizeNomor(nomor); err != nil {
 			t.Fatalf("expected %q to be accepted: %v", nomor, err)
 		}
 	}
@@ -29,7 +30,7 @@ func TestNormalizeNomor(t *testing.T) {
 		"REG-202609-00001-EXTRA-MUATAN-PANJANG-LEBIH-DARI-30",
 	}
 	for _, nomor := range invalid {
-		if _, err := normalizeNomor(nomor); err == nil {
+		if _, err := svcutil.NormalizeNomor(nomor); err == nil {
 			t.Fatalf("expected %q to be rejected", nomor)
 		}
 	}

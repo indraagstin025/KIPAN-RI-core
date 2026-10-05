@@ -1,4 +1,4 @@
-package service
+package notify
 
 // NotificationService melayani baca notifikasi milik sendiri (pengganti
 // aman endpoint notifikasi lama yang membaca via ?userId= — IDOR).

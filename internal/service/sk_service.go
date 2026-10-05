@@ -173,7 +173,7 @@ func (s *skSvc) GetSK(ctx context.Context, id int, actor domain.ActorContext) (*
 	if err != nil {
 		return nil, err
 	}
-	if !actor.CanAccessWilayah(derefInt(sk.ProvinsiID), derefInt(sk.KabupatenID)) {
+	if !actor.CanAccessWilayah(svcutil.DerefInt(sk.ProvinsiID), svcutil.DerefInt(sk.KabupatenID)) {
 		return nil, domain.NewForbiddenError("SK di luar wilayah kerja Anda")
 	}
 	list, err := s.pengurus.ListBySK(ctx, id)
@@ -289,7 +289,7 @@ func (s *skSvc) SetSKStatus(ctx context.Context, id int, status domain.SKStatus,
 	if err != nil {
 		return err
 	}
-	if !actor.CanAccessWilayah(derefInt(sk.ProvinsiID), derefInt(sk.KabupatenID)) {
+	if !actor.CanAccessWilayah(svcutil.DerefInt(sk.ProvinsiID), svcutil.DerefInt(sk.KabupatenID)) {
 		return domain.NewForbiddenError("SK di luar wilayah kerja Anda")
 	}
 	if err := s.skRepo.SetStatusWithDemotion(ctx, id, status, pengurusStatus, keterangan); err != nil {

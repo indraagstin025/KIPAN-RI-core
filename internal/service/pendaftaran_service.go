@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
@@ -35,7 +36,7 @@ type PendaftaranDeps struct {
 	StorageSvc  ObjectVerifier
 	WilayahRepo repository.WilayahRepository
 	NotifRepo   repository.NotificationRepository
-	OTPSvc      OTPService
+	OTPSvc      notify.OTPService
 	WAGateway   gateway.WAGateway
 	ListRepo    repository.ListKeysetRepository
 	OutboxRepo  repository.EmailOutboxRepository
@@ -50,7 +51,7 @@ type pendaftaranBase struct {
 	storageSvc  ObjectVerifier
 	wilayahRepo repository.WilayahRepository
 	notifRepo   repository.NotificationRepository
-	otpSvc      OTPService
+	otpSvc      notify.OTPService
 	waGateway   gateway.WAGateway
 	listRepo    repository.ListKeysetRepository
 	outboxRepo  repository.EmailOutboxRepository
@@ -83,28 +84,12 @@ func NewPendaftaranService(cfg *config.Config, deps PendaftaranDeps) Pendaftaran
 	}
 }
 
-var nipPattern = regexp.MustCompile(`^\d{16}$`)
-
-// phonePattern selaras dengan rule id_phone di pkg/validator: prefix
-// 0/62/+62, operator 8, digit kedua bukan 0, total 9-14 digit.
-var phonePattern = regexp.MustCompile(`^(\+62|62|0)8[1-9][0-9]{6,10}$`)
-
 // objectKeyPattern allowlist pola S3 object key (anti path-traversal dan
 // key lintas namespace).
 var objectKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/_\.\-]{0,254}$`)
 
-// kodePosPattern mewajibkan 5 digit (format Indonesia).
-var kodePosPattern = regexp.MustCompile(`^\d{5}$`)
-
-// nomorPattern menerima REG-YYYYMM-XXXX / XXXXX (dan lebih bila periode
-// melampaui 99.999 pendaftaran).
-var nomorPattern = regexp.MustCompile(`^REG-\d{6}-\d{4,}$`)
-
 // Batas panjang field selaras kolom database (anti-DoS + 422, bukan 500).
 const (
-	maxNamaLen          = 150
-	maxTempatLahirLen   = 100
-	maxAlamatLen        = 2000
 	maxEmailLen         = 255
 	maxWhatsappLen      = 25
 	maxKecamatanDesaLen = 100
@@ -114,16 +99,6 @@ const (
 	minPendaftarAge     = 16
 	maxPendaftarAge     = 30
 )
-
-// normalizeNomor menyeragamkan nomor registrasi (trim + uppercase) dan
-// menolak format di luar varian yang dikenal (422).
-func normalizeNomor(nomor string) (string, error) {
-	nr := strings.ToUpper(strings.TrimSpace(nomor))
-	if nr == "" || len(nr) > 30 || !nomorPattern.MatchString(nr) {
-		return "", domain.NewValidationError("Nomor pendaftaran tidak valid")
-	}
-	return nr, nil
-}
 
 // docSlot adalah pasangan label + key satu slot dokumen.
 type docSlot struct {

@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/infra"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 )
 
 // Runner merangkai seluruh pekerjaan worker: repositori, EmailWorker, dan
@@ -36,7 +37,7 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, rdb *redis.Client) *Runner {
 	notifRepo := repository.NewNotificationRepository(db)
 	mailSender := infra.MailSender(cfg)
 
-	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
+	emailWorker := notify.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
 	expirySvc := service.NewPengurusExpiryService(pengurusRepo, auditRepo)
 
 	sched := NewScheduler(NewAdvisoryLocker(db), resolveLocation(cfg.Worker.Timezone))

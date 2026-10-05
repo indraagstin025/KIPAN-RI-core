@@ -14,6 +14,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/users"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/wilayah"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
@@ -68,7 +69,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	ktaSvc := service.NewKTAService(cfg, service.KTADeps{
 		AnggotaRepo: anggotaRepo, DocStore: storageService, AuditRepo: auditRepo,
 	})
-	otpSvc := service.NewOTPService(cfg, service.OtpDeps{
+	otpSvc := notify.NewOTPService(cfg, notify.OtpDeps{
 		RDB: rdb, Gateway: waGateway,
 	})
 	pendaftaranService := service.NewPendaftaranService(cfg, service.PendaftaranDeps{
@@ -105,9 +106,9 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	})
 	// Worker email dipakai untuk pengiriman manual sinkron (tombol admin);
 	// pengiriman otomatis tetap di biner cmd/worker.
-	emailWorker := service.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
-	outboxService := service.NewOutboxService(emailOutboxRepo, emailWorker)
-	notifService := service.NewNotificationService(cfg, notifRepo)
+	emailWorker := notify.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
+	outboxService := notify.NewOutboxService(emailOutboxRepo, emailWorker)
+	notifService := notify.NewNotificationService(cfg, notifRepo)
 	dashboardService := service.NewDashboardService(repository.NewDashboardRepository(db))
 	laporanService := service.NewLaporanService(cfg, repository.NewLaporanRepository(db))
 	auditService := service.NewAuditService(auditRepo)

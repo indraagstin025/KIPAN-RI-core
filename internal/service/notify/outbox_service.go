@@ -1,4 +1,4 @@
-package service
+package notify
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 )
 
 // EmailDispatcher mengirim satu item antrian segera (render + kirim + tandai
-// sent/failed). Diimplementasikan oleh *service.EmailWorker.
+// sent/failed). Diimplementasikan oleh *EmailWorker (package yang sama).
 type EmailDispatcher interface {
 	ProcessOne(ctx context.Context, it domain.EmailOutbox) error
 }
@@ -46,7 +46,7 @@ func (s *outboxSvc) SendNow(ctx context.Context, actor domain.ActorContext, id i
 	if err != nil {
 		return err
 	}
-	if !actor.CanAccessWilayah(derefInt(it.ProvinsiID), derefInt(it.KabupatenID)) {
+	if !actor.CanAccessWilayah(svcutil.DerefInt(it.ProvinsiID), svcutil.DerefInt(it.KabupatenID)) {
 		return domain.NewForbiddenError("Antrian di luar wilayah kerja Anda")
 	}
 	if it.Status == domain.EmailOutboxSent {
@@ -86,7 +86,7 @@ func (s *outboxSvc) inScope(ctx context.Context, actor domain.ActorContext, id i
 	if err != nil {
 		return err
 	}
-	if !actor.CanAccessWilayah(derefInt(it.ProvinsiID), derefInt(it.KabupatenID)) {
+	if !actor.CanAccessWilayah(svcutil.DerefInt(it.ProvinsiID), svcutil.DerefInt(it.KabupatenID)) {
 		return domain.NewForbiddenError("Antrian di luar wilayah kerja Anda")
 	}
 	return nil

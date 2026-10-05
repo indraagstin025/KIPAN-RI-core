@@ -1,4 +1,4 @@
-package service
+package notify
 
 // OtpService menangani verifikasi kepemilikan nomor WhatsApp pendaftar
 // (Batch 3, anti-bot untuk submit awal). Kode 6-digit dikirim via
@@ -90,13 +90,13 @@ func (s *otpService) ready() error {
 }
 
 // normalizeOTPTarget memvalidasi format WA lalu mengembalikan digit inti
-// (08xx/62/+62 setara, reuse normalizeWA revision_service).
+// (08xx/62/+62 setara, reuse svcutil.NormalizeWA).
 func normalizeOTPTarget(whatsapp string) (string, error) {
 	wa := strings.TrimSpace(whatsapp)
-	if !phonePattern.MatchString(wa) {
+	if !svcutil.PhonePattern.MatchString(wa) {
 		return "", domain.NewValidationError("Nomor WhatsApp tidak valid (contoh: 081234567890)")
 	}
-	digits := normalizeWA(wa)
+	digits := svcutil.NormalizeWA(wa)
 	if digits == "" {
 		return "", domain.NewValidationError("Nomor WhatsApp tidak valid (contoh: 081234567890)")
 	}

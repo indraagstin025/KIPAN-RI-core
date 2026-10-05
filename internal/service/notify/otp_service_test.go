@@ -1,4 +1,4 @@
-package service
+package notify
 
 // Uji Batch 3: OTP WhatsApp (tanpa Redis — bagian murni + fail-closed).
 

@@ -321,7 +321,7 @@ func (s *pengurusSvc) UpdatePengurusStatus(ctx context.Context, id int, status d
 	}
 	if isNasionalOrSuper(actor.Role) {
 		// nasional: tanpa batas wilayah
-	} else if !actor.CanAccessWilayah(derefInt(p.ProvinsiID), derefInt(p.KabupatenID)) {
+	} else if !actor.CanAccessWilayah(svcutil.DerefInt(p.ProvinsiID), svcutil.DerefInt(p.KabupatenID)) {
 		return domain.NewForbiddenError("Pengurus di luar wilayah kerja Anda")
 	}
 	if err := s.pengurus.UpdateStatus(ctx, id, status, note); err != nil {
