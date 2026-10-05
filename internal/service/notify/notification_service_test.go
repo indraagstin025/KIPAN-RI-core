@@ -35,6 +35,10 @@ func (s *stubNotifRepo) NotifyAdmins(_ context.Context, _ string, _ string, _ do
 	return nil
 }
 
+func (s *stubNotifRepo) NotifyUser(_ context.Context, _ string, _ string, _ string, _ domain.NotificationType, _ string) error {
+	return nil
+}
+
 func (s *stubNotifRepo) ListMine(_ context.Context, _ string, _ int) ([]domain.Notification, error) {
 	return []domain.Notification{}, nil
 }

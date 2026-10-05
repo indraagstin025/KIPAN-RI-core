@@ -460,6 +460,9 @@ type PengurusWriteRepository interface {
 	// CloseExpiredAppointments menutup SELURUH pengurus Aktif yang masa bakti
 	// SK-nya sudah lewat (materialisasi kedaluwarsa dinamis, TDD §5.4).
 	CloseExpiredAppointments(ctx context.Context) ([]domain.ExpiredAppointment, error)
+	// MarkExpiryNotified menandai notifikasi peringatan terkirim (milestone
+	// 30|7 hari) agar tidak duplikat. Milestone lain ditolak.
+	MarkExpiryNotified(ctx context.Context, pengurusID, milestone int) error
 	Remove(ctx context.Context, pengurusID int) error
 	UpdateStatus(ctx context.Context, id int, status domain.PengurusStatus, keterangan string) error
 	UpdateJabatan(ctx context.Context, id int, jabatanID int) error
@@ -469,6 +472,9 @@ type PengurusWriteRepository interface {
 type PengurusQueryRepository interface {
 	GetByID(ctx context.Context, id int) (*domain.PengurusDetail, error)
 	ListBySK(ctx context.Context, skID int) ([]domain.PengurusDetail, error)
+	// ListExpiringSoon mengambil pengurus Aktif yang masa baktinya berakhir
+	// dalam maxDays hari (sumber notifikasi H-30/H-7), terurut paling dekat.
+	ListExpiringSoon(ctx context.Context, maxDays int) ([]domain.ExpiringAppointment, error)
 	// ListByAnggota mengambil seluruh riwayat kepengurusan (semua status) milik
 	// satu anggota, terurut naik menurut tanggal mulai.
 	ListByAnggota(ctx context.Context, anggotaID int) ([]domain.PengurusDetail, error)
@@ -608,23 +614,79 @@ func (r *pengurusRepo) Mutate(ctx context.Context, in MutateInput) (int, error) 
 // atomik + idempoten.
 func (r *pengurusRepo) CloseExpiredAppointments(ctx context.Context) ([]domain.ExpiredAppointment, error) {
 	items := make([]domain.ExpiredAppointment, 0)
+	// CTE: UPDATE tidak boleh JOIN ke tabel targetnya sendiri, jadi baris
+	// yang ditutup diambil dulu, lalu di-JOIN untuk detail notifikasi.
 	query := `
-		UPDATE pengurus p
-		SET status = 'Demisioner',
-		    keterangan_status = 'Otomatis: masa bakti SK berakhir',
-		    tanggal_selesai = COALESCE(p.tanggal_selesai, sk.tanggal_berakhir, CURRENT_DATE),
-		    updated_at = CURRENT_TIMESTAMP
-		FROM surat_keputusan sk
-		WHERE p.surat_keputusan_id = sk.id
-		  AND p.status = 'Aktif'
-		  AND sk.status = 'Aktif'
-		  AND sk.tanggal_berakhir IS NOT NULL
-		  AND sk.tanggal_berakhir < CURRENT_DATE
-		RETURNING p.id, p.anggota_id, p.surat_keputusan_id, sk.nomor_sk`
+		WITH closed AS (
+			UPDATE pengurus p
+			SET status = 'Demisioner',
+			    keterangan_status = 'Otomatis: masa bakti SK berakhir',
+			    tanggal_selesai = COALESCE(p.tanggal_selesai, sk.tanggal_berakhir, CURRENT_DATE),
+			    updated_at = CURRENT_TIMESTAMP
+			FROM surat_keputusan sk
+			WHERE p.surat_keputusan_id = sk.id
+			  AND p.status = 'Aktif'
+			  AND sk.status = 'Aktif'
+			  AND sk.tanggal_berakhir IS NOT NULL
+			  AND sk.tanggal_berakhir < CURRENT_DATE
+			RETURNING p.id, p.anggota_id, p.surat_keputusan_id, sk.nomor_sk,
+			          p.jabatan_id, p.level, p.provinsi_id, p.kabupaten_id
+		)
+		SELECT c.id, c.anggota_id, c.surat_keputusan_id, c.nomor_sk,
+		       j.nama AS jabatan, a.nama_lengkap, c.level,
+		       c.provinsi_id, c.kabupaten_id, a.user_id
+		FROM closed c
+		JOIN anggota a ON a.id = c.anggota_id
+		JOIN jabatan j ON j.id = c.jabatan_id`
 	if err := r.db.SelectContext(ctx, &items, query); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+// ListExpiringSoon mengambil pengurus Aktif yang masa baktinya berakhir
+// dalam maxDays hari. Satu query untuk kedua milestone (H-30/H-7); service
+// yang memilah berdasarkan flag notified_h30_at/notified_h7_at.
+func (r *pengurusRepo) ListExpiringSoon(ctx context.Context, maxDays int) ([]domain.ExpiringAppointment, error) {
+	if maxDays <= 0 {
+		maxDays = 30
+	}
+	items := make([]domain.ExpiringAppointment, 0)
+	query := `
+		SELECT p.id, p.anggota_id, a.nama_lengkap, j.nama AS jabatan,
+		       sk.nomor_sk, sk.tanggal_berakhir, p.level,
+		       p.provinsi_id, p.kabupaten_id,
+		       p.notified_h30_at, p.notified_h7_at
+		FROM pengurus p
+		JOIN surat_keputusan sk ON sk.id = p.surat_keputusan_id
+		JOIN anggota a ON a.id = p.anggota_id
+		JOIN jabatan j ON j.id = p.jabatan_id
+		WHERE p.status = 'Aktif' AND sk.status = 'Aktif'
+		  AND sk.tanggal_berakhir IS NOT NULL
+		  AND sk.tanggal_berakhir > CURRENT_DATE
+		  AND sk.tanggal_berakhir <= CURRENT_DATE + make_interval(days => $1)
+		ORDER BY sk.tanggal_berakhir ASC, p.id ASC`
+	if err := r.db.SelectContext(ctx, &items, query, maxDays); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// MarkExpiryNotified menandai satu milestone peringatan terkirim.
+func (r *pengurusRepo) MarkExpiryNotified(ctx context.Context, pengurusID, milestone int) error {
+	var col string
+	switch milestone {
+	case 30:
+		col = "notified_h30_at"
+	case 7:
+		col = "notified_h7_at"
+	default:
+		return domain.NewValidationError("Milestone notifikasi tidak dikenal")
+	}
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE pengurus SET `+col+` = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+		pengurusID)
+	return err
 }
 
 func (r *pengurusRepo) Remove(ctx context.Context, pengurusID int) error {

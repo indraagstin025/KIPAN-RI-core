@@ -92,6 +92,12 @@ func (f *fakePengurusRepo) Mutate(context.Context, repository.MutateInput) (int,
 func (f *fakePengurusRepo) CloseExpiredAppointments(context.Context) ([]domain.ExpiredAppointment, error) {
 	return nil, nil
 }
+func (f *fakePengurusRepo) ListExpiringSoon(context.Context, int) ([]domain.ExpiringAppointment, error) {
+	return nil, nil
+}
+func (f *fakePengurusRepo) MarkExpiryNotified(context.Context, int, int) error {
+	return nil
+}
 func (f *fakePengurusRepo) Remove(context.Context, int) error { return nil }
 func (f *fakePengurusRepo) GetByID(context.Context, int) (*domain.PengurusDetail, error) {
 	if f.detail == nil {

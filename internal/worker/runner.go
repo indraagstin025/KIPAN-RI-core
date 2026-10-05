@@ -38,7 +38,7 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, rdb *redis.Client) *Runner {
 	mailSender := infra.MailSender(cfg)
 
 	emailWorker := notify.NewEmailWorker(cfg, emailOutboxRepo, mailSender, rdb, userRepo, anggotaRepo, notifRepo)
-	expirySvc := kepengurusan.NewPengurusExpiryService(pengurusRepo, auditRepo)
+	expirySvc := kepengurusan.NewPengurusExpiryService(pengurusRepo, auditRepo, notifRepo)
 
 	sched := NewScheduler(NewAdvisoryLocker(db), resolveLocation(cfg.Worker.Timezone))
 	sched.Register(Job{
@@ -59,6 +59,22 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, rdb *redis.Client) *Runner {
 			}
 			if n > 0 {
 				log.Info().Int("closed", n).Msg("Kedaluwarsa: pengurus didemosikan otomatis")
+			}
+			return nil
+		},
+	})
+	// Peringatan H-30/H-7 sebelum masa bakti berakhir (sekali per milestone).
+	sched.Register(Job{
+		Name:      "pengurus-expiry-warning",
+		Interval:  cfg.Worker.ExpiryInterval,
+		Immediate: true,
+		Run: func(ctx context.Context) error {
+			n, err := expirySvc.WarnExpiringSoon(ctx)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				log.Info().Int("warned", n).Msg("Kedaluwarsa: peringatan terkirim")
 			}
 			return nil
 		},

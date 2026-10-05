@@ -16,6 +16,10 @@ type NotificationRepository interface {
 	// SUPER_ADMIN + ADMIN_NASIONAL (semua), ADMIN_PROVINSI (seprovinsi),
 	// ADMIN_KABUPATEN (sekabupaten). Satu statement, tanpa N+1.
 	NotifyAdmins(ctx context.Context, title, message string, notifType domain.NotificationType, link string, provinsiID, kabupatenID int) error
+	// NotifyUser mengirim satu notifikasi in-app ke user tertentu (mis. anggota
+	// yang didemosikan otomatis dan punya akun). Best-effort: FK users
+	// memastikan user ada; user terhapus → error (pemanggil mencatat saja).
+	NotifyUser(ctx context.Context, userID, title, message string, notifType domain.NotificationType, link string) error
 	// ListMine mengambil notifikasi milik satu user (klaim JWT), terbaru dulu.
 	ListMine(ctx context.Context, userID string, limit int) ([]domain.Notification, error)
 	// MarkRead menandai satu notifikasi milik user sebagai dibaca.
@@ -50,6 +54,21 @@ func (r *notificationRepo) NotifyAdmins(ctx context.Context, title, message stri
 	_, err := r.db.ExecContext(ctx, query,
 		strings.TrimSpace(title), strings.TrimSpace(message), string(notifType), linkArg,
 		provinsiID, kabupatenID)
+	return err
+}
+
+func (r *notificationRepo) NotifyUser(ctx context.Context, userID, title, message string, notifType domain.NotificationType, link string) error {
+	var linkArg interface{}
+	if strings.TrimSpace(link) == "" {
+		linkArg = nil
+	} else {
+		linkArg = strings.TrimSpace(link)
+	}
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO notifications (user_id, title, message, type, link, is_read, created_at)
+		 VALUES ($1, $2, $3, $4, $5, FALSE, CURRENT_TIMESTAMP)`,
+		strings.TrimSpace(userID), strings.TrimSpace(title), strings.TrimSpace(message),
+		string(notifType), linkArg)
 	return err
 }
 

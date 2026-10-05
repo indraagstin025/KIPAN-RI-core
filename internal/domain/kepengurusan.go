@@ -176,8 +176,30 @@ type MutasiRequest struct {
 // ExpiredAppointment adalah pengurus yang ditutup otomatis karena masa bakti
 // SK berakhir (hasil job materialisasi kedaluwarsa dinamis, TDD §5.4).
 type ExpiredAppointment struct {
-	ID               int    `db:"id" json:"id"`
-	AnggotaID        int    `db:"anggota_id" json:"anggota_id"`
-	SuratKeputusanID int    `db:"surat_keputusan_id" json:"surat_keputusan_id"`
-	NomorSK          string `db:"nomor_sk" json:"nomor_sk"`
+	ID               int     `db:"id" json:"id"`
+	AnggotaID        int     `db:"anggota_id" json:"anggota_id"`
+	SuratKeputusanID int     `db:"surat_keputusan_id" json:"surat_keputusan_id"`
+	NomorSK          string  `db:"nomor_sk" json:"nomor_sk"`
+	Jabatan          string  `db:"jabatan" json:"jabatan"`
+	NamaLengkap      string  `db:"nama_lengkap" json:"nama_lengkap"`
+	Level            string  `db:"level" json:"level"`
+	ProvinsiID       *int    `db:"provinsi_id" json:"provinsi_id,omitempty"`
+	KabupatenID      *int    `db:"kabupaten_id" json:"kabupaten_id,omitempty"`
+	UserID           *string `db:"user_id" json:"user_id,omitempty"`
+}
+
+// ExpiringAppointment adalah pengurus Aktif yang masa baktinya berakhir
+// dalam maxDays hari (sumber notifikasi peringatan H-30/H-7).
+type ExpiringAppointment struct {
+	ID              int        `db:"id" json:"id"`
+	AnggotaID       int        `db:"anggota_id" json:"anggota_id"`
+	NamaLengkap     string     `db:"nama_lengkap" json:"nama_lengkap"`
+	Jabatan         string     `db:"jabatan" json:"jabatan"`
+	NomorSK         string     `db:"nomor_sk" json:"nomor_sk"`
+	TanggalBerakhir time.Time  `db:"tanggal_berakhir" json:"tanggal_berakhir"`
+	Level           string     `db:"level" json:"level"`
+	ProvinsiID      *int       `db:"provinsi_id" json:"provinsi_id,omitempty"`
+	KabupatenID     *int       `db:"kabupaten_id" json:"kabupaten_id,omitempty"`
+	NotifiedH30At   *time.Time `db:"notified_h30_at" json:"notified_h30_at,omitempty"`
+	NotifiedH7At    *time.Time `db:"notified_h7_at" json:"notified_h7_at,omitempty"`
 }
