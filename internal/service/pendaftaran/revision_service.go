@@ -1,4 +1,4 @@
-package service
+package pendaftaran
 
 // RevisionService menangani alur revisi mandiri applicant (R3: pecahan dari
 // god-service pendaftaran). Dependensi minimal: repo + storage + audit.

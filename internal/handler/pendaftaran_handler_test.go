@@ -13,13 +13,13 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/pendaftaran"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
 func stringReader(s string) *strings.Reader { return strings.NewReader(s) }
 
-// stubPendaftaranService mengimplementasikan service.PendaftaranService
+// stubPendaftaranService mengimplementasikan pendaftaran.PendaftaranService
 // dengan perilaku terprogram per test.
 type stubPendaftaranService struct {
 	validateErr error
@@ -67,11 +67,11 @@ func (s *stubPendaftaranService) GetDetail(context.Context, int, domain.ActorCon
 func (s *stubPendaftaranService) RevealNIK(context.Context, int, domain.ActorContext, domain.AuditContext) (string, error) {
 	return "3201010101010001", nil
 }
-func (s *stubPendaftaranService) ProcessApproval(context.Context, int, domain.PendaftaranApprovalAction, string, domain.ActorContext, domain.AuditContext) (*service.ApprovalResult, error) {
-	return &service.ApprovalResult{}, nil
+func (s *stubPendaftaranService) ProcessApproval(context.Context, int, domain.PendaftaranApprovalAction, string, domain.ActorContext, domain.AuditContext) (*pendaftaran.ApprovalResult, error) {
+	return &pendaftaran.ApprovalResult{}, nil
 }
 
-var _ service.PendaftaranService = (*stubPendaftaranService)(nil)
+var _ pendaftaran.PendaftaranService = (*stubPendaftaranService)(nil)
 
 func testPendaftaranApp(stub *stubPendaftaranService) *fiber.App {
 	app := fiber.New()

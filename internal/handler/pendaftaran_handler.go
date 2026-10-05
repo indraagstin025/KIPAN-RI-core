@@ -7,7 +7,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/pendaftaran"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
@@ -16,16 +16,16 @@ import (
 // Thin-handler (RULES 4): hanya parse request, ambil identitas server-side,
 // panggil service, format response. Seluruh akses data lewat service.
 type PendaftaranHandler struct {
-	service         service.PendaftaranService
-	revisionSvc     service.RevisionService
-	verificationSvc service.VerificationService
+	service         pendaftaran.PendaftaranService
+	revisionSvc     pendaftaran.RevisionService
+	verificationSvc pendaftaran.VerificationService
 	validator       *validator.CustomValidator
 }
 
 func NewPendaftaranHandler(
-	service service.PendaftaranService,
-	revisionSvc service.RevisionService,
-	verificationSvc service.VerificationService,
+	service pendaftaran.PendaftaranService,
+	revisionSvc pendaftaran.RevisionService,
+	verificationSvc pendaftaran.VerificationService,
 	validator *validator.CustomValidator,
 ) *PendaftaranHandler {
 	return &PendaftaranHandler{

@@ -1,4 +1,4 @@
-package service
+package pendaftaran
 
 // pendaftaran_service.go menyusun layanan pendaftaran dari dua service fokus
 // (Submit & Query) yang berbagi dependensi via `pendaftaranBase`, plus helper
@@ -323,5 +323,3 @@ func (b *pendaftaranBase) auditEvent(
 ) {
 	svcutil.WriteAudit(ctx, b.auditRepo, audit, actorID, actorName, actorRole, entity, entityID, action, metadata)
 }
-
-

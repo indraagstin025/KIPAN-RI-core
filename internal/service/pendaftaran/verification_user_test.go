@@ -1,4 +1,4 @@
-package service
+package pendaftaran
 
 // Uji Batch 2: penerbitan akun USER saat approve + KTA mandiri.
 

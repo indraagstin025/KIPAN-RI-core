@@ -1,4 +1,4 @@
-package service
+package pendaftaran
 
 // pendaftaran_query_service.go — service fokus: pelacakan publik & antrean
 // admin (Fase A4, SRP).

@@ -18,6 +18,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/auth"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/pendaftaran"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/users"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/wilayah"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
@@ -75,17 +76,17 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	otpSvc := notify.NewOTPService(cfg, notify.OtpDeps{
 		RDB: rdb, Gateway: waGateway,
 	})
-	pendaftaranService := service.NewPendaftaranService(cfg, service.PendaftaranDeps{
+	pendaftaranService := pendaftaran.NewPendaftaranService(cfg, pendaftaran.PendaftaranDeps{
 		Repo: pendaftaranRepo, AnggotaRepo: anggotaRepo, AuditRepo: auditRepo,
 		StorageSvc: storageService, WilayahRepo: wilayahRepo, NotifRepo: notifRepo,
 		OTPSvc: otpSvc, WAGateway: waGateway, ListRepo: repository.NewListKeysetRepository(db),
 		OutboxRepo: emailOutboxRepo,
 	})
-	revisionSvc := service.NewRevisionService(cfg, service.RevisionDeps{
+	revisionSvc := pendaftaran.NewRevisionService(cfg, pendaftaran.RevisionDeps{
 		Repo: pendaftaranRepo, StorageSvc: storageService, AuditRepo: auditRepo,
 		Mail: mailSender,
 	})
-	verificationSvc := service.NewVerificationService(cfg, service.VerificationDeps{
+	verificationSvc := pendaftaran.NewVerificationService(cfg, pendaftaran.VerificationDeps{
 		Repo: pendaftaranRepo, AnggotaRepo: anggotaRepo, UserRepo: userRepo,
 		AuditRepo: auditRepo, KTASvc: ktaSvc,
 		NotifRepo: notifRepo, Mail: mailSender, OutboxRepo: emailOutboxRepo,

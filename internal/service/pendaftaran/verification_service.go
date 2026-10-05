@@ -1,4 +1,4 @@
-package service
+package pendaftaran
 
 // VerificationService menangani verifikasi admin + KTA + NIK reveal (R3:
 // pecahan dari god-service pendaftaran). Dependensi minimal: repo +

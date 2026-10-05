@@ -1,4 +1,4 @@
-package service
+package pendaftaran
 
 // pendaftaran_submit_service.go — service fokus: submit/pendaftaran baru
 // (validasi, enkripsi NIK, alokasi nomor, simpan) (Fase A4, SRP).
