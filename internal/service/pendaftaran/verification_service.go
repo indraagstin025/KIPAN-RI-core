@@ -28,6 +28,10 @@ import (
 
 type VerificationService interface {
 	ProcessApproval(ctx context.Context, id int, action domain.PendaftaranApprovalAction, catatan string, actor domain.ActorContext, audit domain.AuditContext) (*ApprovalResult, error)
+	// BypassApproval adalah jalur pemulihan khusus Super Admin / Admin
+	// Nasional: menyetujui dari status apa pun (kecuali sudah DISETUJUI)
+	// dengan alasan wajib + audit BYPASS_VERIFIKASI.
+	BypassApproval(ctx context.Context, id int, catatan string, actor domain.ActorContext, audit domain.AuditContext) (*ApprovalResult, error)
 	VerifyKTA(ctx context.Context, nia, sig string) (*domain.KTAVerificationResponse, error)
 	RevealNIK(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext) (string, error)
 }
@@ -132,7 +136,7 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 			// alih-alih gagal dengan "sudah memiliki anggota".
 			var appErr *domain.AppError
 			if errors.As(err, &appErr) && appErr.Code == 409 && s.anggotaRepo != nil {
-				return s.healKTADocument(ctx, id, actor, audit, meta)
+				return s.healKTADocument(ctx, id, actor, audit, string(domain.PendaftaranActionSetujui), meta)
 			}
 			return nil, err
 		}
@@ -188,6 +192,73 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 	return &ApprovalResult{}, nil
 }
 
+// BypassApproval menjalankan pipeline persetujuan yang sama dengan SETUJUI
+// (anggota+NIA → PDF KTA → akun USER → email kredensial) tetapi tanpa
+// melewati state machine normal. Khusus Super Admin / Admin Nasional
+// sebagai pemulihan beralasan (matriks §9.3): alasan WAJIB dan tercatat
+// sebagai audit BYPASS_VERIFIKASI.
+func (s *verificationSvc) BypassApproval(ctx context.Context, id int, catatan string, actor domain.ActorContext, audit domain.AuditContext) (*ApprovalResult, error) {
+	if id <= 0 {
+		return nil, domain.NewValidationError("ID pendaftaran tidak valid")
+	}
+	if s.repo == nil {
+		return nil, svcutil.Unavailable("pendaftaran")
+	}
+	if actor.Role != domain.RoleSuperAdmin && actor.Role != domain.RoleAdminNasional {
+		return nil, domain.NewForbiddenError("Bypass verifikasi hanya untuk Super Admin dan Admin Nasional")
+	}
+	item, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !actor.CanAccessWilayah(item.ProvinsiID, item.KabupatenID) {
+		return nil, domain.NewForbiddenError("Pendaftaran di luar wilayah kerja Anda")
+	}
+	if item.Status == domain.PendaftaranStatusDisetujui {
+		return nil, domain.NewConflictError("Pendaftaran sudah disetujui")
+	}
+	note := strings.TrimSpace(catatan)
+	if note == "" {
+		return nil, domain.NewValidationError("Alasan bypass wajib diisi")
+	}
+	if s.cfg == nil || strings.TrimSpace(s.cfg.Crypto.KTASigningKey) == "" {
+		return nil, domain.NewValidationError("KTA_SIGNING_KEY belum dikonfigurasi")
+	}
+	member, err := s.repo.IssueMember(ctx, id, time.Now().Year(), s.cfg.Crypto.KTASigningKey)
+	if err != nil {
+		var appErr *domain.AppError
+		if errors.As(err, &appErr) && appErr.Code == 409 && s.anggotaRepo != nil {
+			return s.healKTADocument(ctx, id, actor, audit, string(domain.PendaftaranActionBypass), note)
+		}
+		return nil, err
+	}
+	if s.ktaSvc != nil {
+		if _, err := s.ktaSvc.IssueKTADocument(ctx, member, member.KTAQRHashValue(), audit); err != nil {
+			return nil, err
+		}
+	}
+	userID, isNew, err := s.ensureMemberAccount(ctx, member, actor, audit)
+	if err != nil {
+		return nil, err
+	}
+	if isNew {
+		s.enqueueContent(ctx, domain.EmailOutboxSetPassword, item, &userID, item.Email,
+			mail.EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
+	} else {
+		s.enqueueContent(ctx, domain.EmailOutboxAkunTerhubung, item, nil, item.Email,
+			mail.AccountLinkedEmail(item.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
+	}
+	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
+	meta := fmt.Sprintf(`{"from":%q,"to":"DISETUJUI","bypass_alasan":%q}`, string(item.Status), note)
+	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
+		"pendaftaran", strconv.Itoa(id), "BYPASS_VERIFIKASI", &meta)
+	s.notifyAdmins(ctx, "Bypass Verifikasi",
+		"Pendaftaran "+item.NamaLengkap+" disetujui via bypass oleh "+actorName+". Alasan: "+note,
+		domain.NotifTypeVerifikasi, "#admin?page=verifikasi",
+		item.ProvinsiID, item.KabupatenID)
+	return &ApprovalResult{NIA: member.NIA}, nil
+}
+
 // enqueueContent menulis satu baris antrian email (best-effort, non-fatal).
 func (s *verificationSvc) enqueueContent(ctx context.Context, jenis domain.EmailOutboxKind, item *domain.Pendaftaran, userID *string, toEmail string, c mail.EmailContent) {
 	if s.outboxRepo == nil || strings.TrimSpace(toEmail) == "" {
@@ -216,7 +287,7 @@ func (s *verificationSvc) enqueueContent(ctx context.Context, jenis domain.Email
 // di tengah jalan (anggota sudah terbit, PDF belum). Idempoten: bila PDF
 // sudah ada, IssueKTADocument mengembalikan key lama. Akun USER ikut
 // dilengkapi bila belum terhubung (percobaan pertama gagal setelah IssueMember).
-func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext, meta string) (*ApprovalResult, error) {
+func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor domain.ActorContext, audit domain.AuditContext, auditAction, meta string) (*ApprovalResult, error) {
 	if s.anggotaRepo == nil || s.ktaSvc == nil {
 		return nil, domain.NewConflictError("Pendaftaran sudah memiliki anggota")
 	}
@@ -248,7 +319,7 @@ func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor dom
 	}
 	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
-		"pendaftaran", strconv.Itoa(id), string(domain.PendaftaranActionSetujui), &meta)
+		"pendaftaran", strconv.Itoa(id), auditAction, &meta)
 	return &ApprovalResult{NIA: member.NIA}, nil
 }
 

@@ -214,6 +214,32 @@ func (h *PendaftaranHandler) Approve(c *fiber.Ctx) error {
 	return h.processApproval(c, domain.PendaftaranActionSetujui, "Pendaftaran disetujui")
 }
 
+// Bypass adalah jalur pemulihan khusus Super Admin / Admin Nasional
+// (matriks §9.3): menyetujui dari status apa pun dengan alasan wajib.
+func (h *PendaftaranHandler) Bypass(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return response.BadRequest(c, "ID pendaftaran tidak valid")
+	}
+	actor, ok := actorOf(c)
+	if !ok {
+		return response.Unauthorized(c, "Tidak terotentikasi")
+	}
+	var payload struct {
+		Catatan string `json:"catatan"`
+	}
+	_ = c.BodyParser(&payload)
+	res, err := h.verificationSvc.BypassApproval(c.Context(), id, payload.Catatan, actor, auditContextOf(c))
+	if err != nil {
+		return response.FromError(c, err)
+	}
+	var data interface{}
+	if res != nil {
+		data = fiber.Map{"nia": res.NIA}
+	}
+	return response.Success(c, "Pendaftaran disetujui via bypass", data)
+}
+
 func (h *PendaftaranHandler) processApproval(c *fiber.Ctx, action domain.PendaftaranApprovalAction, successMsg string) error {
 	id, err := c.ParamsInt("id")
 	if err != nil || id <= 0 {

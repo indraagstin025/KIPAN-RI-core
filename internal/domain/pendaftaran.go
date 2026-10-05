@@ -59,6 +59,11 @@ const (
 	PendaftaranActionPerbaikan  PendaftaranApprovalAction = "PERBAIKAN"
 	PendaftaranActionTolak      PendaftaranApprovalAction = "TOLAK"
 	PendaftaranActionSetujui    PendaftaranApprovalAction = "SETUJUI"
+	// PendaftaranActionBypass adalah jalur pemulihan khusus Super Admin /
+	// Admin Nasional (matriks §9.3): menyetujui dari status apa pun dengan
+	// alasan wajib + audit BYPASS_VERIFIKASI. Bukan bagian state machine
+	// normal (tidak ada di PendaftaranStatusTransitionRules).
+	PendaftaranActionBypass PendaftaranApprovalAction = "BYPASS"
 )
 
 // PendaftaranStatusTransition validasi transisi status yang sah.

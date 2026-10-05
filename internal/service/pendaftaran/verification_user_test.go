@@ -220,3 +220,63 @@ func TestApproveTanpaUserRepoGagalFailClosed(t *testing.T) {
 		t.Fatal("tanpa UserRepo approve harus gagal (fail-closed), bukan skip diam-diam")
 	}
 }
+
+// Bypass pemulihan (matriks §9.3): hanya Super Admin / Admin Nasional,
+// alasan wajib, dari status apa pun kecuali sudah DISETUJUI.
+func TestBypassHanyaSuperNasional(t *testing.T) {
+	for _, actor := range []domain.ActorContext{testutil.KabActor(), testutil.ProvActor()} {
+		item, member := approveFixture()
+		repo := &fakeApproveRepo{item: item, member: member}
+		svc := approveSvc(repo, &testutil.FakeMemberUserRepo{}, &testutil.FakeAnggotaRepo{}, &testutil.FakeOutboxRepo{})
+		_, err := svc.BypassApproval(context.Background(), item.ID, "darurat", actor, domain.AuditContext{})
+		appErr, ok := err.(*domain.AppError)
+		if !ok || appErr.Code != 403 {
+			t.Fatalf("role %s harus 403, dapat %v", actor.Role, err)
+		}
+	}
+}
+
+func TestBypassWajibAlasan(t *testing.T) {
+	item, member := approveFixture()
+	repo := &fakeApproveRepo{item: item, member: member}
+	svc := approveSvc(repo, &testutil.FakeMemberUserRepo{}, &testutil.FakeAnggotaRepo{}, &testutil.FakeOutboxRepo{})
+	_, err := svc.BypassApproval(context.Background(), item.ID, "   ", testutil.SuperActor(), domain.AuditContext{})
+	appErr, ok := err.(*domain.AppError)
+	if !ok || appErr.Code != 422 {
+		t.Fatalf("bypass tanpa alasan harus 422, dapat %v", err)
+	}
+}
+
+func TestBypassSuksesDariStatusApapun(t *testing.T) {
+	for _, st := range []domain.PendaftaranStatus{domain.PendaftaranStatusDraft, domain.PendaftaranStatusPerbaikan, domain.PendaftaranStatusDitolak} {
+		item, member := approveFixture()
+		item.Status = st
+		repo := &fakeApproveRepo{item: item, member: member}
+		users := &testutil.FakeMemberUserRepo{}
+		anggota := &testutil.FakeAnggotaRepo{ByID: map[int]*domain.Anggota{member.ID: member}}
+		outbox := &testutil.FakeOutboxRepo{}
+		svc := approveSvc(repo, users, anggota, outbox)
+		res, err := svc.BypassApproval(context.Background(), item.ID, "pemulihan antrean", testutil.NasActor(), domain.AuditContext{})
+		if err != nil {
+			t.Fatalf("bypass dari %s gagal: %v", st, err)
+		}
+		if res == nil || res.NIA == "" {
+			t.Fatalf("bypass dari %s harus mengembalikan NIA", st)
+		}
+		if len(outbox.Enqueued) != 1 {
+			t.Fatalf("bypass dari %s harus enqueue 1 email, dapat %d", st, len(outbox.Enqueued))
+		}
+	}
+}
+
+func TestBypassTolakSudahDisetujui(t *testing.T) {
+	item, member := approveFixture()
+	item.Status = domain.PendaftaranStatusDisetujui
+	repo := &fakeApproveRepo{item: item, member: member}
+	svc := approveSvc(repo, &testutil.FakeMemberUserRepo{}, &testutil.FakeAnggotaRepo{}, &testutil.FakeOutboxRepo{})
+	_, err := svc.BypassApproval(context.Background(), item.ID, "alasan", testutil.SuperActor(), domain.AuditContext{})
+	appErr, ok := err.(*domain.AppError)
+	if !ok || appErr.Code != 409 {
+		t.Fatalf("bypass yang sudah disetujui harus 409, dapat %v", err)
+	}
+}

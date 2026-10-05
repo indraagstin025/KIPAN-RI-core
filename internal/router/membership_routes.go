@@ -61,4 +61,9 @@ func registerMembershipRoutes(
 	adminPendaftaran.Post("/:id/perbaikan", middleware.ScopeWilayah(), h.RequestRevision)
 	adminPendaftaran.Post("/:id/tolak", middleware.ScopeWilayah(), h.Reject)
 	adminPendaftaran.Post("/:id/setujui", middleware.ScopeWilayah(), h.Approve)
+	// Bypass pemulihan (matriks §9.3): hanya Super Admin & Admin Nasional,
+	// alasan wajib + audit khusus (ditegakkan di service).
+	adminPendaftaran.Post("/:id/bypass",
+		middleware.RequireRoles(domain.RoleSuperAdmin, domain.RoleAdminNasional),
+		middleware.ScopeWilayah(), h.Bypass)
 }

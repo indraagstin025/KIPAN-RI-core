@@ -70,6 +70,9 @@ func (s *stubPendaftaranService) RevealNIK(context.Context, int, domain.ActorCon
 func (s *stubPendaftaranService) ProcessApproval(context.Context, int, domain.PendaftaranApprovalAction, string, domain.ActorContext, domain.AuditContext) (*pendaftaran.ApprovalResult, error) {
 	return &pendaftaran.ApprovalResult{}, nil
 }
+func (s *stubPendaftaranService) BypassApproval(context.Context, int, string, domain.ActorContext, domain.AuditContext) (*pendaftaran.ApprovalResult, error) {
+	return &pendaftaran.ApprovalResult{NIA: "KIPAN-IND-3204-2026-000001"}, nil
+}
 
 var _ pendaftaran.PendaftaranService = (*stubPendaftaranService)(nil)
 
@@ -127,6 +130,27 @@ func TestTrackEmptyNomor400(t *testing.T) {
 	}
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("harap 404, dapat %d", resp.StatusCode)
+	}
+}
+
+func TestBypassSukses200(t *testing.T) {
+	app := fiber.New()
+	stub := &stubPendaftaranService{}
+	h := NewPendaftaranHandler(stub, stub, stub, validator.New())
+	app.Post("/admin/pendaftaran/:id/bypass",
+		func(c *fiber.Ctx) error {
+			c.Locals("user", &middleware.JWTClaims{UserID: "u1", Role: domain.RoleSuperAdmin})
+			return c.Next()
+		},
+		h.Bypass)
+	req := httptest.NewRequest("POST", "/admin/pendaftaran/11/bypass", stringReader(`{"catatan":"pemulihan"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request gagal: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("harap 200, dapat %d", resp.StatusCode)
 	}
 }
 
