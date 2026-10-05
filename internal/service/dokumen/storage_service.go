@@ -1,4 +1,4 @@
-package service
+package dokumen
 
 import (
 	"context"

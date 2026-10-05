@@ -7,16 +7,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/validator"
 )
 
 // PresignService adalah kontrak yang dibutuhkan handler ini (consumer-side
-// interface / DIP). Diimplementasikan oleh *service.StorageService.
+// interface / DIP). Diimplementasikan oleh *dokumen.StorageService.
 type PresignService interface {
-	RequestUploadPresign(ctx context.Context, category, fileName, mimeType string, fileSize int64) (*service.PresignUploadResult, error)
-	RequestViewPresign(ctx context.Context, key string, actor domain.ActorContext, audit domain.AuditContext) (*service.PresignViewResult, error)
+	RequestUploadPresign(ctx context.Context, category, fileName, mimeType string, fileSize int64) (*dokumen.PresignUploadResult, error)
+	RequestViewPresign(ctx context.Context, key string, actor domain.ActorContext, audit domain.AuditContext) (*dokumen.PresignViewResult, error)
 }
 
 // StorageHandler menangani tiket presigned upload/view (RULES 14).

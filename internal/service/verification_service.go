@@ -20,6 +20,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
@@ -43,7 +44,7 @@ type VerificationDeps struct {
 	AnggotaRepo repository.AnggotaRepository
 	UserRepo    repository.UserAccountRepository
 	AuditRepo   repository.AuditLogRepository
-	KTASvc      KTAService
+	KTASvc      dokumen.KTAService
 	NotifRepo   repository.NotificationRepository
 	Mail        gateway.MailSender
 	OutboxRepo  repository.EmailOutboxRepository
@@ -55,7 +56,7 @@ type verificationSvc struct {
 	anggotaRepo repository.AnggotaRepository
 	userRepo    repository.UserAccountRepository
 	auditRepo   repository.AuditLogRepository
-	ktaSvc      KTAService
+	ktaSvc      dokumen.KTAService
 	notifRepo   repository.NotificationRepository
 	mail        gateway.MailSender
 	outboxRepo  repository.EmailOutboxRepository

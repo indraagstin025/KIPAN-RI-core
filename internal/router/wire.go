@@ -12,7 +12,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	storagepkg "github.com/kipan-indonesia/sim-kipan-core/pkg/storage"
 )
 
@@ -22,7 +22,7 @@ import (
 // dibangun dengan client nil sehingga RequestUploadPresign/RequestViewPresign
 // mengembalikan 503 (bukan bypass diam-diam). Bucket disiapkan otomatis
 // hanya di non-production.
-func wireStorageService(cfg *config.Config, auditRepo repository.AuditLogRepository, docRepo repository.DocumentRepository) *service.StorageService {
+func wireStorageService(cfg *config.Config, auditRepo repository.AuditLogRepository, docRepo repository.DocumentRepository) *dokumen.StorageService {
 	var client *storagepkg.Client
 	if strings.TrimSpace(cfg.Storage.Endpoint) != "" {
 		c, err := storagepkg.NewClient(
@@ -40,7 +40,7 @@ func wireStorageService(cfg *config.Config, auditRepo repository.AuditLogReposit
 		log.Warn().Msg("STORAGE_ENDPOINT kosong — presign upload/view nonaktif (fail-closed 503)")
 	}
 
-	svc := service.NewStorageService(cfg, client, auditRepo, docRepo)
+	svc := dokumen.NewStorageService(cfg, client, auditRepo, docRepo)
 	if client != nil && cfg.App.Env != "production" {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

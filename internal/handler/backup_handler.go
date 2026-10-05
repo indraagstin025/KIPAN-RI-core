@@ -3,17 +3,17 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/response"
 )
 
 // BackupHandler melayani manajemen backup database (Super Admin).
 type BackupHandler struct {
-	service service.BackupService
+	service dokumen.BackupService
 }
 
 // NewBackupHandler membangun handler backup.
-func NewBackupHandler(service service.BackupService) *BackupHandler {
+func NewBackupHandler(service dokumen.BackupService) *BackupHandler {
 	return &BackupHandler{service: service}
 }
 

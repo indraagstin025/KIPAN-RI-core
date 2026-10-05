@@ -1,4 +1,4 @@
-package service
+package dokumen
 
 // Regression test keamanan (SEC-STORE-BOLA): RequestViewPresign WAJIB
 // mengotorisasi akses baca dokumen berdasarkan yurisdiksi aktor, bukan

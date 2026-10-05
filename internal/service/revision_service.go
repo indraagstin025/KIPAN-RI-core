@@ -16,6 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
@@ -29,7 +30,7 @@ type RevisionService interface {
 // RevisionDeps adalah dependensi service revisi (R1: pola deps).
 type RevisionDeps struct {
 	Repo       repository.PendaftaranRevisionRepository
-	StorageSvc ObjectVerifier
+	StorageSvc dokumen.ObjectVerifier
 	AuditRepo  repository.AuditLogRepository
 	Mail       gateway.MailSender
 }
@@ -37,7 +38,7 @@ type RevisionDeps struct {
 type revisionSvc struct {
 	cfg        *config.Config
 	repo       repository.PendaftaranRevisionRepository
-	storageSvc ObjectVerifier
+	storageSvc dokumen.ObjectVerifier
 	auditRepo  repository.AuditLogRepository
 	mail       gateway.MailSender
 }

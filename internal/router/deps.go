@@ -14,6 +14,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/middleware"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/users"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/wilayah"
@@ -66,7 +67,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	authService := service.NewAuthService(cfg, service.AuthDeps{
 		UserRepo: userRepo, RDB: rdb, AuditRepo: auditRepo,
 	})
-	ktaSvc := service.NewKTAService(cfg, service.KTADeps{
+	ktaSvc := dokumen.NewKTAService(cfg, dokumen.KTADeps{
 		AnggotaRepo: anggotaRepo, DocStore: storageService, AuditRepo: auditRepo,
 	})
 	otpSvc := notify.NewOTPService(cfg, notify.OtpDeps{
@@ -114,7 +115,7 @@ func newDeps(cfg *config.Config, db *sqlx.DB, rdb *redis.Client, val *validator.
 	auditService := service.NewAuditService(auditRepo)
 	roleService := service.NewRoleService()
 	organisasiService := service.NewOrganisasiService(repository.NewOrganisasiRepository(db), auditRepo)
-	backupService := service.NewBackupService(cfg, repository.NewBackupRepository(db), storageService, auditRepo)
+	backupService := dokumen.NewBackupService(cfg, repository.NewBackupRepository(db), storageService, auditRepo)
 	kepengurusanService := service.NewKepengurusanService(cfg, service.KepengurusanDeps{
 		JabatanRepo:  repository.NewJabatanRepository(db),
 		SKRepo:       repository.NewSKRepository(db),

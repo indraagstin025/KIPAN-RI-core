@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/dokumen"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/notify"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
@@ -33,7 +34,7 @@ type PendaftaranDeps struct {
 	Repo        repository.PendaftaranCoreRepository
 	AnggotaRepo repository.AnggotaRepository
 	AuditRepo   repository.AuditLogRepository
-	StorageSvc  ObjectVerifier
+	StorageSvc  dokumen.ObjectVerifier
 	WilayahRepo repository.WilayahRepository
 	NotifRepo   repository.NotificationRepository
 	OTPSvc      notify.OTPService
@@ -48,7 +49,7 @@ type pendaftaranBase struct {
 	repo        repository.PendaftaranCoreRepository
 	anggotaRepo repository.AnggotaRepository
 	auditRepo   repository.AuditLogRepository
-	storageSvc  ObjectVerifier
+	storageSvc  dokumen.ObjectVerifier
 	wilayahRepo repository.WilayahRepository
 	notifRepo   repository.NotificationRepository
 	otpSvc      notify.OTPService
@@ -231,7 +232,7 @@ func checkObjectKey(label, key string, required bool) error {
 
 // verifyOneDocument memverifikasi satu object via storage (R3: fungsi paket
 // agar dipakai inti + revisi). Storage mati: 503 di production, lewati di non-prod.
-func verifyOneDocument(ctx context.Context, cfg *config.Config, storageSvc ObjectVerifier, key, category string) error {
+func verifyOneDocument(ctx context.Context, cfg *config.Config, storageSvc dokumen.ObjectVerifier, key, category string) error {
 	if storageSvc == nil || !storageSvc.Configured() {
 		if svcutil.DegradedSkip(cfg, "storage(verifikasi-dokumen:"+category+")") {
 			return nil

@@ -1,4 +1,4 @@
-package service
+package dokumen
 
 // backup_service.go — backup database server-side (pg_dump → bucket privat).
 // Super Admin saja (ditegakkan di route). Fail-closed bila pg_dump/storage tak
