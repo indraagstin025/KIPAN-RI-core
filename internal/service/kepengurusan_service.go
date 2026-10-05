@@ -14,6 +14,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/config"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
@@ -66,7 +67,7 @@ func (b *kepengurusanBase) audit(ctx context.Context, audit domain.AuditContext,
 // enqueueEmail menulis satu baris antrian email kepengurusan (best-effort,
 // non-fatal) agar pengiriman konsisten lewat worker outbox. Cakupan wilayah
 // diambil dari SK (bila ada) untuk keperluan monitoring admin.
-func (b *kepengurusanBase) enqueueEmail(ctx context.Context, jenis domain.EmailOutboxKind, sk *domain.SuratKeputusan, userID *string, toEmail string, c EmailContent) {
+func (b *kepengurusanBase) enqueueEmail(ctx context.Context, jenis domain.EmailOutboxKind, sk *domain.SuratKeputusan, userID *string, toEmail string, c mail.EmailContent) {
 	if b.outboxRepo == nil || strings.TrimSpace(toEmail) == "" {
 		return
 	}

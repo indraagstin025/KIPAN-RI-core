@@ -1,8 +1,8 @@
-package service
-
-// Template email (Batch 3). Semua nilai yang berasal dari data pendaftar
-// di-escape sebelum masuk HTML (anti injeksi konten ke email admin/anggota).
-// Fungsi murni agar unit-testable tanpa gateway.
+// Package mail menampung template email (isi siap kirim). Semua nilai yang
+// berasal dari data pendaftar di-escape sebelum masuk HTML. Fungsi murni
+// agar unit-testable tanpa gateway. Daun dependensi (hanya stdlib) sehingga
+// aman diimpor subpackage service mana pun.
+package mail
 
 import (
 	"html"

@@ -22,6 +22,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
@@ -153,10 +154,10 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 		// akun baru; notifikasi akun tertaut untuk akun yang sudah ada.
 		if isNew {
 			s.enqueueContent(ctx, domain.EmailOutboxSetPassword, item, &userID, item.Email,
-				EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
+				mail.EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
 		} else {
 			s.enqueueContent(ctx, domain.EmailOutboxAkunTerhubung, item, nil, item.Email,
-				AccountLinkedEmail(item.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
+				mail.AccountLinkedEmail(item.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
 		}
 		s.auditEvent(ctx, audit, &actorID, actorName, actorRole,
 			"pendaftaran", strconv.Itoa(id), string(action), &meta)
@@ -183,13 +184,13 @@ func (s *verificationSvc) ProcessApproval(ctx context.Context, id int, action do
 			jenis = domain.EmailOutboxStatusDitolak
 		}
 		s.enqueueContent(ctx, jenis, item, nil, item.Email,
-			StatusEmail(string(targetStatus), item.NamaLengkap, item.NomorPendaftaran, note, "", svcutil.PublicURLFrom(s.cfg)))
+			mail.StatusEmail(string(targetStatus), item.NamaLengkap, item.NomorPendaftaran, note, "", svcutil.PublicURLFrom(s.cfg)))
 	}
 	return &ApprovalResult{}, nil
 }
 
 // enqueueContent menulis satu baris antrian email (best-effort, non-fatal).
-func (s *verificationSvc) enqueueContent(ctx context.Context, jenis domain.EmailOutboxKind, item *domain.Pendaftaran, userID *string, toEmail string, c EmailContent) {
+func (s *verificationSvc) enqueueContent(ctx context.Context, jenis domain.EmailOutboxKind, item *domain.Pendaftaran, userID *string, toEmail string, c mail.EmailContent) {
 	if s.outboxRepo == nil || strings.TrimSpace(toEmail) == "" {
 		return
 	}
@@ -241,10 +242,10 @@ func (s *verificationSvc) healKTADocument(ctx context.Context, id int, actor dom
 	// Kredensial via antrian email (Opsi A).
 	if isNew {
 		s.enqueueContent(ctx, domain.EmailOutboxSetPassword, item, &userID, member.Email,
-			EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
+			mail.EmailContent{Subject: "Buat Kata Sandi Akun KIPAN", TextBody: "Buat kata sandi akun Anda melalui tautan pada email ini."})
 	} else {
 		s.enqueueContent(ctx, domain.EmailOutboxAkunTerhubung, item, nil, member.Email,
-			AccountLinkedEmail(member.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
+			mail.AccountLinkedEmail(member.NamaLengkap, member.NIA, svcutil.PublicURLFrom(s.cfg)))
 	}
 	actorID, actorName, actorRole := actor.UserID, actor.Name, string(actor.Role)
 	s.auditEvent(ctx, audit, &actorID, actorName, actorRole,

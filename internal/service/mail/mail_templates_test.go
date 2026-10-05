@@ -1,4 +1,4 @@
-package service
+package mail
 
 // Uji Batch 3: template email (isi wajib + escaping HTML).
 

@@ -17,6 +17,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
@@ -137,7 +138,7 @@ func (w *EmailWorker) ProcessOne(ctx context.Context, it domain.EmailOutbox) err
 				nia = member.NIA
 			}
 		}
-		c := AccountSetupEmail(user.Name, nia, link)
+		c := mail.AccountSetupEmail(user.Name, nia, link)
 		subject, text, html = c.Subject, c.TextBody, c.HTMLBody
 	}
 

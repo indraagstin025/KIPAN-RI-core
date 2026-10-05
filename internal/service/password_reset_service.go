@@ -22,6 +22,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
@@ -99,7 +100,7 @@ func (s *passwordResetService) ForgotPassword(ctx context.Context, email string,
 	}
 
 	link := svcutil.PublicURLFrom(s.cfg) + "/reset-password?token=" + raw
-	content := PasswordResetEmail(user.Name, link)
+	content := mail.PasswordResetEmail(user.Name, link)
 	// Best-effort: kegagalan kirim tidak membocorkan keberadaan akun.
 	if err := s.mail.Send(ctx, user.Email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
 		log.Warn().Err(err).Str("user_id", user.ID).Msg("forgot-password: gagal mengirim email reset")

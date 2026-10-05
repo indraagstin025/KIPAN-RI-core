@@ -11,6 +11,7 @@ import (
 
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 )
 
@@ -132,7 +133,7 @@ func (s *pengurusSvc) AddPengurus(ctx context.Context, skID int, in domain.AddPe
 		uidPtr = &userID
 	}
 	s.enqueueEmail(ctx, domain.EmailOutboxPengangkatan, sk, uidPtr, member.Email,
-		PengangkatanEmail(member.NamaLengkap, member.NIA, jabatan.Nama, sk.NomorSK, svcutil.PublicURLFrom(s.cfg)))
+		mail.PengangkatanEmail(member.NamaLengkap, member.NIA, jabatan.Nama, sk.NomorSK, svcutil.PublicURLFrom(s.cfg)))
 
 	list, err := s.pengurus.ListBySK(ctx, skID)
 	if err != nil {

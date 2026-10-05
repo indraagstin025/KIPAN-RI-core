@@ -16,6 +16,7 @@ import (
 	"github.com/kipan-indonesia/sim-kipan-core/internal/domain"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/gateway"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/repository"
+	"github.com/kipan-indonesia/sim-kipan-core/internal/service/mail"
 	"github.com/kipan-indonesia/sim-kipan-core/internal/service/svcutil"
 	"github.com/kipan-indonesia/sim-kipan-core/pkg/crypto"
 )
@@ -140,7 +141,7 @@ func (s *revisionSvc) sendRevisionTokenEmail(nama, email, nomor, token string) {
 	if s.mail == nil || strings.TrimSpace(email) == "" {
 		return
 	}
-	content := RevisionTokenEmail(nama, nomor, token, svcutil.PublicURLFrom(s.cfg))
+	content := mail.RevisionTokenEmail(nama, nomor, token, svcutil.PublicURLFrom(s.cfg))
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := s.mail.Send(ctx, email, content.Subject, content.TextBody, content.HTMLBody); err != nil {
